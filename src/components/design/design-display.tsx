@@ -118,7 +118,7 @@ export default function DesignDisplay() {
           </div>
           <div className="flex items-center">
             <div className="w-3 h-3 rounded-full bg-purple-500 mr-2" />
-            <span className="text-sm">In Production</span>
+            <span className="text-sm">In Production.</span>
           </div>
         </div>
       </div>
