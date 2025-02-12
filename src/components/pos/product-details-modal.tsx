@@ -29,6 +29,25 @@ interface SelectedOption {
   valueId: string;
 }
 
+interface ProductVariantValue {
+  id: string;
+  valueId: string;
+  value: {
+    id: string;
+    value: string;
+    position: number;
+    optionId: string;
+  };
+}
+
+interface ProductVariant {
+  id: string;
+  sku: string;
+  price: number;
+  stock: number;
+  values: ProductVariantValue[];
+}
+
 export default function ProductDetailsModal({
   product,
   isOpen,
@@ -37,7 +56,7 @@ export default function ProductDetailsModal({
 }: ProductDetailsModalProps) {
   const [quantity, setQuantity] = useState(1);
   const [selectedOptions, setSelectedOptions] = useState<SelectedOption[]>([]);
-  const [selectedVariant, setSelectedVariant] = useState<Product['variants'][0] | null>(null);
+  const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(null);
 
   // Reset state when product changes
   useEffect(() => {
@@ -56,9 +75,9 @@ export default function ProductDetailsModal({
       
       // Find variant that matches all selected options
       const matchingVariant = product.variants?.find(variant => {
-        // Sort variant values by option ID for consistent comparison
-        const variantValues = variant.values?.sort((a, b) => 
-          (a.value?.option?.id || '').localeCompare(b.value?.option?.id || '')
+        // Sort variant values by optionId for consistent comparison
+        const variantValues = (variant.values as ProductVariantValue[])?.sort((a, b) => 
+          a.value.optionId.localeCompare(b.value.optionId)
         );
         
         // Check if variant has exact match for all selected options
@@ -66,7 +85,7 @@ export default function ProductDetailsModal({
           const variantValue = variantValues?.[index];
           return variantValue?.valueId === selectedOption.valueId;
         });
-      });
+      }) as ProductVariant | undefined;
       
       console.log('Selected options:', sortedSelectedOptions);
       console.log('Found variant:', matchingVariant);
