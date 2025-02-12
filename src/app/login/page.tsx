@@ -31,14 +31,18 @@ export default function LoginPage() {
 
     try {
       // Login with email/password
-      await authApi.login(email, password);
+      const response = await authApi.login(email, password);
+      
+      if (!response.success) {
+        throw new Error(response.message || 'Login failed');
+      }
       
       // Redirect to POS
-      router.replace('/pos');
+      router.push('/pos');
     } catch (error: any) {
       console.error('Login error:', error);
-      if (error.response?.data?.error?.message) {
-        setError(error.response.data.error.message);
+      if (error.response?.data?.message) {
+        setError(error.response.data.message);
       } else if (error.code === 'auth/wrong-password') {
         setError('Invalid password');
       } else if (error.code === 'auth/user-not-found') {

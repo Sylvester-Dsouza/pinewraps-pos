@@ -10,6 +10,7 @@ import { apiMethods } from '@/services/api';
 import { toast } from 'react-hot-toast';
 import { getAuth, onAuthStateChanged } from 'firebase/auth';
 import OrderReceipt from '@/components/receipt/OrderReceipt';
+import Cookies from 'js-cookie';
 
 interface OrderItem {
   productId: string;
@@ -75,6 +76,16 @@ const OrdersPage = () => {
       console.log('Auth state changed:', user ? 'User logged in' : 'No user');
       if (user) {
         try {
+          // Get fresh token
+          const token = await user.getIdToken(true);
+          
+          // Store token in cookie
+          Cookies.set('firebase-token', token, {
+            expires: 7,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'strict'
+          });
+          
           setIsAuthenticated(true);
           fetchOrders();
         } catch (error) {
@@ -103,6 +114,18 @@ const OrdersPage = () => {
       setLoading(true);
       setError(null);
       console.log('Fetching orders with status:', selectedStatus);
+      
+      // Get fresh token before fetching orders
+      const auth = getAuth();
+      const user = auth.currentUser;
+      if (user) {
+        const token = await user.getIdToken(true);
+        Cookies.set('firebase-token', token, {
+          expires: 7,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'strict'
+        });
+      }
       
       const response = await apiMethods.pos.getOrders(
         selectedStatus !== 'all' ? selectedStatus : undefined

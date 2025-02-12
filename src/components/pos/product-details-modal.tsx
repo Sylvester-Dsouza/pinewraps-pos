@@ -5,7 +5,6 @@ import { Dialog, Transition } from "@headlessui/react";
 import { X, Minus, Plus } from "lucide-react";
 import { Product } from "@/services/api";
 import { toast } from "react-hot-toast";
-import Image from 'next/image';
 
 interface ProductDetailsModalProps {
   product: Product;
@@ -51,14 +50,26 @@ export default function ProductDetailsModal({
 
   // Find matching variant when options change
   useEffect(() => {
-    if (selectedOptions.length === product.options.length) {
-      const matchingVariant = product.variants.find(variant => 
-        selectedOptions.every(selectedOption => 
-          variant.values.some(value => 
-            value.valueId === selectedOption.valueId
-          )
-        )
-      );
+    if (selectedOptions.length === (product.options?.length || 0)) {
+      // Sort options by ID to ensure consistent matching
+      const sortedSelectedOptions = [...selectedOptions].sort((a, b) => a.optionId.localeCompare(b.optionId));
+      
+      // Find variant that matches all selected options
+      const matchingVariant = product.variants?.find(variant => {
+        // Sort variant values by option ID for consistent comparison
+        const variantValues = variant.values?.sort((a, b) => 
+          (a.value?.option?.id || '').localeCompare(b.value?.option?.id || '')
+        );
+        
+        // Check if variant has exact match for all selected options
+        return sortedSelectedOptions.every((selectedOption, index) => {
+          const variantValue = variantValues?.[index];
+          return variantValue?.valueId === selectedOption.valueId;
+        });
+      });
+      
+      console.log('Selected options:', sortedSelectedOptions);
+      console.log('Found variant:', matchingVariant);
       setSelectedVariant(matchingVariant || null);
     } else {
       setSelectedVariant(null);
@@ -67,20 +78,53 @@ export default function ProductDetailsModal({
 
   // Calculate total price including selected variant
   const totalPrice = () => {
-    const price = selectedVariant ? selectedVariant.price : product.basePrice;
+    let price = product?.basePrice || 0;
+    
+    // If we have a matching variant, use its price
+    if (selectedVariant) {
+      console.log('Using variant price:', selectedVariant.price);
+      price = selectedVariant.price;
+    }
+    // If we have all options selected but no variant, something is wrong
+    else if (selectedOptions.length === (product.options?.length || 0)) {
+      console.warn('All options selected but no matching variant found');
+    }
+    
     return price * quantity;
+  };
+
+  // Check if all required options are selected
+  const isReadyToAdd = () => {
+    // If no options, always ready
+    if (!product.options?.length) return true;
+
+    // Check if all options have been selected
+    const allOptionsSelected = product.options.every(option =>
+      selectedOptions.some(selected => selected.optionId === option.id)
+    );
+
+    return allOptionsSelected;
   };
 
   const handleOptionChange = (optionId: string, valueId: string) => {
     setSelectedOptions(prev => {
+      // Remove any existing selection for this option
       const newOptions = prev.filter(opt => opt.optionId !== optionId);
-      return [...newOptions, { optionId, valueId }];
+      // Add new selection
+      const updatedOptions = [...newOptions, { optionId, valueId }];
+      
+      // Sort by option position to maintain consistent order
+      return updatedOptions.sort((a, b) => {
+        const optionA = product.options?.find(o => o.id === a.optionId);
+        const optionB = product.options?.find(o => o.id === b.optionId);
+        return (optionA?.position || 0) - (optionB?.position || 0);
+      });
     });
   };
 
   const handleAddToOrder = () => {
     // Validate all required options are selected
-    if (product.options.length > 0 && !selectedVariant) {
+    if (!isReadyToAdd()) {
       toast.error('Please select all options');
       return;
     }
@@ -89,8 +133,11 @@ export default function ProductDetailsModal({
       product,
       quantity,
       selectedVariations: selectedOptions.map(opt => {
-        const option = product.options.find(o => o.id === opt.optionId)!;
-        const value = option.values.find(v => v.id === opt.valueId)!;
+        const option = product.options?.find(o => o.id === opt.optionId);
+        const value = option?.values?.find(v => v.id === opt.valueId);
+        if (!option || !value) {
+          throw new Error('Invalid option or value');
+        }
         return {
           id: opt.valueId,
           type: option.name,
@@ -149,26 +196,22 @@ export default function ProductDetailsModal({
                     </div>
 
                     {/* Product Options */}
-                    {product.options.sort((a, b) => a.position - b.position).map((option) => (
+                    {product.options?.sort((a, b) => a.position - b.position).map((option) => (
                       <div key={option.id} className="mb-6">
                         <h4 className="text-lg font-medium mb-3">{option.name}</h4>
                         <div className="grid grid-cols-2 gap-3">
-                          {option.values.sort((a, b) => a.position - b.position).map((value) => {
+                          {option.values?.sort((a, b) => a.position - b.position).map((value) => {
                             const isSelected = selectedOptions.some(
                               opt => opt.optionId === option.id && opt.valueId === value.id
                             );
-                            const isDisabled = selectedOptions.length === product.options.length && !selectedVariant;
                             
                             return (
                               <button
                                 key={value.id}
                                 onClick={() => handleOptionChange(option.id, value.id)}
-                                disabled={isDisabled}
                                 className={`p-4 text-lg rounded-xl border-2 ${
                                   isSelected
                                     ? 'border-blue-500 bg-blue-50'
-                                    : isDisabled
-                                    ? 'border-gray-200 bg-gray-50 cursor-not-allowed'
                                     : 'border-gray-200 hover:border-gray-300'
                                 }`}
                               >
@@ -205,14 +248,14 @@ export default function ProductDetailsModal({
                     {/* Add to Order Button */}
                     <button
                       onClick={handleAddToOrder}
-                      disabled={product.options.length > 0 && !selectedVariant}
+                      disabled={!isReadyToAdd()}
                       className={`w-full text-white text-xl font-semibold py-8 px-4 rounded-2xl shadow-lg transition-all ${
-                        product.options.length > 0 && !selectedVariant
+                        !isReadyToAdd()
                           ? 'bg-gray-400 cursor-not-allowed'
                           : 'bg-black hover:bg-gray-900 active:transform active:scale-[0.99]'
                       }`}
                     >
-                      Add to Order • AED {totalPrice().toFixed(2)}
+                      Add to Order - AED {totalPrice().toFixed(2)}
                     </button>
                   </div>
                 </div>

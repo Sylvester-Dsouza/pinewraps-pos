@@ -13,33 +13,65 @@ const api = axios.create({
   },
 });
 
-// Add request interceptor to add auth token
-api.interceptors.request.use(async (config) => {
-  try {
-    const auth = getAuth();
-    const user = auth.currentUser;
-    
-    if (user) {
-      const token = await user.getIdToken();
-      config.headers.Authorization = `Bearer ${token}`;
+// Add request interceptor to add token to headers
+api.interceptors.request.use(
+  async (config) => {
+    const token = Cookies.get('firebase-token');
+    if (token) {
+      config.headers['Authorization'] = `Bearer ${token}`;
+      
+      // Add token to body for verify endpoint
+      if (config.url?.includes('/api/auth/verify') && config.method === 'post') {
+        config.data = {
+          ...config.data,
+          token: token
+        };
+      }
     }
-    
     return config;
-  } catch (error) {
-    console.error('Error adding auth token:', error);
-    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
   }
-});
+);
 
 // Add response interceptor to handle auth errors
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
     if (error.response?.status === 401) {
-      // Handle unauthorized error (e.g., redirect to login)
+      // Try to refresh token
       const auth = getAuth();
-      await auth.signOut();
-      window.location.href = '/login';
+      const user = auth.currentUser;
+      if (user) {
+        try {
+          const token = await user.getIdToken(true);
+          Cookies.set('firebase-token', token, {
+            expires: 7,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'strict'
+          });
+          
+          // Retry the original request with new token
+          const originalRequest = error.config;
+          originalRequest.headers['Authorization'] = `Bearer ${token}`;
+          
+          // Update token in body for verify endpoint
+          if (originalRequest.url?.includes('/api/auth/verify') && originalRequest.method === 'post') {
+            originalRequest.data = {
+              ...originalRequest.data,
+              token: token
+            };
+          }
+          
+          return api(originalRequest);
+        } catch (refreshError) {
+          console.error('Token refresh failed:', refreshError);
+          // If refresh fails, redirect to login
+          window.location.href = '/login';
+          return Promise.reject(refreshError);
+        }
+      }
     }
     return Promise.reject(error);
   }
@@ -49,27 +81,40 @@ api.interceptors.response.use(
 export const authApi = {
   login: async (email: string, password: string) => {
     try {
-      // Login with Firebase first
       const auth = getAuth();
-      const { user } = await signInWithEmailAndPassword(auth, email, password);
-      const token = await user.getIdToken();
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const token = await userCredential.user.getIdToken();
+      
+      // Verify with backend
+      const response = await api.post<APIResponse<any>>('/api/auth/verify', 
+        { token },
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        }
+      );
+      
+      if (!response.data?.success) {
+        throw new Error(response.data?.message || 'Authentication failed');
+      }
 
-      // Set the token in cookie
-      Cookies.set('firebase-token', token, { expires: 7 }); // 7 days expiry
+      const userRole = response.data.data?.role;
+      if (userRole !== 'POS_USER' && userRole !== 'ADMIN' && userRole !== 'SUPER_ADMIN') {
+        throw new Error('Not authorized for POS access');
+      }
 
-      // Add token to request
-      api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-
-      // Then verify with our backend
-      const response = await api.post('/api/pos-auth/login', { 
-        email, 
-        password 
+      // Store token in cookie
+      Cookies.set('firebase-token', token, {
+        expires: 7, // 7 days
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict'
       });
 
       return response.data;
     } catch (error: any) {
-      console.error('Login error:', error.response?.data || error.message);
-      throw error;
+      console.error('Login error:', error);
+      throw error; // Let the login page handle the error
     }
   },
   
@@ -258,7 +303,7 @@ export const apiMethods = {
     // Get products
     getProducts: async () => {
       try {
-        const response = await api.get<APIResponse<Product[]>>('/api/products/public');
+        const response = await api.get<APIResponse<Product[]>>('/api/pos/products');
         if (!response.data.success) {
           throw new Error(response.data.message || 'Failed to fetch products');
         }
