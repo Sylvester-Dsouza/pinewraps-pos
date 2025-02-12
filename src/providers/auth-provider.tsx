@@ -81,7 +81,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
           // Check if user has POS access
           const userRole = data.data?.role;
-          if (userRole !== 'POS_USER' && userRole !== 'ADMIN' && userRole !== 'SUPER_ADMIN') {
+          const allowedRoles = ['POS_USER', 'ADMIN', 'SUPER_ADMIN'];
+          if (!allowedRoles.includes(userRole)) {
+            console.error('User role not allowed:', userRole);
             throw new Error('Not authorized for POS access');
           }
           
