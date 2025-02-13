@@ -2,15 +2,17 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
-import { LogOut, Settings, User, Maximize2, Minimize2, Plus } from "lucide-react";
+import { LogOut, Settings, User, Maximize2, Minimize2, Plus, Calculator } from "lucide-react";
 import { useAuth } from "@/providers/auth-provider";
 import { useState, useEffect } from "react";
+import CalculatorModal from "../pos/calculator-modal";
 
 export default function Header() {
   const pathname = usePathname();
   const router = useRouter();
   const { user, signOut } = useAuth();
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
 
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -79,24 +81,38 @@ export default function Header() {
           {/* Actions */}
           <div className="flex items-center gap-4">
             {pathname === "/pos" && (
-              <button
-                onClick={handleCustomOrderClick}
-                className="flex items-center px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                <Plus className="w-4 h-4 mr-1" />
-                Custom Order
-              </button>
+              <>
+                <button
+                  onClick={() => setIsCalculatorOpen(true)}
+                  className="p-2 text-gray-600 hover:text-black transition-colors"
+                  title="Calculator"
+                >
+                  <Calculator className="w-5 h-5" />
+                </button>
+                <button
+                  onClick={handleCustomOrderClick}
+                  className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-black rounded-lg hover:bg-gray-800"
+                >
+                  <Plus className="w-4 h-4" />
+                  Custom Order
+                </button>
+              </>
             )}
+            <button
+              onClick={toggleFullscreen}
+              className="p-2 text-gray-600 hover:text-black transition-colors"
+              title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
+            >
+              {isFullscreen ? (
+                <Minimize2 className="w-5 h-5" />
+              ) : (
+                <Maximize2 className="w-5 h-5" />
+              )}
+            </button>
             <div className="flex items-center text-gray-600">
               <User className="w-5 h-5 mr-2" />
               <span>{user?.name || user?.email}</span>
             </div>
-            <button
-              onClick={toggleFullscreen}
-              className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-            >
-              {isFullscreen ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
-            </button>
             <button
               onClick={signOut}
               className="flex items-center px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
@@ -107,6 +123,12 @@ export default function Header() {
           </div>
         </div>
       </div>
+
+      {/* Calculator Modal */}
+      <CalculatorModal
+        isOpen={isCalculatorOpen}
+        onClose={() => setIsCalculatorOpen(false)}
+      />
     </header>
   );
 }

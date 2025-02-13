@@ -239,16 +239,19 @@ export const apiMethods = {
       api.get<APIResponse<Product[]>>('/api/products/public'),
     getCategories: async () => {
       try {
-        const response = await api.get('/api/categories/all');
+        const response = await api.get<APIResponse<Category[]>>('/api/categories/public');
+        if (!response.data.success) {
+          throw new Error(response.data.message || 'Failed to fetch categories');
+        }
         return {
           success: true,
-          data: Array.isArray(response.data) ? response.data : []
+          data: response.data.data
         };
       } catch (error: any) {
         console.error('Error fetching categories:', error);
         return {
           success: false,
-          message: error.response?.data?.message || 'Failed to fetch categories',
+          message: error.message || 'Failed to fetch categories',
           data: []
         };
       }

@@ -1,15 +1,15 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/providers/auth-provider';
 import { useRouter } from 'next/navigation';
 import { useSearchParams } from 'next/navigation';
 import { Search, X, Minus, Plus } from 'lucide-react';
-import { apiMethods, type Product, type Category, DesignImage,} from '@/services/api';
+import { apiMethods, type Product, type Category, DesignImage, type APIResponse } from '@/services/api';
 import toast from 'react-hot-toast';
 import ProductDetailsModal from '@/components/pos/product-details-modal';
 import CheckoutModal from '@/components/pos/checkout-modal';
-import Header from '@/components/layout/header';
+import Header from '@/components/header/header';
 import { useQuery } from '@tanstack/react-query';
 import Image from 'next/image';
 import { nanoid } from 'nanoid';
@@ -127,12 +127,7 @@ export default function POSPage() {
         if (!response.success) {
           throw new Error(response.message || 'Failed to fetch products');
         }
-        // Filter products by category if one is selected
-        const products = response.data.filter(product => 
-          product.status === 'ACTIVE' && // Only show active products
-          (!selectedCategory || selectedCategory === 'all' || product.categoryId === selectedCategory)
-        );
-        return products;
+        return response.data;
       } catch (error) {
         console.error('Error fetching products:', error);
         toast.error('Failed to load products. Please try again.');
@@ -144,43 +139,45 @@ export default function POSPage() {
   });
 
   // Fetch categories
-  const { data: categoriesData, isLoading: isCategoriesLoading } = useQuery({
+  const { data: categoriesResponse, isLoading: isCategoriesLoading } = useQuery<APIResponse<Category[]>>({
     queryKey: ['categories'],
     queryFn: async () => {
-      try {
-        const response = await apiMethods.products.getCategories();
-        if (!response.success) {
-          throw new Error(response.message || 'Failed to fetch categories');
-        }
-        // Add "All Products" category at the beginning
-        return [
-          { 
-            id: 'all', 
-            name: 'All Products', 
-            description: null,
-            slug: 'all',
-            isActive: true,
-            image: null,
-            parentId: null,
-          } as Category,
-          ...response.data
-        ];
-      } catch (error) {
-        console.error('Error fetching categories:', error);
-        return [{ 
-          id: 'all', 
-          name: 'All Products', 
-          description: null,
-          slug: 'all',
-          isActive: true,
-          image: null,
-          parentId: null,
-        } as Category];
+      const response = await apiMethods.products.getCategories();
+      if (!response.success) {
+        throw new Error(response.message || 'Failed to fetch categories');
       }
+      return response;
     },
-    staleTime: 5 * 60 * 1000,
-    retry: 3
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
   });
+
+  // Add "All Products" category and filter active categories
+  const categories = useMemo(() => {
+    if (!categoriesResponse?.success) {
+      console.log('No valid categories response:', categoriesResponse);
+      return [{ id: 'all', name: 'All Products', description: null, isActive: true }];
+    }
+
+    const categoryList = categoriesResponse.data;
+    if (!Array.isArray(categoryList)) {
+      console.log('Categories data is not an array:', categoryList);
+      return [{ id: 'all', name: 'All Products', description: null, isActive: true }];
+    }
+    
+    return [
+      { id: 'all', name: 'All Products', description: null, isActive: true },
+      ...categoryList
+    ];
+  }, [categoriesResponse]);
+
+  // Debug logging
+  useEffect(() => {
+    if (categoriesResponse) {
+      console.log('Categories Response:', categoriesResponse);
+      console.log('Categories Data:', categoriesResponse.data);
+      console.log('Processed Categories:', categories);
+    }
+  }, [categoriesResponse, categories]);
 
   // Filter products based on search query and category
   const filteredProducts = productsData?.filter(product => {
@@ -188,7 +185,7 @@ export default function POSPage() {
     const matchesSearch = !searchQuery || 
       product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       product.description?.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesCategory && matchesSearch;
+    return matchesCategory && matchesSearch && product.status === 'ACTIVE';
   }) || [];
 
   // Calculate price range for a product
@@ -317,23 +314,36 @@ export default function POSPage() {
                   {[...Array(4)].map((_, i) => (
                     <div
                       key={i}
-                      className="w-32 h-12 bg-gray-100 rounded-xl animate-pulse"
+                      className="w-[140px] h-12 bg-gray-100 rounded-xl animate-pulse"
                     />
                   ))}
                 </div>
               ) : (
                 <div className="flex gap-3 overflow-x-auto pb-2">
-                  {categoriesData?.map((category: Category) => (
+                  {categories.map((category) => (
                     <button
                       key={category.id}
                       onClick={() => setSelectedCategory(category.id === 'all' ? null : category.id)}
-                      className={`flex-shrink-0 px-6 py-3 rounded-xl text-base font-medium transition-colors ${
-                        (category.id === 'all' && !selectedCategory) || selectedCategory === category.id
-                          ? "bg-black text-white"
-                          : "bg-gray-100 text-gray-900 hover:bg-gray-200"
-                      }`}
+                      className={`
+                        flex items-center justify-center
+                        w-[140px] h-12 px-4
+                        rounded-xl text-base font-medium
+                        transition-colors duration-200
+                        ${
+                          (category.id === 'all' && !selectedCategory) || selectedCategory === category.id
+                            ? "bg-black text-white hover:bg-gray-900"
+                            : "bg-gray-100 text-gray-900 hover:bg-gray-200"
+                        }
+                      `}
                     >
-                      {category.name}
+                      <div className="flex items-center space-x-2">
+                        <span className="truncate">{category.name}</span>
+                        {category.id !== 'all' && filteredProducts.filter(p => p.categoryId === category.id).length > 0 && (
+                          <span className="flex-shrink-0 px-2 py-0.5 text-sm bg-gray-700 text-white rounded-full">
+                            {filteredProducts.filter(p => p.categoryId === category.id).length}
+                          </span>
+                        )}
+                      </div>
                     </button>
                   ))}
                 </div>
