@@ -7,7 +7,6 @@ import { toast } from "react-hot-toast";
 import { apiMethods } from "@/services/api";
 import Image from "next/image";
 
-
 interface CartItem {
   id: string;
   product: {
@@ -50,6 +49,7 @@ export default function CheckoutModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'CREDIT_CARD'>('CASH');
   const [paymentReference, setPaymentReference] = useState('');
+  const [teamSelection, setTeamSelection] = useState<'KITCHEN' | 'DESIGN' | 'BOTH'>('KITCHEN');
   const [customerDetails, setCustomerDetails] = useState({
     name: "",
     email: "",
@@ -100,7 +100,13 @@ export default function CheckoutModal({
         paidAmount: Number(cartTotal),
         totalAmount: Number(cartTotal),
         changeAmount: 0,
-        requiresKitchen: true,
+        requiresKitchen: teamSelection === 'KITCHEN' || teamSelection === 'BOTH',
+        requiresDesign: teamSelection === 'DESIGN' || teamSelection === 'BOTH',
+        status: teamSelection === 'BOTH' ? 
+          'DESIGN_QUEUE' : 
+          teamSelection === 'DESIGN' ? 
+            'DESIGN_QUEUE' : 
+            'KITCHEN_QUEUE',
         expectedReadyTime: new Date(Date.now() + 30 * 60 * 1000)
       };
 
@@ -228,6 +234,75 @@ export default function CheckoutModal({
                           <div className="flex justify-between items-center font-medium">
                             <p className="text-xl">Total</p>
                             <p className="text-2xl">AED {cartTotal.toFixed(2)}</p>
+                          </div>
+                        </div>
+
+                        {/* Team Selection */}
+                        <div className="mt-6 space-y-4">
+                          <h3 className="text-lg font-semibold">Send Order To:</h3>
+                          <div className="grid grid-cols-1 gap-4">
+                            <button
+                              type="button"
+                              onClick={() => setTeamSelection('KITCHEN')}
+                              className={`p-4 text-left border-2 rounded-lg flex items-center ${
+                                teamSelection === 'KITCHEN'
+                                  ? 'border-blue-500 bg-blue-50'
+                                  : 'border-gray-200'
+                              }`}
+                            >
+                              <div className={`w-6 h-6 border-2 rounded-full mr-3 flex items-center justify-center ${
+                                teamSelection === 'KITCHEN'
+                                  ? 'border-blue-500 bg-blue-500'
+                                  : 'border-gray-300'
+                              }`}>
+                                {teamSelection === 'KITCHEN' && (
+                                  <div className="w-3 h-3 bg-white rounded-full" />
+                                )}
+                              </div>
+                              <span className="text-lg">Kitchen Team</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => setTeamSelection('DESIGN')}
+                              className={`p-4 text-left border-2 rounded-lg flex items-center ${
+                                teamSelection === 'DESIGN'
+                                  ? 'border-blue-500 bg-blue-50'
+                                  : 'border-gray-200'
+                              }`}
+                            >
+                              <div className={`w-6 h-6 border-2 rounded-full mr-3 flex items-center justify-center ${
+                                teamSelection === 'DESIGN'
+                                  ? 'border-blue-500 bg-blue-500'
+                                  : 'border-gray-300'
+                              }`}>
+                                {teamSelection === 'DESIGN' && (
+                                  <div className="w-3 h-3 bg-white rounded-full" />
+                                )}
+                              </div>
+                              <span className="text-lg">Design Team</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => setTeamSelection('BOTH')}
+                              className={`p-4 text-left border-2 rounded-lg flex items-center ${
+                                teamSelection === 'BOTH'
+                                  ? 'border-blue-500 bg-blue-50'
+                                  : 'border-gray-200'
+                              }`}
+                            >
+                              <div className={`w-6 h-6 border-2 rounded-full mr-3 flex items-center justify-center ${
+                                teamSelection === 'BOTH'
+                                  ? 'border-blue-500 bg-blue-500'
+                                  : 'border-gray-300'
+                              }`}>
+                                {teamSelection === 'BOTH' && (
+                                  <div className="w-3 h-3 bg-white rounded-full" />
+                                )}
+                              </div>
+                              <span className="text-lg">Design & Kitchen Teams</span>
+                            </button>
                           </div>
                         </div>
                       </div>

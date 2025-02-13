@@ -34,7 +34,7 @@ interface Order {
   customerPhone: string;
   customerEmail?: string;
   createdAt: string;
-  status: 'PENDING' | 'KITCHEN_PROCESSING' | 'KITCHEN_READY' | 'COMPLETED' | 'CANCELLED';
+  status: 'PENDING' | 'DESIGN_QUEUE' | 'DESIGN_PROCESSING' | 'DESIGN_READY' | 'KITCHEN_QUEUE' | 'KITCHEN_PROCESSING' | 'KITCHEN_READY' | 'COMPLETED';
   totalAmount: number;
   paidAmount: number;
   paymentMethod: 'CASH' | 'CARD';
@@ -44,18 +44,24 @@ interface Order {
 
 const statusColors = {
   PENDING: { bg: 'bg-yellow-100', text: 'text-yellow-800', icon: Clock },
+  DESIGN_QUEUE: { bg: 'bg-purple-100', text: 'text-purple-800', icon: RotateCcw },
+  DESIGN_PROCESSING: { bg: 'bg-purple-100', text: 'text-purple-800', icon: RefreshCcw },
+  DESIGN_READY: { bg: 'bg-purple-100', text: 'text-purple-800', icon: CheckCircle },
+  KITCHEN_QUEUE: { bg: 'bg-blue-100', text: 'text-blue-800', icon: RotateCcw },
   KITCHEN_PROCESSING: { bg: 'bg-blue-100', text: 'text-blue-800', icon: RefreshCcw },
   KITCHEN_READY: { bg: 'bg-green-100', text: 'text-green-800', icon: CheckCircle },
-  COMPLETED: { bg: 'bg-green-100', text: 'text-green-800', icon: CheckCircle },
-  CANCELLED: { bg: 'bg-red-100', text: 'text-red-800', icon: XCircle }
+  COMPLETED: { bg: 'bg-green-100', text: 'text-green-800', icon: CheckCircle }
 } as const;
 
 const statusLabels = {
   PENDING: 'Pending',
+  DESIGN_QUEUE: 'Design Queue',
+  DESIGN_PROCESSING: 'Design Processing',
+  DESIGN_READY: 'Design Ready',
+  KITCHEN_QUEUE: 'Kitchen Queue',
   KITCHEN_PROCESSING: 'In Kitchen',
-  KITCHEN_READY: 'Ready',
-  COMPLETED: 'Completed',
-  CANCELLED: 'Cancelled'
+  KITCHEN_READY: 'Kitchen Ready',
+  COMPLETED: 'Completed'
 } as const;
 
 const OrdersPage = () => {
@@ -113,7 +119,7 @@ const OrdersPage = () => {
     try {
       setLoading(true);
       setError(null);
-      console.log('Fetching orders with status:', selectedStatus);
+      console.log('Fetching orders...');
       
       // Get fresh token before fetching orders
       const auth = getAuth();
@@ -127,9 +133,8 @@ const OrdersPage = () => {
         });
       }
       
-      const response = await apiMethods.pos.getOrders(
-        selectedStatus !== 'all' ? selectedStatus : undefined
-      );
+      // Fetch all orders without any status filter
+      const response = await apiMethods.pos.getOrders();
       
       console.log('Orders response:', response);
       
