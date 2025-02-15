@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { authApi } from '@/services/api';
 import { getAuth, onAuthStateChanged } from 'firebase/auth';
+import Cookies from 'js-cookie';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -15,9 +16,27 @@ export default function LoginPage() {
   // Check if user is already authenticated
   useEffect(() => {
     const auth = getAuth();
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
-        router.replace('/pos');
+        try {
+          // Get fresh token and verify with backend
+          const token = await user.getIdToken(true);
+          const response = await authApi.verify();
+          
+          if (response.success) {
+            // Store token and redirect
+            Cookies.set('firebase-token', token, {
+              expires: 7,
+              secure: process.env.NODE_ENV === 'production',
+              sameSite: 'strict'
+            });
+            router.replace('/pos');
+          }
+        } catch (error) {
+          console.error('Verification failed:', error);
+          // If verification fails, sign out
+          auth.signOut();
+        }
       }
     });
 
@@ -36,9 +55,8 @@ export default function LoginPage() {
       if (!response.success) {
         throw new Error(response.message || 'Login failed');
       }
-      
-      // Redirect to POS
-      router.push('/pos');
+
+      // Redirect will be handled by the useEffect above
     } catch (error: any) {
       console.error('Login error:', error);
       if (error.response?.data?.message) {
@@ -109,7 +127,9 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
+              className={`group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 ${
+                loading ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
             >
               {loading ? 'Signing in...' : 'Sign in'}
             </button>
