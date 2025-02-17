@@ -1,11 +1,16 @@
-'use client';
-
-import React from 'react';
+import React, { useEffect } from 'react';
 import { format } from 'date-fns';
-import Image from 'next/image';
+import {
+  PRINTER_CONFIG,
+  centerText,
+  formatLineItem,
+  formatCurrency,
+  printContent,
+  withErrorHandling
+} from '@/services/printer';
 
 interface OrderItem {
-  productId: string;
+  productId?: string;
   productName: string;
   quantity: number;
   totalPrice: number;
@@ -17,18 +22,29 @@ interface OrderItem {
 }
 
 interface Order {
-  id: string;
   orderNumber: string;
+  createdAt: string;
   customerName: string;
   customerPhone: string;
   customerEmail?: string;
-  createdAt: string;
-  status: 'PENDING' | 'KITCHEN_PROCESSING' | 'KITCHEN_READY' | 'COMPLETED' | 'CANCELLED';
+  status: string;
+  paymentMethod: 'CASH' | 'CARD';
   totalAmount: number;
   paidAmount: number;
-  paymentMethod: 'CASH' | 'CARD';
+  changeAmount?: number;
   items: OrderItem[];
   notes?: string;
+  deliveryMethod?: 'DELIVERY' | 'PICKUP';
+  deliveryDate?: string;
+  deliveryTimeSlot?: string;
+  deliveryCharge?: number;
+  deliveryInstructions?: string;
+  streetAddress?: string;
+  apartment?: string;
+  emirate?: string;
+  city?: string;
+  pickupDate?: string;
+  pickupTimeSlot?: string;
 }
 
 interface OrderReceiptProps {
@@ -36,140 +52,167 @@ interface OrderReceiptProps {
   onClose: () => void;
 }
 
-const OrderReceipt: React.FC<OrderReceiptProps> = ({ order, onClose }) => {
-  const handlePrint = () => {
-    window.print();
-  };
+// Receipt-specific styles
+const receiptStyles = `
+  .receipt {
+    width: 100%;
+    max-width: ${PRINTER_CONFIG.width}mm;
+  }
+  .header {
+    text-align: center;
+    margin-bottom: 10px;
+  }
+  .divider {
+    border-top: 1px solid black;
+    margin: 5px 0;
+  }
+  .item {
+    margin: 5px 0;
+  }
+  .right {
+    text-align: right;
+  }
+  .center {
+    text-align: center;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  th, td {
+    text-align: left;
+    padding: 2px;
+  }
+  .variation {
+    padding-left: 10px;
+    font-size: 10px;
+  }
+  .notes {
+    font-style: italic;
+    font-size: 10px;
+  }
+`;
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-AE', {
-      style: 'currency',
-      currency: 'AED'
-    }).format(amount);
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 print:hidden">
-      <div className="bg-white rounded-lg shadow-lg max-w-md w-full mx-4">
-        <div className="p-4">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-bold">Print Receipt</h2>
-            <button
-              onClick={onClose}
-              className="text-gray-500 hover:text-gray-700"
-            >
-              ✕
-            </button>
-          </div>
-          <button
-            onClick={handlePrint}
-            className="w-full bg-blue-500 text-white py-2 rounded-lg hover:bg-blue-600 mb-4"
-          >
-            Print Receipt
-          </button>
-        </div>
-      </div>
-
-      {/* Receipt Template - Only visible when printing */}
-      <div className="hidden print:block p-4 w-[80mm] mx-auto text-[12px] leading-tight">
-        {/* Header */}
-        <div className="text-center mb-4">
-          <div className="mb-2">
-            {/* Add your logo here */}
-            <h1 className="text-xl font-bold">PINEWRAPS</h1>
-          </div>
-          <p className="font-semibold">Your Delicious Food Partner</p>
-          <p>Dubai, UAE</p>
-          <p>Phone: +971 XXXXXXXXX</p>
-          <p className="text-[10px]">TRN: XXXXXXXXXXXXX</p>
-        </div>
-
-        <div className="border-t border-b border-black py-2 mb-3">
-          <div className="flex justify-between text-[11px]">
-            <div>
-              <p><strong>Order #:</strong> {order.orderNumber}</p>
-              <p><strong>Date:</strong> {format(new Date(order.createdAt), 'dd/MM/yyyy HH:mm')}</p>
-              <p><strong>Customer:</strong> {order.customerName}</p>
-              <p><strong>Phone:</strong> {order.customerPhone}</p>
-              {order.customerEmail && <p><strong>Email:</strong> {order.customerEmail}</p>}
-            </div>
-            <div className="text-right">
-              <p><strong>Status:</strong> {order.status}</p>
-              <p><strong>Payment:</strong> {order.paymentMethod}</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Items */}
-        <div className="mb-3">
-          <table className="w-full text-[11px]">
-            <thead>
-              <tr className="border-b border-black">
-                <th className="text-left py-1">Item</th>
-                <th className="text-right py-1">Qty</th>
-                <th className="text-right py-1">Price</th>
-              </tr>
-            </thead>
-            <tbody>
-              {order.items.map((item, index) => (
-                <React.Fragment key={index}>
-                  <tr>
-                    <td className="py-1">{item.productName}</td>
-                    <td className="text-right">{item.quantity}</td>
-                    <td className="text-right">{formatCurrency(item.totalPrice)}</td>
-                  </tr>
-                  {item.variations?.length > 0 && (
-                    <tr>
-                      <td colSpan={3} className="text-[10px] text-gray-600 py-0">
-                        Options: {item.variations.map(v => `${v.type}: ${v.value}`).join(', ')}
-                      </td>
-                    </tr>
-                  )}
-                  {item.notes && (
-                    <tr>
-                      <td colSpan={3} className="text-[10px] text-gray-600 py-0">
-                        Notes: {item.notes}
-                      </td>
-                    </tr>
-                  )}
-                </React.Fragment>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Totals */}
-        <div className="border-t border-black pt-2">
-          <div className="flex justify-between text-[11px]">
-            <strong>Subtotal:</strong>
-            <span>{formatCurrency(order.totalAmount / 1.05)}</span>
-          </div>
-          <div className="flex justify-between text-[11px]">
-            <strong>VAT (5%):</strong>
-            <span>{formatCurrency(order.totalAmount - (order.totalAmount / 1.05))}</span>
-          </div>
-          <div className="flex justify-between font-bold mt-1 text-[12px]">
-            <strong>Total:</strong>
-            <span>{formatCurrency(order.totalAmount)}</span>
-          </div>
-          <div className="flex justify-between text-[11px] mt-1">
-            <strong>Paid Amount:</strong>
-            <span>{formatCurrency(order.paidAmount)}</span>
-          </div>
-          <div className="flex justify-between text-[11px]">
-            <strong>Change:</strong>
-            <span>{formatCurrency(order.paidAmount - order.totalAmount)}</span>
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="text-center mt-4 text-[11px]">
-          <p>Thank you for choosing Pinewraps!</p>
-          <p>Visit us again soon.</p>
-        </div>
-      </div>
+const generateReceiptContent = (order: Order): string => `
+  <div class="receipt">
+    <div class="header">
+      <h1 style="font-size: 16px; margin: 0;">${centerText('PINEWRAPS')}</h1>
+      <p style="margin: 5px 0;">${centerText('Your Delicious Food Partner')}</p>
+      <p style="margin: 5px 0;">${centerText('Dubai, UAE')}</p>
+      <p style="margin: 5px 0;">${centerText('Phone: +971 XXXXXXXXX')}</p>
+      <p style="margin: 5px 0; font-size: 10px;">${centerText('TRN: XXXXXXXXXXXXX')}</p>
     </div>
-  );
+    
+    <div class="divider"></div>
+    
+    <div style="margin: 10px 0;">
+      <p style="margin: 2px 0;">${formatLineItem('Order #:', order.orderNumber)}</p>
+      <p style="margin: 2px 0;">${formatLineItem('Date:', format(new Date(order.createdAt), 'dd/MM/yyyy HH:mm'))}</p>
+      <p style="margin: 2px 0;">${formatLineItem('Customer:', order.customerName)}</p>
+      <p style="margin: 2px 0;">${formatLineItem('Phone:', order.customerPhone)}</p>
+      ${order.customerEmail ? `<p style="margin: 2px 0;">${formatLineItem('Email:', order.customerEmail)}</p>` : ''}
+      <p style="margin: 2px 0;">${formatLineItem('Status:', order.status)}</p>
+      <p style="margin: 2px 0;">${formatLineItem('Payment:', order.paymentMethod)}</p>
+      
+      ${order.deliveryMethod ? `
+        <div class="divider"></div>
+        <div style="margin: 10px 0;">
+          <p style="margin: 2px 0; font-weight: bold;">${order.deliveryMethod === 'DELIVERY' ? 'Delivery Details' : 'Pickup Details'}</p>
+          ${order.deliveryMethod === 'DELIVERY' ? `
+            <p style="margin: 2px 0;">${formatLineItem('Date:', format(new Date(order.deliveryDate || ''), 'dd/MM/yyyy'))}</p>
+            <p style="margin: 2px 0;">${formatLineItem('Time:', order.deliveryTimeSlot || '')}</p>
+            <p style="margin: 2px 0;">${formatLineItem('Address:', order.streetAddress || '')}</p>
+            ${order.apartment ? `<p style="margin: 2px 0;">${formatLineItem('Apartment:', order.apartment)}</p>` : ''}
+            <p style="margin: 2px 0;">${formatLineItem('City:', order.city || '')}</p>
+            <p style="margin: 2px 0;">${formatLineItem('Emirate:', order.emirate || '')}</p>
+            ${order.deliveryInstructions ? `<p style="margin: 2px 0;">${formatLineItem('Instructions:', order.deliveryInstructions)}</p>` : ''}
+            <p style="margin: 2px 0;">${formatLineItem('Delivery Charge:', formatCurrency(order.deliveryCharge || 0))}</p>
+          ` : `
+            <p style="margin: 2px 0;">${formatLineItem('Date:', format(new Date(order.pickupDate || ''), 'dd/MM/yyyy'))}</p>
+            <p style="margin: 2px 0;">${formatLineItem('Time:', order.pickupTimeSlot || '')}</p>
+          `}
+        </div>
+      ` : ''}
+    </div>
+    
+    <div class="divider"></div>
+    
+    <table>
+      <thead>
+        <tr>
+          <th>Item</th>
+          <th style="text-align: center;">Qty</th>
+          <th style="text-align: right;">Price</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${order.items.map((item) => `
+          <tr>
+            <td>${item.productName}</td>
+            <td style="text-align: center;">${item.quantity}</td>
+            <td style="text-align: right;">${formatCurrency(item.totalPrice)}</td>
+          </tr>
+          ${item.variations.map(variation => `
+            <tr>
+              <td colspan="3" class="variation">- ${variation.type}: ${variation.value}</td>
+            </tr>
+          `).join('')}
+          ${item.notes ? `
+            <tr>
+              <td colspan="3" class="notes">Note: ${item.notes}</td>
+            </tr>
+          ` : ''}
+        `).join('')}
+      </tbody>
+    </table>
+    
+    <div class="divider"></div>
+    
+    <div style="margin: 10px 0;">
+      <p style="margin: 2px 0;">${formatLineItem('Subtotal:', formatCurrency(order.totalAmount))}</p>
+      ${order.deliveryMethod === 'DELIVERY' ? `<p style="margin: 2px 0;">${formatLineItem('Delivery:', formatCurrency(order.deliveryCharge || 0))}</p>` : ''}
+      <p style="margin: 2px 0; font-weight: bold;">${formatLineItem('Total:', formatCurrency(order.totalAmount + (order.deliveryCharge || 0)))}</p>
+      <p style="margin: 2px 0;">${formatLineItem('Payment Method:', order.paymentMethod)}</p>
+      <p style="margin: 2px 0;">${formatLineItem('Amount Paid:', formatCurrency(order.paidAmount))}</p>
+      ${order.changeAmount ? `<p style="margin: 2px 0;">${formatLineItem('Change:', formatCurrency(order.changeAmount))}</p>` : ''}
+    </div>
+    
+    ${order.notes ? `
+      <div style="margin: 10px 0;" class="notes">
+        <strong>Order Notes:</strong> ${order.notes}
+      </div>
+    ` : ''}
+    
+    <div class="divider"></div>
+    
+    <div class="center" style="margin-top: 10px;">
+      <p style="margin: 5px 0;">${centerText('Thank you for choosing Pinewraps!')}</p>
+      <p style="margin: 5px 0;">${centerText('Visit us again soon')}</p>
+      <p style="margin: 5px 0;">${centerText('www.pinewraps.com')}</p>
+    </div>
+  </div>
+`;
+
+const OrderReceipt: React.FC<OrderReceiptProps> = ({ order, onClose }) => {
+  useEffect(() => {
+    if (order) {
+      console.log('Order data for receipt:', order);
+      setTimeout(() => {
+        withErrorHandling(
+          async () => {
+            await printContent(
+              generateReceiptContent(order),
+              `Order Receipt #${order.orderNumber}`,
+              receiptStyles
+            );
+          },
+          'Failed to print receipt'
+        );
+      }, 500);
+    }
+  }, [order]);
+
+  return null; // Component doesn't need to render anything
 };
 
 export default OrderReceipt;

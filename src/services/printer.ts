@@ -1,8 +1,121 @@
-interface PrinterConfig {
-  type: 'thermal' | 'regular';
-  width: number; // in mm
-  characterWidth: number;
-}
+// Printer configuration
+export const PRINTER_CONFIG = {
+  type: 'thermal' as const,
+  width: 80, // mm
+  characterWidth: 48,
+  defaultFont: 'Courier New',
+  fontSize: '12px',
+  lineHeight: 1.2,
+};
+
+// Text formatting utilities
+export const centerText = (text: string): string => {
+  const padding = Math.max(0, Math.floor((PRINTER_CONFIG.characterWidth - text.length) / 2));
+  return ' '.repeat(padding) + text;
+};
+
+export const formatLineItem = (description: string, amount: string): string => {
+  const space = PRINTER_CONFIG.characterWidth - description.length - amount.length;
+  if (space < 1) return description + amount;
+  return description + ' '.repeat(space) + amount;
+};
+
+export const formatCurrency = (amount: number): string => {
+  return new Intl.NumberFormat('en-AE', {
+    style: 'currency',
+    currency: 'AED'
+  }).format(amount);
+};
+
+// Base printer styles
+export const getBasePrinterStyles = () => `
+  @page {
+    size: ${PRINTER_CONFIG.width}mm auto;
+    margin: 0;
+  }
+  body {
+    font-family: '${PRINTER_CONFIG.defaultFont}', monospace;
+    margin: 0;
+    padding: 10mm;
+    color: black !important;
+    background: white !important;
+    font-size: ${PRINTER_CONFIG.fontSize};
+    line-height: ${PRINTER_CONFIG.lineHeight};
+    width: ${PRINTER_CONFIG.width}mm;
+  }
+  * {
+    color: black !important;
+    background: white !important;
+    print-color-adjust: exact !important;
+    -webkit-print-color-adjust: exact !important;
+  }
+  @media print {
+    body {
+      width: ${PRINTER_CONFIG.width}mm;
+    }
+    @page {
+      size: ${PRINTER_CONFIG.width}mm auto;
+      margin: 0;
+    }
+  }
+`;
+
+// Generic print function
+export const printContent = async (
+  content: string,
+  title: string,
+  additionalStyles: string = ''
+): Promise<void> => {
+  try {
+    const printWindow = window.open('', '_blank', 'width=800,height=600');
+    if (!printWindow) {
+      throw new Error('Failed to open print window');
+    }
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>${title}</title>
+          <style>
+            ${getBasePrinterStyles()}
+            ${additionalStyles}
+          </style>
+        </head>
+        <body>${content}</body>
+      </html>
+    `);
+
+    printWindow.document.close();
+
+    // Wait for content to load then print
+    await new Promise((resolve) => setTimeout(resolve, 250));
+
+    try {
+      printWindow.focus();
+      printWindow.print();
+      printWindow.close();
+    } catch (error) {
+      console.error('Print operation failed:', error);
+      throw error;
+    }
+  } catch (error) {
+    console.error('Printing failed:', error);
+    throw error;
+  }
+};
+
+// Error handling wrapper
+export const withErrorHandling = async <T>(
+  operation: () => Promise<T>,
+  errorMessage: string
+): Promise<T> => {
+  try {
+    return await operation();
+  } catch (error) {
+    console.error(errorMessage, error);
+    throw new Error(errorMessage);
+  }
+};
 
 interface OrderItem {
   name: string;
@@ -23,66 +136,10 @@ interface Order {
 }
 
 class ReceiptPrinter {
-  private config: PrinterConfig;
-  private defaultConfig: PrinterConfig = {
-    type: 'thermal',
-    width: 80,
-    characterWidth: 48,
-  };
+  private config: typeof PRINTER_CONFIG;
 
-  constructor(config?: Partial<PrinterConfig>) {
-    this.config = { ...this.defaultConfig, ...config };
-  }
-
-  private centerText(text: string): string {
-    const padding = Math.max(0, Math.floor((this.config.characterWidth - text.length) / 2));
-    return ' '.repeat(padding) + text;
-  }
-
-  private formatCurrency(amount: number): string {
-    return `$${amount.toFixed(2)}`;
-  }
-
-  private formatLineItem(description: string, amount: string): string {
-    const space = this.config.characterWidth - description.length - amount.length;
-    if (space < 1) return description + amount;
-    return description + ' '.repeat(space) + amount;
-  }
-
-  private async sendToPrinter(content: string): Promise<void> {
-    try {
-      // Implementation will depend on the specific printer hardware and driver
-      // This is a mock implementation
-      if (window.navigator.printing) {
-        // Use Web Printing API when available
-        console.log('Sending to printer:', content);
-      } else {
-        // Fallback to showing print dialog
-        const printWindow = window.open('', 'PRINT', 'height=600,width=800');
-        if (printWindow) {
-          printWindow.document.write(`
-            <html>
-              <head>
-                <title>Receipt</title>
-                <style>
-                  body { font-family: monospace; white-space: pre; }
-                </style>
-              </head>
-              <body>
-                ${content}
-              </body>
-            </html>
-          `);
-          printWindow.document.close();
-          printWindow.focus();
-          printWindow.print();
-          printWindow.close();
-        }
-      }
-    } catch (error) {
-      console.error('Printing failed:', error);
-      throw new Error('Failed to print receipt');
-    }
+  constructor() {
+    this.config = PRINTER_CONFIG;
   }
 
   public async printReceipt(order: Order): Promise<void> {
@@ -90,51 +147,48 @@ class ReceiptPrinter {
     const divider = '-'.repeat(this.config.characterWidth);
 
     // Header
-    lines.push(this.centerText('PINEWRAPS'));
-    lines.push(this.centerText('Modern Mediterranean Cuisine'));
+    lines.push(centerText('PINEWRAPS'));
+    lines.push(centerText('Modern Mediterranean Cuisine'));
+    lines.push(centerText('Tel: +971 123456789'));
+    lines.push(centerText('Dubai, UAE'));
     lines.push(divider);
 
     // Order info
-    lines.push(`Order: ${order.orderNumber}`);
+    lines.push(`Order: #${order.orderNumber}`);
     lines.push(`Date: ${order.timestamp.toLocaleString()}`);
     if (order.table) lines.push(`Table: ${order.table}`);
     if (order.customerName) lines.push(`Customer: ${order.customerName}`);
     lines.push(divider);
 
     // Items
-    order.items.forEach((item) => {
-      const itemTotal = this.formatCurrency(item.price * item.quantity);
-      lines.push(
-        this.formatLineItem(
-          `${item.quantity}x ${item.name}`,
-          itemTotal
-        )
-      );
-      
+    lines.push('ITEMS');
+    order.items.forEach(item => {
+      lines.push(formatLineItem(
+        `${item.quantity}x ${item.name}`,
+        formatCurrency(item.price * item.quantity)
+      ));
       if (item.modifiers?.length) {
-        item.modifiers.forEach((modifier) => {
-          lines.push(`  - ${modifier}`);
+        item.modifiers.forEach(mod => {
+          lines.push(`  - ${mod}`);
         });
       }
     });
-
     lines.push(divider);
 
     // Totals
-    lines.push(this.formatLineItem('Subtotal:', this.formatCurrency(order.subtotal)));
-    lines.push(this.formatLineItem('Tax:', this.formatCurrency(order.tax)));
-    lines.push(this.formatLineItem('Total:', this.formatCurrency(order.total)));
+    lines.push(formatLineItem('Subtotal:', formatCurrency(order.subtotal)));
+    if (order.tax) {
+      lines.push(formatLineItem('Tax:', formatCurrency(order.tax)));
+    }
+    lines.push(formatLineItem('Total:', formatCurrency(order.total)));
+    lines.push(divider);
 
     // Footer
-    lines.push(divider);
-    lines.push(this.centerText('Thank you for dining with us!'));
-    lines.push(this.centerText('Please come again'));
+    lines.push(centerText('Thank you for dining with us!'));
+    lines.push(centerText('Please visit us again'));
+    lines.push(centerText('www.pinewraps.com'));
 
-    // Add some blank lines at the end for paper cutting
-    lines.push('\n\n\n');
-
-    const content = lines.join('\n');
-    await this.sendToPrinter(content);
+    await printContent(lines.join('\n'), 'Receipt');
   }
 }
 

@@ -4,13 +4,14 @@ import React from 'react';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Header from '@/components/header/header';
-import { Search, RefreshCcw, Clock, CheckCircle, XCircle, RotateCcw } from 'lucide-react';
+import { Search, RefreshCcw, Clock, CheckCircle, XCircle, RotateCcw, Truck, Store } from 'lucide-react';
 import { format } from 'date-fns';
 import { apiMethods } from '@/services/api';
 import { toast } from 'react-hot-toast';
 import { getAuth, onAuthStateChanged } from 'firebase/auth';
 import OrderReceipt from '@/components/receipt/OrderReceipt';
 import Cookies from 'js-cookie';
+import { nanoid } from 'nanoid';
 
 interface OrderItem {
   productId: string;
@@ -40,6 +41,17 @@ interface Order {
   paymentMethod: 'CASH' | 'CARD';
   items: OrderItem[];
   notes?: string;
+  deliveryMethod?: 'DELIVERY' | 'PICKUP';
+  deliveryDate?: string;
+  deliveryTimeSlot?: string;
+  deliveryCharge?: number;
+  deliveryInstructions?: string;
+  streetAddress?: string;
+  apartment?: string;
+  emirate?: string;
+  city?: string;
+  pickupDate?: string;
+  pickupTimeSlot?: string;
 }
 
 const statusColors = {
@@ -62,6 +74,11 @@ const statusLabels = {
   KITCHEN_PROCESSING: 'In Kitchen',
   KITCHEN_READY: 'Kitchen Ready',
   COMPLETED: 'Completed'
+} as const;
+
+const deliveryMethodColors = {
+  DELIVERY: { bg: 'bg-orange-100', text: 'text-orange-800', icon: Truck },
+  PICKUP: { bg: 'bg-indigo-100', text: 'text-indigo-800', icon: Store }
 } as const;
 
 const OrdersPage = () => {
@@ -116,49 +133,55 @@ const OrdersPage = () => {
   }, [isAuthenticated, selectedStatus]);
 
   const fetchOrders = async () => {
+    setLoading(true);
+    setError(null);
     try {
-      setLoading(true);
-      setError(null);
       console.log('Fetching orders...');
       
       // Get fresh token before fetching orders
       const auth = getAuth();
       const user = auth.currentUser;
-      if (user) {
-        const token = await user.getIdToken(true);
-        Cookies.set('firebase-token', token, {
-          expires: 7,
-          secure: process.env.NODE_ENV === 'production',
-          sameSite: 'strict'
-        });
+      if (!user) {
+        throw new Error('No authenticated user');
       }
       
-      // Fetch all orders without any status filter
+      const token = await user.getIdToken(true);
+      Cookies.set('firebase-token', token, {
+        expires: 7,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict'
+      });
+      
       const response = await apiMethods.pos.getOrders();
       
-      console.log('Orders response:', response);
+      console.log('Orders API Response:', response);
       
       if (response.success && Array.isArray(response.data)) {
-        const sortedOrders = [...response.data].sort((a: Order, b: Order) => {
-          // Sort by date descending
+        // Transform the data to match the Order interface
+        const transformedOrders = response.data.map((order: any) => ({
+          ...order,
+          items: order.items.map((item: any) => ({
+            ...item,
+            variations: Array.isArray(item.variations) ? item.variations : [],
+            totalPrice: Number(item.totalPrice) || 0
+          })),
+          totalAmount: Number(order.totalAmount) || 0,
+          paidAmount: Number(order.paidAmount) || 0
+        }));
+        
+        console.log('Transformed orders:', transformedOrders);
+        
+        const sortedOrders = [...transformedOrders].sort((a: Order, b: Order) => {
           return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
         });
+        
         setOrders(sortedOrders);
-      } else if (response.success) {
-        // If data is not an array but request was successful
-        console.error('Unexpected response format:', response);
-        setError('Unexpected response format from server');
-        toast.error('Unexpected response format from server');
       } else {
-        console.error('Failed to fetch orders:', response.message);
-        setError(response.message || 'Failed to fetch orders');
-        toast.error(response.message || 'Failed to fetch orders');
+        throw new Error(response.message || 'Failed to fetch orders');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching orders:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Failed to fetch orders';
-      setError(errorMessage);
-      toast.error(errorMessage);
+      setError(error.message || 'Failed to fetch orders');
     } finally {
       setLoading(false);
     }
@@ -220,13 +243,30 @@ const OrdersPage = () => {
 
   const handleReorder = async (order: Order) => {
     try {
-      // Add items to cart in localStorage
+      // Format cart items to match the POS cart structure
       const cartItems = order.items.map(item => ({
-        ...item,
-        id: item.productId,
-        name: item.productName
+        id: nanoid(), // Generate a new cart item ID
+        product: {
+          id: item.productId,
+          name: item.productName,
+          basePrice: item.totalPrice / item.quantity, // Calculate unit price
+          status: 'ACTIVE',
+          images: item.designImages || []
+        },
+        quantity: item.quantity,
+        selectedVariations: item.variations?.map(v => ({
+          id: nanoid(), // Generate ID for variation
+          type: v.type,
+          value: v.value,
+          priceAdjustment: 0 // Since we don't have this info from the order
+        })) || [],
+        totalPrice: item.totalPrice,
+        notes: item.notes || ''
       }));
-      localStorage.setItem('cart', JSON.stringify(cartItems));
+
+      // Save to localStorage
+      localStorage.setItem('pos-cart', JSON.stringify(cartItems));
+      
       toast.success('Items added to cart');
       router.push('/pos');
     } catch (error) {
@@ -238,6 +278,11 @@ const OrdersPage = () => {
   const handleRefresh = async () => {
     await fetchOrders();
     toast.success('Orders refreshed');
+  };
+
+  const handlePrintReceipt = (order: Order) => {
+    console.log('Printing order:', order); // Debug log
+    setSelectedOrder(order);
   };
 
   if (!isAuthenticated) {
@@ -327,6 +372,16 @@ const OrdersPage = () => {
                           })()}
                           {statusLabels[order.status]}
                         </div>
+                        {/* Add delivery method badge */}
+                        {order.deliveryMethod && (
+                          <div className={`px-3 py-1 rounded-full text-sm ${deliveryMethodColors[order.deliveryMethod].bg} ${deliveryMethodColors[order.deliveryMethod].text} flex items-center gap-1`}>
+                            {(() => {
+                              const Icon = deliveryMethodColors[order.deliveryMethod].icon;
+                              return <Icon className="h-4 w-4" />;
+                            })()}
+                            {order.deliveryMethod}
+                          </div>
+                        )}
                       </div>
                       
                       <div className="text-sm text-gray-600 space-y-1">
@@ -334,6 +389,38 @@ const OrdersPage = () => {
                         <p>Phone: {order.customerPhone}</p>
                         {order.customerEmail && <p>Email: {order.customerEmail}</p>}
                         <p>Date: {format(new Date(order.createdAt), 'PPpp')}</p>
+                        
+                        {/* Update delivery/pickup information styling */}
+                        {order.deliveryMethod && (
+                          <div className="mt-2 border-t pt-2">
+                            <p className={`font-medium flex items-center gap-1 ${deliveryMethodColors[order.deliveryMethod].text}`}>
+                              {(() => {
+                                const Icon = deliveryMethodColors[order.deliveryMethod].icon;
+                                return <Icon className="h-4 w-4" />;
+                              })()}
+                              {order.deliveryMethod === 'DELIVERY' ? 'Delivery Details' : 'Pickup Details'}
+                            </p>
+                            {order.deliveryMethod === 'DELIVERY' ? (
+                              <>
+                                <p>Date: {format(new Date(order.deliveryDate || ''), 'PP')}</p>
+                                <p>Time: {order.deliveryTimeSlot}</p>
+                                <p>Address: {order.streetAddress}</p>
+                                {order.apartment && <p>Apartment: {order.apartment}</p>}
+                                <p>City: {order.city}</p>
+                                <p>Emirate: {order.emirate}</p>
+                                {order.deliveryInstructions && (
+                                  <p>Instructions: {order.deliveryInstructions}</p>
+                                )}
+                                <p className="font-medium">Delivery Charge: AED {(order.deliveryCharge || 0).toFixed(2)}</p>
+                              </>
+                            ) : (
+                              <>
+                                <p>Date: {order.pickupDate ? format(new Date(order.pickupDate), 'PP') : 'Not specified'}</p>
+                                <p>Time: {order.pickupTimeSlot || 'Not specified'}</p>
+                              </>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
                     
@@ -381,11 +468,11 @@ const OrdersPage = () => {
                   
                   <div className="flex gap-2 mt-4 pt-4 border-t">
                     <button
-                      onClick={() => setSelectedOrder(order)}
+                      onClick={() => handlePrintReceipt(order)}
                       className="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 flex items-center justify-center gap-2"
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2-4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
                       </svg>
                       Print
                     </button>
@@ -394,7 +481,9 @@ const OrdersPage = () => {
                       onClick={() => handleReorder(order)}
                       className="flex-1 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500 flex items-center justify-center gap-2"
                     >
-                      <RotateCcw className="h-4 w-4" />
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
                       Reorder
                     </button>
                   </div>

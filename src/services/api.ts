@@ -3,6 +3,7 @@
 import axios from 'axios';
 import { getAuth, signInWithEmailAndPassword } from 'firebase/auth';
 import Cookies from 'js-cookie';
+import { nanoid } from 'nanoid';
 
 const baseURL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
@@ -120,7 +121,7 @@ export const authApi = {
   
   resetPassword: async (email: string) => {
     try {
-      const response = await api.post('/api/pos-auth/reset-password', { email });
+      const response = await api.post('/api/auth/reset-password', { email });
       return response.data;
     } catch (error: any) {
       console.error('Reset password error:', error.response?.data || error.message);
@@ -128,12 +129,12 @@ export const authApi = {
     }
   },
   pinLogin: async (pin: string) => 
-    api.post('/api/pos-auth/pin-login', { pin }),
+    api.post('/api/auth/pin-login', { pin }),
   verify: async () => {
-    return api.post('/api/pos-auth/verify');
+    return api.post('/api/auth/verify');
   },
   logout: async () => {
-    return api.post('/api/pos-auth/logout');
+    return api.post('/api/auth/logout');
   }
 };
 
@@ -251,7 +252,6 @@ export const apiMethods = {
         console.error('Error fetching categories:', error);
         return {
           success: false,
-          message: error.message || 'Failed to fetch categories',
           data: []
         };
       }
@@ -306,13 +306,31 @@ export const apiMethods = {
     // Get products
     getProducts: async () => {
       try {
-        const response = await api.get<APIResponse<Product[]>>('/api/pos/products');
-        if (!response.data.success) {
-          throw new Error(response.data.message || 'Failed to fetch products');
+        const [productsResponse, customProductsResponse] = await Promise.all([
+          api.get<APIResponse<Product[]>>('/api/pos/products'),
+          api.get<APIResponse<CustomProductResponse[]>>('/api/pos/custom-products')
+        ]);
+
+        if (!productsResponse.data.success) {
+          throw new Error(productsResponse.data.message || 'Failed to fetch products');
         }
+
+        // Combine regular and custom products
+        const regularProducts = productsResponse.data.data;
+        const customProducts = customProductsResponse.data.success ? customProductsResponse.data.data.map(cp => ({
+          ...cp,
+          id: `custom_${cp.id}`, // Prefix custom product IDs
+          images: cp.designImages.map(img => ({
+            id: nanoid(),
+            url: img.url,
+            alt: img.comment || '',
+            isPrimary: true
+          }))
+        })) : [];
+
         return {
           success: true,
-          data: response.data.data
+          data: [...regularProducts, ...customProducts]
         };
       } catch (error: any) {
         console.error('Error fetching products:', error);
@@ -321,6 +339,17 @@ export const apiMethods = {
           message: error.response?.data?.message || 'Failed to fetch products',
           data: []
         };
+      }
+    },
+    
+    // Get a custom product
+    getCustomProduct: async (id: string): Promise<APIResponse<CustomProductResponse>> => {
+      try {
+        const response = await api.get(`/api/pos/custom-products/${id}`);
+        return response.data;
+      } catch (error: any) {
+        console.error('Get custom product error:', error.response?.data || error.message);
+        throw error;
       }
     },
     

@@ -45,17 +45,53 @@ export default function POSPage() {
   // State for UI
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [cart, setCart] = useState<CartItem[]>(() => {
-    // Initialize cart from localStorage if available
-    if (typeof window !== 'undefined') {
-      const savedCart = localStorage.getItem('pos-cart');
-      return savedCart ? JSON.parse(savedCart) : [];
-    }
-    return [];
-  });
+  const [cart, setCart] = useState<CartItem[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [isCheckoutModalOpen, setIsCheckoutModalOpen] = useState(false);
   const [isCustomProductModalOpen, setIsCustomProductModalOpen] = useState(false);
+
+  // Check for openCheckoutModal flag
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const shouldOpenCheckout = localStorage.getItem('openCheckoutModal');
+      if (shouldOpenCheckout === 'true') {
+        setIsCheckoutModalOpen(true);
+        localStorage.removeItem('openCheckoutModal');
+      }
+    }
+  }, []);
+
+  // Load cart from localStorage on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const savedCart = localStorage.getItem('pos-cart');
+      if (savedCart) {
+        try {
+          const parsedCart = JSON.parse(savedCart);
+          setCart(parsedCart);
+        } catch (error) {
+          console.error('Error parsing cart:', error);
+          toast.error('Error loading cart');
+        }
+      }
+    }
+  }, []);
+
+  // Initialize cart from localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const savedCart = localStorage.getItem('cart');
+      if (savedCart) {
+        try {
+          const parsedCart = JSON.parse(savedCart);
+          setCart(parsedCart);
+          localStorage.removeItem('cart'); // Clear the reorder cart after loading
+        } catch (error) {
+          console.error('Error parsing cart:', error);
+        }
+      }
+    }
+  }, []);
 
   // Persist cart to localStorage whenever it changes
   useEffect(() => {
