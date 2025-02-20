@@ -75,6 +75,16 @@ export default function Header() {
               >
                 Kitchen Display
               </Link>
+              <Link
+                href="/design"
+                className={`text-sm font-medium ${
+                  pathname === "/design"
+                    ? "text-black"
+                    : "text-gray-600 hover:text-black"
+                }`}
+              >
+                Design Display
+              </Link>
             </nav>
           </div>
 
