@@ -5,7 +5,7 @@ import { useAuth } from '@/providers/auth-provider';
 import { useRouter } from 'next/navigation';
 import { useSearchParams } from 'next/navigation';
 import { Search, X, Minus, Plus } from 'lucide-react';
-import { apiMethods, type Product, type Category, DesignImage, type APIResponse } from '@/services/api';
+import { apiMethods, type Product, type Category, CustomImage, type APIResponse } from '@/services/api';
 import toast from 'react-hot-toast';
 import ProductDetailsModal from '@/components/pos/product-details-modal';
 import CheckoutModal from '@/components/pos/checkout-modal';
@@ -13,8 +13,6 @@ import Header from '@/components/header/header';
 import { useQuery } from '@tanstack/react-query';
 import Image from 'next/image';
 import { nanoid } from 'nanoid';
-import CustomProductModal from '@/components/pos/custom-order-modal';
-import CartItemImages from '@/components/pos/cart-item-images';
 
 interface CartItem {
   id: string;
@@ -24,6 +22,10 @@ interface CartItem {
     basePrice: number;
     status: string;
     images: any[];
+    allowCustomPrice?: boolean;
+    requiresDesign?: boolean;
+    requiresKitchen?: boolean;
+    allowCustomImages?: boolean;
   };
   quantity: number;
   selectedVariations: Array<{
@@ -34,6 +36,11 @@ interface CartItem {
   }>;
   totalPrice: number;
   notes?: string;
+  customImages?: Array<{
+    file?: File;
+    url?: string;
+    comment: string;
+  }>;
 }
 
 export default function POSPage() {
@@ -48,7 +55,6 @@ export default function POSPage() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [isCheckoutModalOpen, setIsCheckoutModalOpen] = useState(false);
-  const [isCustomProductModalOpen, setIsCustomProductModalOpen] = useState(false);
 
   // Check for openCheckoutModal flag
   useEffect(() => {
@@ -114,46 +120,6 @@ export default function POSPage() {
     }
   }, [user, authLoading, router]);
 
-  // Handle custom order button click
-
-  // Handle closing the custom product modal
-  const handleCloseCustomModal = () => {
-    setIsCustomProductModalOpen(false);
-    // Remove the custom parameter from URL
-    const url = new URL(window.location.href);
-    url.searchParams.delete('custom');
-    window.history.pushState({}, '', url);
-  };
-
-  // Handle browser back/forward
-  useEffect(() => {
-    const handlePopState = () => {
-      const customParam = new URL(window.location.href).searchParams.get('custom');
-      setIsCustomProductModalOpen(customParam === 'true');
-    };
-
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
-
-  // Handle URL parameter for custom modal
-  useEffect(() => {
-    const custom = searchParams.get('custom');
-    setIsCustomProductModalOpen(custom === 'true');
-  }, [searchParams]);
-
-  // Handle fullscreen
-
-  // Update fullscreen state on change
-  useEffect(() => {
-    const handleFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement);
-    };
-
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
-    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
-  }, []);
-
   // Fetch products with category filter
   const { data: productsData, isLoading: isProductsLoading } = useQuery({
     queryKey: ['products', selectedCategory],
@@ -180,7 +146,7 @@ export default function POSPage() {
     queryFn: async () => {
       const response = await apiMethods.products.getCategories();
       if (!response.success) {
-        throw new Error(response.message || 'Failed to fetch categories');
+        throw new Error(response.message ?? 'Failed to fetch categories');
       }
       return response;
     },
@@ -190,7 +156,7 @@ export default function POSPage() {
   // Add "All Products" category and filter active categories
   const categories = useMemo(() => {
     if (!categoriesResponse?.success) {
-      console.log('No valid categories response:', categoriesResponse);
+      console.log('No valid categories response:', categoriesResponse?.message ?? 'Unknown error');
       return [{ id: 'all', name: 'All Products', description: null, isActive: true }];
     }
 
@@ -206,23 +172,28 @@ export default function POSPage() {
     ];
   }, [categoriesResponse]);
 
-  // Debug logging
-  useEffect(() => {
-    if (categoriesResponse) {
-      console.log('Categories Response:', categoriesResponse);
-      console.log('Categories Data:', categoriesResponse.data);
-      console.log('Processed Categories:', categories);
-    }
-  }, [categoriesResponse, categories]);
+  // Filter products based on category and search
+  const filteredProducts = useMemo(() => {
+    if (!productsData) return [];
 
-  // Filter products based on search query and category
-  const filteredProducts = productsData?.filter(product => {
-    const matchesCategory = !selectedCategory || selectedCategory === 'all' || product.categoryId === selectedCategory;
-    const matchesSearch = !searchQuery || 
-      product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      product.description?.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesCategory && matchesSearch && product.status === 'ACTIVE';
-  }) || [];
+    let filtered = productsData;
+
+    // Filter by category
+    if (selectedCategory && selectedCategory !== 'all') {
+      filtered = filtered.filter(product => product.categoryId === selectedCategory);
+    }
+
+    // Filter by search query
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(product => 
+        product.name.toLowerCase().includes(query) ||
+        product.sku.toLowerCase().includes(query)
+      );
+    }
+
+    return filtered;
+  }, [productsData, selectedCategory, searchQuery]);
 
   // Calculate price range for a product
   const getProductPriceDisplay = (product: Product) => {
@@ -250,34 +221,119 @@ export default function POSPage() {
     return `AED ${priceRange.min.toFixed(2)} - ${priceRange.max.toFixed(2)}`;
   };
 
-  // If still loading or no user, show loading state
-  if (authLoading || !user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-white">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-gray-900"></div>
-      </div>
-    );
-  }
-
-
-  const handleAddToOrder = (orderItem: Omit<CartItem, 'id'>) => {
-    const cartItemId = nanoid();
-    setCart(prevCart => [
-      ...prevCart,
-      {
-        ...orderItem,
-        id: cartItemId,
-        totalPrice: (orderItem.product.basePrice + (orderItem.selectedVariations?.reduce((sum, v) => sum + (v.priceAdjustment || 0), 0) || 0)) * orderItem.quantity
-      }
-    ]);
-    toast.success('Added to order');
+  // Calculate total price for variations
+  const calculateTotalPrice = (basePrice: number, quantity: number, variations: Array<{ priceAdjustment: number }>) => {
+    const variationTotal = variations.reduce((total, variation) => total + (variation.priceAdjustment || 0), 0);
+    return (basePrice + variationTotal) * quantity;
   };
 
+  // Handle adding product to cart from product details modal
+  const handleAddToOrder = (orderItem: {
+    product: Product;
+    quantity: number;
+    selectedVariations: Array<{
+      id: string;
+      type: string;
+      value: string;
+      priceAdjustment: number;
+    }>;
+    notes?: string;
+    customImages?: Array<{
+      file?: File;
+      url?: string;
+      comment: string;
+    }>;
+    totalPrice: number;
+  }) => {
+    const cartItem: CartItem = {
+      id: nanoid(),
+      product: {
+        id: orderItem.product.id,
+        name: orderItem.product.name,
+        basePrice: orderItem.product.basePrice,
+        status: orderItem.product.status,
+        images: orderItem.product.images || [],
+        allowCustomPrice: orderItem.product.allowCustomPrice,
+        requiresDesign: orderItem.product.requiresDesign,
+        requiresKitchen: orderItem.product.requiresKitchen,
+        allowCustomImages: orderItem.product.allowCustomImages
+      },
+      quantity: orderItem.quantity,
+      selectedVariations: orderItem.selectedVariations,
+      totalPrice: orderItem.totalPrice,
+      notes: orderItem.notes,
+      customImages: orderItem.customImages
+    };
+
+    setCart(prevCart => [...prevCart, cartItem]);
+    setSelectedProduct(null); // Close the modal
+    toast.success('Added to cart');
+  };
+
+  // Handle quick add to cart (without opening modal)
+  const handleQuickAddToCart = (product: Product) => {
+    // Only allow quick add for products that don't need customization
+    if (product.allowCustomImages || product.allowCustomPrice || (product.options && product.options.length > 0)) {
+      setSelectedProduct(product);
+      return;
+    }
+
+    const cartItem: CartItem = {
+      id: nanoid(),
+      product: {
+        id: product.id,
+        name: product.name,
+        basePrice: product.basePrice,
+        status: product.status,
+        images: product.images || [],
+        allowCustomPrice: product.allowCustomPrice,
+        requiresDesign: product.requiresDesign,
+        requiresKitchen: product.requiresKitchen,
+        allowCustomImages: product.allowCustomImages
+      },
+      quantity: 1,
+      selectedVariations: [],
+      totalPrice: product.basePrice,
+      customImages: []
+    };
+
+    setCart(prevCart => [...prevCart, cartItem]);
+    toast.success('Added to cart');
+  };
+
+  // Handle adding product to cart
+  const handleAddToCart = (product: Product, quantity: number = 1, variations: any[] = [], notes: string = '') => {
+    const cartItem: CartItem = {
+      id: nanoid(),
+      product: {
+        id: product.id,
+        name: product.name,
+        basePrice: product.basePrice,
+        status: product.status,
+        images: product.images,
+        allowCustomPrice: product.allowCustomPrice,
+        requiresDesign: product.requiresDesign,
+        requiresKitchen: product.requiresKitchen,
+        allowCustomImages: product.allowCustomImages
+      },
+      quantity,
+      selectedVariations: variations,
+      totalPrice: calculateTotalPrice(product.basePrice, quantity, variations),
+      notes,
+      customImages: []
+    };
+
+    setCart(prevCart => [...prevCart, cartItem]);
+    toast.success('Added to cart');
+  };
+
+  // Handle removing from cart
   const handleRemoveFromCart = (itemId: string) => {
     setCart(prevCart => prevCart.filter(item => item.id !== itemId));
-    toast.success('Removed from order');
+    toast.success('Removed from cart');
   };
 
+  // Handle updating quantity
   const handleUpdateQuantity = (itemId: string, newQuantity: number) => {
     if (newQuantity < 1) {
       handleRemoveFromCart(itemId);
@@ -290,37 +346,40 @@ export default function POSPage() {
           ? {
               ...item,
               quantity: newQuantity,
-              totalPrice: (item.totalPrice / item.quantity) * newQuantity
+              totalPrice: calculateTotalPrice(item.product.basePrice, newQuantity, item.selectedVariations)
             }
           : item
       )
     );
   };
 
-  const handleAddCustomProduct = (product: { id: string; name: string; price: number; designImages?: DesignImage[] }) => {
-    const cartItem: CartItem = {
-      id: product.id,
-      product: {
-        id: `custom_${product.id}`, // Prefix with custom_ to identify custom orders
-        name: product.name,
-        basePrice: product.price,
-        status: 'ACTIVE',
-        images: product.designImages?.map(img => ({ 
-          url: img.url || (img.file ? URL.createObjectURL(img.file) : ''),
-          comment: img.comment 
-        })) || []
-      },
-      quantity: 1,
-      selectedVariations: [],
-      totalPrice: product.price
-    };
-
-    setCart([...cart, cartItem]);
-    handleCloseCustomModal();
-  };
-
   // Calculate cart total including variations
   const cartTotal = cart.reduce((total, item) => total + item.totalPrice, 0);
+
+  // Update cart state when checkout modal closes
+  const handleCheckoutComplete = () => {
+    // Clear custom images from memory
+    cart.forEach(item => {
+      if (item.customImages) {
+        item.customImages.forEach(image => {
+          if ('previewUrl' in image && image.previewUrl) {
+            URL.revokeObjectURL(image.previewUrl);
+          }
+        });
+      }
+    });
+    setCart([]);
+    localStorage.removeItem('pos-cart');
+  };
+
+  // If still loading or no user, show loading state
+  if (authLoading || !user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-white">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-gray-900"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-white text-black">
@@ -484,9 +543,26 @@ export default function POSPage() {
                               Note: {item.notes}
                             </div>
                           )}
-                          {/* Show design images for custom products */}
-                          {item.product.id.startsWith('custom_') && (
-                            <CartItemImages images={item.product.images || []} compact />
+                          {/* Show custom images if this is a custom product that requires design */}
+                          {item.product.requiresDesign && item.customImages && item.customImages.length > 0 && (
+                            <div className="mt-2 flex gap-2 overflow-x-auto">
+                              {item.customImages.map((image, index) => (
+                                <div key={index} className="relative min-w-[80px] h-[80px] rounded-lg overflow-hidden bg-gray-50">
+                                  {image.url ? (
+                                    <Image
+                                      src={image.url}
+                                      alt={`Design ${index + 1}`}
+                                      fill
+                                      className="object-cover"
+                                    />
+                                  ) : (
+                                    <div className="w-full h-full flex items-center justify-center text-gray-400 text-sm">
+                                      Uploading...
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
                           )}
                         </div>
                         <div className="text-right">
@@ -561,14 +637,9 @@ export default function POSPage() {
         isOpen={isCheckoutModalOpen}
         onClose={() => setIsCheckoutModalOpen(false)}
         cart={cart}
+        setCart={setCart}
         cartTotal={cartTotal}
-        onCheckoutComplete={() => setCart([])}
-      />
-
-      <CustomProductModal
-        isOpen={isCustomProductModalOpen}
-        onClose={handleCloseCustomModal}
-        onAdd={handleAddCustomProduct}
+        onCheckoutComplete={handleCheckoutComplete}
       />
     </div>
   );

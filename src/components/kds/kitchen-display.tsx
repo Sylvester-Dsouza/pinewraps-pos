@@ -11,11 +11,14 @@ import Lightbox from "yet-another-react-lightbox";
 import "yet-another-react-lightbox/styles.css";
 import Image from 'next/image';
 
-interface DesignImage {
+interface CustomImage {
   url?: string;
-  imageUrl?: string;
   comment?: string;
-  imageNumber: number;
+}
+
+interface VariationOption {
+  name: string;
+  value: string;
 }
 
 type KitchenOrderStatus = 
@@ -35,10 +38,10 @@ interface KitchenOrder {
     id: string;
     productName: string;
     quantity: number;
-    variations: any;
+    variations: Record<string, VariationOption>;
     kitchenNotes?: string;
     designNotes?: string;
-    designImages?: DesignImage[];
+    customImages?: CustomImage[];
     isCustom?: boolean;
     status: KitchenOrderStatus;
   }[];
@@ -319,6 +322,7 @@ export default function KitchenDisplay() {
         // Filter for kitchen-relevant orders only
         const kitchenOrders = response.data.filter((order: any) => 
           order.requiresKitchen || // Orders that need kitchen work
+          order.status === 'PENDING' || // Include pending orders
           (order.requiresDesign && order.status === 'DESIGN_READY') // Design-ready orders waiting for kitchen
         );
 
@@ -326,10 +330,9 @@ export default function KitchenDisplay() {
           ...order,
           items: order.items.map((item: any) => ({
             ...item,
-            designImages: item.customProduct?.designImages?.map((img: any) => ({
-              url: img.imageUrl,
-              comment: img.comment,
-              imageNumber: img.imageNumber
+            customImages: item.customImages?.map((img: any) => ({
+              url: img.url,
+              comment: img.comment
             })) || []
           }))
         }));
@@ -411,7 +414,17 @@ export default function KitchenDisplay() {
 
   const OrderCard = ({ order }: { order: KitchenOrder }) => {
     const [showNotesInput, setShowNotesInput] = useState(false);
-    const [teamNotes, setTeamNotes] = useState("");
+    const [teamNotes, setTeamNotes] = useState('');
+
+    const handleImageClick = (images: CustomImage[], index: number) => {
+      const slides = images.map(img => ({
+        src: img.url,
+        comment: img.comment || ''
+      }));
+      setCurrentImages(slides);
+      setLightboxIndex(index);
+      setLightboxOpen(true);
+    };
 
     const handleStatusUpdate = async (newStatus: KitchenOrderStatus) => {
       if (showNotesInput) {
@@ -439,65 +452,14 @@ export default function KitchenDisplay() {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
-      className="bg-white rounded-xl shadow-sm mb-4 overflow-hidden"
+      className="bg-white rounded-lg shadow-md p-4 mb-4"
     >
-      <div className="p-4">
-        <div className="flex items-center justify-between">
+      <div className="space-y-4">
+        <div className="flex justify-between items-start">
           <div>
-            <h3 className="font-medium">#{order.orderNumber}</h3>
-            <p className="text-sm text-gray-500">{order.customerName}</p>
-          </div>
-          <div className={`px-2 py-1 rounded-full text-xs font-medium flex items-center gap-1 ${
-            order.status === 'COMPLETED' ? 'bg-green-100 text-green-800' :
-            order.status === 'KITCHEN_READY' ? 'bg-yellow-100 text-yellow-800' :
-            order.status === 'KITCHEN_PROCESSING' ? 'bg-blue-100 text-blue-800' :
-            order.status === 'KITCHEN_QUEUE' ? 'bg-blue-100 text-blue-800' :
-            order.status === 'DESIGN_QUEUE' ? 'bg-purple-100 text-purple-800' :
-            order.status === 'DESIGN_PROCESSING' ? 'bg-purple-100 text-purple-800' :
-            order.status === 'DESIGN_READY' ? 'bg-purple-100 text-purple-800' :
-            'bg-gray-100 text-gray-800'
-          }`}>
-            {order.status === 'COMPLETED' ? (
-              <>
-                <CheckCircle2 className="w-3 h-3" />
-                <span>Completed</span>
-              </>
-            ) : order.status === 'KITCHEN_READY' ? (
-              <>
-                <Clock className="w-3 h-3" />
-                <span>Ready</span>
-              </>
-            ) : order.status === 'KITCHEN_PROCESSING' ? (
-              <>
-                <ChefHat className="w-3 h-3" />
-                <span>Processing</span>
-              </>
-            ) : order.status === 'KITCHEN_QUEUE' ? (
-              <>
-                <Timer className="w-3 h-3" />
-                <span>Kitchen Queue</span>
-              </>
-            ) : order.status === 'DESIGN_QUEUE' ? (
-              <>
-                <Timer className="w-3 h-3" />
-                <span>Design Queue</span>
-              </>
-            ) : order.status === 'DESIGN_PROCESSING' ? (
-              <>
-                <ChefHat className="w-3 h-3" />
-                <span>Design Processing</span>
-              </>
-            ) : order.status === 'DESIGN_READY' ? (
-              <>
-                <Clock className="w-3 h-3" />
-                <span>Design Ready</span>
-              </>
-            ) : (
-              <>
-                <Timer className="w-3 h-3" />
-                <span>Pending</span>
-              </>
-            )}
+            <h3 className="text-lg font-semibold">Order #{order.orderNumber}</h3>
+            <p className="text-sm text-gray-500">Customer: {order.customerName}</p>
+            <OrderTimer2 createdAt={new Date(order.createdAt)} />
           </div>
         </div>
 
@@ -519,6 +481,59 @@ export default function KitchenDisplay() {
           </div>
         )}
 
+        {/* Rest of the order card content */}
+        <div className="space-y-3">
+          {order.items.map((item) => (
+            <div key={item.id} className="flex justify-between items-start pb-2 border-b border-gray-100 last:border-0">
+              <div className="flex-1 space-y-4">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h4 className="font-medium">{item.productName}</h4>
+                    <p className="text-sm text-gray-500">Quantity: {item.quantity}</p>
+                    {/* Show variations */}
+                    {Object.entries(item.variations || {}).map(([type, variation]) => (
+                      <p key={type} className="text-sm text-gray-500">
+                        {variation.name} - {variation.value}
+                      </p>
+                    ))}
+                    {/* Show notes */}
+                    {item.kitchenNotes && (
+                      <p className="text-sm text-gray-600 mt-2">
+                        Notes: {item.kitchenNotes}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Design Images */}
+                {item.customImages && item.customImages.length > 0 && (
+                  <div className="mt-3 flex gap-2 overflow-x-auto pb-2">
+                    {item.customImages.map((image, index) => (
+                      <div 
+                        key={index} 
+                        className="relative min-w-[120px] h-[120px] rounded-lg overflow-hidden border border-gray-200 group cursor-pointer"
+                        onClick={() => handleImageClick(item.customImages || [], index)}
+                      >
+                        <Image
+                          src={image.url}
+                          alt={`Design ${index + 1}`}
+                          fill
+                          className="object-cover group-hover:opacity-75 transition-opacity"
+                        />
+                        {image.comment && (
+                          <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-50 text-white p-1 text-xs">
+                            {image.comment}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+
         {/* Notes input for team handoff */}
         {showNotesInput && (
           <div className="mt-4">
@@ -532,189 +547,67 @@ export default function KitchenDisplay() {
           </div>
         )}
 
-        {/* Rest of the order card content */}
-        <div className="space-y-3">
-          {order.items.map((item) => (
-            <div key={item.id} className="flex justify-between items-start pb-2 border-b border-gray-100 last:border-0">
-              <div className="flex-1 space-y-4">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <h4 className="font-medium">{item.productName}</h4>
-                    <p className="text-sm text-gray-500">Quantity: {item.quantity}</p>
-                  </div>
-                </div>
-
-                {/* Design Images */}
-                {item.designImages && item.designImages.length > 0 && (
-                  <div className="mt-3 flex gap-2 overflow-x-auto pb-2">
-                    {item.designImages.map((image, index) => (
-                      <div 
-                        key={index} 
-                        className="relative min-w-[120px] h-[120px] rounded-lg overflow-hidden border border-gray-200 group cursor-pointer"
-                        onClick={() => {
-                          const slides = item.designImages?.map(img => ({
-                            src: img.url || img.imageUrl || '',
-                            comment: img.comment
-                          })) || [];
-                          setCurrentImages(slides);
-                          setLightboxIndex(index);
-                          setLightboxOpen(true);
-                        }}
-                      >
-                        <Image
-                          src={image.url || image.imageUrl || ''}
-                          alt={`Design ${index + 1}`}
-                          fill
-                          className="object-cover"
-                        />
-                        {image.comment && (
-                          <div className="absolute inset-0 bg-black bg-opacity-50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center p-2">
-                            <p className="text-white text-sm text-center">{image.comment}</p>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Variations */}
-                {item.variations && (
-                  Array.isArray(item.variations) ? 
-                    item.variations.length > 0 && (
-                      <div className="mt-2">
-                        <h4 className="text-sm font-medium text-gray-700">Variations:</h4>
-                        <ul className="mt-1 space-y-1">
-                          {item.variations.map((variation, index) => {
-                            let displayValue: string;
-                            if (typeof variation === 'object') {
-                              const variationItem = variation as VariationItem;
-                              displayValue = variationItem.value;
-                              if (variationItem.type) {
-                                displayValue = `${variationItem.type}: ${displayValue}`;
-                              }
-                              if (variationItem.priceAdjustment) {
-                                displayValue += ` (${variationItem.priceAdjustment > 0 ? '+' : ''}${variationItem.priceAdjustment})`;
-                              }
-                            } else {
-                              displayValue = String(variation);
-                            }
-                            
-                            return (
-                              <li key={index} className="text-sm text-gray-600">
-                                {displayValue}
-                              </li>
-                            );
-                          })}
-                        </ul>
-                      </div>
-                    )
-                  : Object.keys(item.variations).length > 0 && (
-                      <div className="mt-2">
-                        <h4 className="text-sm font-medium text-gray-700">Variations:</h4>
-                        <ul className="mt-1 space-y-1">
-                          {Object.entries(item.variations).map(([key, value]) => {
-                            let displayValue: string;
-                            if (value && typeof value === 'object') {
-                              const variationValue = value as VariationValue;
-                              displayValue = variationValue.name || variationValue.value || JSON.stringify(value);
-                            } else {
-                              displayValue = String(value);
-                            }
-                            
-                            return (
-                              <li key={key} className="text-sm text-gray-600">
-                                <span className="font-medium">{key}:</span> {displayValue}
-                              </li>
-                            );
-                          })}
-                        </ul>
-                      </div>
-                    )
-                )}
-                
-                {/* Notes */}
-                {(item.kitchenNotes || item.designNotes) && (
-                  <div className="mt-2">
-                    {item.kitchenNotes && (
-                      <div>
-                        <h4 className="text-sm font-medium text-gray-700">Kitchen Notes:</h4>
-                        <p className="mt-1 text-sm text-orange-600">{item.kitchenNotes}</p>
-                      </div>
-                    )}
-                    {item.designNotes && (
-                      <div>
-                        <h4 className="text-sm font-medium text-gray-700">Design Notes:</h4>
-                        <p className="mt-1 text-sm text-blue-600">{item.designNotes}</p>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="bg-gray-50 border-t">
-        {order.status === 'PENDING' && (
-          <button
-            onClick={() => handleStatusUpdate('KITCHEN_QUEUE')}
-            className="w-full py-4 px-4 bg-blue-500 hover:bg-blue-600 text-white text-lg font-medium rounded-lg flex items-center justify-center gap-2 transition-colors active:bg-blue-700 touch-manipulation"
-          >
-            <ChefHat className="w-6 h-6" />
-            Accept Order
-          </button>
-        )}
-        {order.status === 'KITCHEN_QUEUE' && (
-          <button
-            onClick={() => handleStatusUpdate('KITCHEN_PROCESSING')}
-            className="w-full py-4 px-4 bg-yellow-500 hover:bg-yellow-600 text-white text-lg font-medium flex items-center justify-center gap-2 transition-colors active:bg-yellow-700 touch-manipulation"
-          >
-            <Bell className="w-6 h-6" />
-            Start Processing
-          </button>
-        )}
-        {order.status === 'KITCHEN_PROCESSING' && (
-          <button
-            onClick={() => handleStatusUpdate('KITCHEN_READY')}
-            className="w-full py-4 px-4 bg-green-500 hover:bg-green-600 text-white text-lg font-medium flex items-center justify-center gap-2 transition-colors active:bg-green-700 touch-manipulation"
-          >
-            <CheckCircle2 className="w-6 h-6" />
-            Mark Ready
-          </button>
-        )}
-        {order.status === 'KITCHEN_READY' && (
-          <div className="grid grid-cols-1 gap-2 p-2">
-            {order.requiresDesign && !order.designEndTime ? (
-              <>
-                <button
-                  onClick={() => setShowNotesInput(true)}
-                  className="w-full py-3 px-4 bg-purple-500 hover:bg-purple-600 text-white font-medium rounded-lg flex items-center justify-center gap-2"
-                >
-                  <Bell className="w-5 h-5" />
-                  Send to Design
-                </button>
-                {showNotesInput && (
+        <div className="bg-gray-50 border-t">
+          {order.status === 'PENDING' && (
+            <button
+              onClick={() => handleStatusUpdate('KITCHEN_QUEUE')}
+              className="w-full py-4 px-4 bg-blue-500 hover:bg-blue-600 text-white text-lg font-medium rounded-lg flex items-center justify-center gap-2 transition-colors active:bg-blue-700 touch-manipulation"
+            >
+              <ChefHat className="w-6 h-6" />
+              Accept Order
+            </button>
+          )}
+          {order.status === 'KITCHEN_QUEUE' && (
+            <button
+              onClick={() => handleStatusUpdate('KITCHEN_PROCESSING')}
+              className="w-full py-4 px-4 bg-yellow-500 hover:bg-yellow-600 text-white text-lg font-medium flex items-center justify-center gap-2 transition-colors active:bg-yellow-700 touch-manipulation"
+            >
+              <Bell className="w-6 h-6" />
+              Start Processing
+            </button>
+          )}
+          {order.status === 'KITCHEN_PROCESSING' && (
+            <button
+              onClick={() => handleStatusUpdate('KITCHEN_READY')}
+              className="w-full py-4 px-4 bg-green-500 hover:bg-green-600 text-white text-lg font-medium flex items-center justify-center gap-2 transition-colors active:bg-green-700 touch-manipulation"
+            >
+              <CheckCircle2 className="w-6 h-6" />
+              Mark Ready
+            </button>
+          )}
+          {order.status === 'KITCHEN_READY' && (
+            <div className="grid grid-cols-1 gap-2 p-2">
+              {order.requiresDesign && !order.designEndTime ? (
+                <>
                   <button
-                    onClick={() => handleStatusUpdate('DESIGN_QUEUE')}
-                    className="w-full py-3 px-4 bg-green-500 hover:bg-green-600 text-white font-medium rounded-lg flex items-center justify-center gap-2"
+                    onClick={() => setShowNotesInput(true)}
+                    className="w-full py-3 px-4 bg-purple-500 hover:bg-purple-600 text-white font-medium rounded-lg flex items-center justify-center gap-2"
                   >
-                    <CheckCircle2 className="w-5 h-5" />
-                    Confirm & Send
+                    <Bell className="w-5 h-5" />
+                    Send to Design
                   </button>
-                )}
-              </>
-            ) : (
-              <button
-                onClick={() => handleStatusUpdate('COMPLETED')}
-                className="w-full py-3 px-4 bg-green-500 hover:bg-green-600 text-white font-medium rounded-lg flex items-center justify-center gap-2"
-              >
-                <CheckCircle2 className="w-5 h-5" />
-                Mark Completed
-              </button>
-            )}
-          </div>
-        )}
+                  {showNotesInput && (
+                    <button
+                      onClick={() => handleStatusUpdate('DESIGN_QUEUE')}
+                      className="w-full py-3 px-4 bg-green-500 hover:bg-green-600 text-white font-medium rounded-lg flex items-center justify-center gap-2"
+                    >
+                      <CheckCircle2 className="w-5 h-5" />
+                      Confirm & Send
+                    </button>
+                  )}
+                </>
+              ) : (
+                <button
+                  onClick={() => handleStatusUpdate('COMPLETED')}
+                  className="w-full py-3 px-4 bg-green-500 hover:bg-green-600 text-white font-medium rounded-lg flex items-center justify-center gap-2"
+                >
+                  <CheckCircle2 className="w-5 h-5" />
+                  Mark Completed
+                </button>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </motion.div>
     );
@@ -755,17 +648,19 @@ export default function KitchenDisplay() {
           </div>
         ) : (
           <div className="grid grid-cols-4 gap-4">
-            {/* Kitchen Queue Column */}
+            {/* New Orders & Kitchen Queue Column */}
             <div className="bg-gray-50 rounded-xl p-4 overflow-y-auto">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="font-semibold text-lg flex items-center">
                   <div className="w-3 h-3 rounded-full bg-blue-500 mr-2" />
-                  Kitchen Queue
+                  New & Kitchen Queue
                 </h2>
-                <span className="text-sm text-gray-500">{getOrdersByStatus("KITCHEN_QUEUE").length}</span>
+                <span className="text-sm text-gray-500">
+                  {getOrdersByStatus("PENDING").length + getOrdersByStatus("KITCHEN_QUEUE").length}
+                </span>
               </div>
               <AnimatePresence>
-                {getOrdersByStatus("KITCHEN_QUEUE").map(order => (
+                {[...getOrdersByStatus("PENDING"), ...getOrdersByStatus("KITCHEN_QUEUE")].map(order => (
                   <OrderCard key={order.id} order={order} />
                 ))}
               </AnimatePresence>
@@ -803,17 +698,17 @@ export default function KitchenDisplay() {
               </AnimatePresence>
             </div>
 
-            {/* Design Queue Column */}
+            {/* Completed Column */}
             <div className="bg-gray-50 rounded-xl p-4 overflow-y-auto">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="font-semibold text-lg flex items-center">
-                  <div className="w-3 h-3 rounded-full bg-purple-500 mr-2" />
-                  Design Queue
+                  <div className="w-3 h-3 rounded-full bg-gray-500 mr-2" />
+                  Completed
                 </h2>
-                <span className="text-sm text-gray-500">{getOrdersByStatus("DESIGN_QUEUE").length}</span>
+                <span className="text-sm text-gray-500">{getOrdersByStatus("COMPLETED").length}</span>
               </div>
               <AnimatePresence>
-                {getOrdersByStatus("DESIGN_QUEUE").map(order => (
+                {getOrdersByStatus("COMPLETED").map(order => (
                   <OrderCard key={order.id} order={order} />
                 ))}
               </AnimatePresence>

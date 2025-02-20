@@ -165,7 +165,7 @@ const OrdersPage = () => {
             variations: Array.isArray(item.variations) ? item.variations : [],
             totalPrice: Number(item.totalPrice) || 0
           })),
-          totalAmount: Number(order.totalAmount) || 0,
+          totalAmount: Number(order.total || order.totalAmount) || 0,
           paidAmount: Number(order.paidAmount) || 0
         }));
         
@@ -389,6 +389,8 @@ const OrdersPage = () => {
                         <p>Phone: {order.customerPhone}</p>
                         {order.customerEmail && <p>Email: {order.customerEmail}</p>}
                         <p>Date: {format(new Date(order.createdAt), 'PPpp')}</p>
+                        <p>Total Amount: AED {order.totalAmount?.toFixed(2) || '0.00'}</p>
+                        <p>Payment Method: {order.paymentMethod}</p>
                         
                         {/* Update delivery/pickup information styling */}
                         {order.deliveryMethod && (

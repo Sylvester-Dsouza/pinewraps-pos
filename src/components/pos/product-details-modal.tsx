@@ -5,6 +5,7 @@ import { Dialog, Transition } from "@headlessui/react";
 import { X, Minus, Plus } from "lucide-react";
 import { Product } from "@/services/api";
 import { toast } from "react-hot-toast";
+import ImageUpload from "./custom-images/image-upload";
 
 interface ProductDetailsModalProps {
   product: Product;
@@ -20,6 +21,11 @@ interface ProductDetailsModalProps {
       priceAdjustment: number;
     }>;
     notes?: string;
+    designImages?: Array<{
+      file?: File;
+      url?: string;
+      comment: string;
+    }>;
     totalPrice: number;
   }) => void;
 }
@@ -57,6 +63,13 @@ export default function ProductDetailsModal({
   const [quantity, setQuantity] = useState(1);
   const [selectedOptions, setSelectedOptions] = useState<SelectedOption[]>([]);
   const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(null);
+  const [customPrice, setCustomPrice] = useState<number | null>(null);
+  const [notes, setNotes] = useState("");
+  const [designImages, setCustomImages] = useState<Array<{
+    file?: File;
+    url?: string;
+    comment: string;
+  }>>([]);
 
   // Reset state when product changes
   useEffect(() => {
@@ -64,6 +77,9 @@ export default function ProductDetailsModal({
       setQuantity(1);
       setSelectedOptions([]);
       setSelectedVariant(null);
+      setCustomPrice(null);
+      setNotes("");
+      setCustomImages([]);
     }
   }, [isOpen, product]);
 
@@ -95,21 +111,22 @@ export default function ProductDetailsModal({
     }
   }, [selectedOptions, product]);
 
-  // Calculate total price including selected variant
-  const totalPrice = () => {
-    let price = product?.basePrice || 0;
-    
-    // If we have a matching variant, use its price
+  // Calculate total price based on quantity, custom price, and selected variant
+  const calculateTotalPrice = () => {
+    if (!product) return 0;
+
+    // If custom price is set, use it
+    if (product.allowCustomPrice && customPrice !== null) {
+      return customPrice * quantity;
+    }
+
+    // If variant is selected, use variant price
     if (selectedVariant) {
-      console.log('Using variant price:', selectedVariant.price);
-      price = selectedVariant.price;
+      return selectedVariant.price * quantity;
     }
-    // If we have all options selected but no variant, something is wrong
-    else if (selectedOptions.length === (product.options?.length || 0)) {
-      console.warn('All options selected but no matching variant found');
-    }
-    
-    return price * quantity;
+
+    // Otherwise use base product price
+    return product.basePrice * quantity;
   };
 
   // Check if all required options are selected
@@ -142,30 +159,41 @@ export default function ProductDetailsModal({
   };
 
   const handleAddToOrder = () => {
-    // Validate all required options are selected
+    if (!product) return;
+
+    // Check if all required options are selected
     if (!isReadyToAdd()) {
-      toast.error('Please select all options');
+      toast.error('Please select all required options');
       return;
     }
+
+    // Validate custom price if product allows it
+    if (product.allowCustomPrice && customPrice === null) {
+      toast.error('Please enter a custom price');
+      return;
+    }
+
+    const variations = selectedOptions.map(option => {
+      const optionDef = product.options?.find(o => o.id === option.optionId);
+      const valueDef = optionDef?.values.find(v => v.id === option.valueId);
+      
+      return {
+        id: option.optionId,
+        type: optionDef?.name || '',
+        value: valueDef?.value || '',
+        priceAdjustment: 0
+      };
+    });
 
     onAddToOrder({
       product,
       quantity,
-      selectedVariations: selectedOptions.map(opt => {
-        const option = product.options?.find(o => o.id === opt.optionId);
-        const value = option?.values?.find(v => v.id === opt.valueId);
-        if (!option || !value) {
-          throw new Error('Invalid option or value');
-        }
-        return {
-          id: opt.valueId,
-          type: option.name,
-          value: value.value,
-          priceAdjustment: 0 // Price is handled by variant
-        };
-      }),
-      totalPrice: totalPrice()
+      selectedVariations: variations,
+      notes,
+      designImages,
+      totalPrice: calculateTotalPrice(),
     });
+
     onClose();
   };
 
@@ -209,10 +237,76 @@ export default function ProductDetailsModal({
                       {product.name}
                     </Dialog.Title>
 
+                    {/* Custom Price Input */}
+                    {product.allowCustomPrice && (
+                      <div className="mb-8">
+                        <label 
+                          htmlFor="custom-price" 
+                          className="block text-xl font-semibold text-gray-900 mb-2"
+                        >
+                          Custom Price (AED)
+                        </label>
+                        <input
+                          type="number"
+                          id="custom-price"
+                          name="custom-price"
+                          min="0"
+                          step="0.01"
+                          value={customPrice || ''}
+                          onChange={(e) => setCustomPrice(parseFloat(e.target.value) || null)}
+                          className="block w-full text-2xl p-4 rounded-xl border-2 border-gray-300 focus:border-black focus:ring-0 transition-colors"
+                          placeholder="Enter price"
+                        />
+                      </div>
+                    )}
+
                     {/* Price Display */}
-                    <div className="text-2xl font-semibold text-gray-900 mb-6">
-                      AED {totalPrice().toFixed(2)}
+                    {!product.allowCustomPrice && (
+                      <div className="text-2xl font-semibold text-gray-900 mb-6">
+                        AED {calculateTotalPrice().toFixed(2)}
+                      </div>
+                    )}
+
+                    {/* Notes */}
+                    <div className="mt-4">
+                      <label
+                        htmlFor="notes"
+                        className="block text-sm font-medium text-gray-700"
+                      >
+                        Notes
+                      </label>
+                      <textarea
+                        id="notes"
+                        name="notes"
+                        rows={3}
+                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                        value={notes}
+                        onChange={(e) => setNotes(e.target.value)}
+                        placeholder="Add any special instructions..."
+                      />
                     </div>
+
+                    {/* Design Images - Only show for products that require design and allow design images */}
+                    {product.requiresDesign && product.allowCustomImages && (
+                      <div className="mt-6">
+                        <div className="flex items-center justify-between mb-2">
+                          <label className="block text-lg font-medium text-gray-900">
+                            Design Images
+                          </label>
+                          <span className="text-sm text-gray-500">
+                            Upload reference images for your custom design
+                          </span>
+                        </div>
+                        <ImageUpload 
+                          onChange={(images) => setCustomImages(images)}
+                        />
+                        {designImages.length > 0 && (
+                          <div className="mt-2 text-sm text-gray-500">
+                            {designImages.length} image{designImages.length !== 1 ? 's' : ''} added
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     {/* Product Options */}
                     {product.options?.sort((a, b) => a.position - b.position).map((option) => (
@@ -223,18 +317,17 @@ export default function ProductDetailsModal({
                             const isSelected = selectedOptions.some(
                               opt => opt.optionId === option.id && opt.valueId === value.id
                             );
-                            
                             return (
                               <button
                                 key={value.id}
                                 onClick={() => handleOptionChange(option.id, value.id)}
-                                className={`p-4 text-lg rounded-xl border-2 ${
+                                className={`p-4 rounded-xl text-lg font-medium transition-all ${
                                   isSelected
-                                    ? 'border-blue-500 bg-blue-50'
-                                    : 'border-gray-200 hover:border-gray-300'
+                                    ? 'bg-black text-white'
+                                    : 'bg-gray-100 text-gray-900 hover:bg-gray-200'
                                 }`}
                               >
-                                <div>{value.value}</div>
+                                {value.value}
                               </button>
                             );
                           })}
@@ -268,13 +361,15 @@ export default function ProductDetailsModal({
                     <button
                       onClick={handleAddToOrder}
                       disabled={!isReadyToAdd()}
-                      className={`w-full text-white text-xl font-semibold py-8 px-4 rounded-2xl shadow-lg transition-all ${
-                        !isReadyToAdd()
-                          ? 'bg-gray-400 cursor-not-allowed'
-                          : 'bg-black hover:bg-gray-900 active:transform active:scale-[0.99]'
+                      className={`w-full text-xl font-semibold py-8 px-4 rounded-2xl shadow-lg transition-all ${
+                        isReadyToAdd()
+                          ? 'bg-black hover:bg-gray-900 text-white active:transform active:scale-[0.99]'
+                          : 'bg-gray-200 text-gray-500 cursor-not-allowed'
                       }`}
                     >
-                      Add to Order - AED {totalPrice().toFixed(2)}
+                      {isReadyToAdd() 
+                        ? `Add to Order - AED ${calculateTotalPrice().toFixed(2)}`
+                        : 'Please select all required options'}
                     </button>
                   </div>
                 </div>

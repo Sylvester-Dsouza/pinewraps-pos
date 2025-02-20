@@ -179,10 +179,16 @@ export interface ProductImage {
   isPrimary: boolean;
 }
 
-export interface DesignImage {
-  file?: File;  // Make file optional since uploaded images won't have it
-  url?: string; // Add url for uploaded images
+export interface CustomImage {
+  file?: File;
+  url?: string;
+  previewUrl?: string;
   comment: string;
+}
+
+export interface OrderCustomImage {
+  url: string;
+  comment?: string;
 }
 
 export interface Product {
@@ -198,6 +204,16 @@ export interface Product {
   options: ProductOption[];
   variants: ProductVariant[];
   images: ProductImage[];
+  visibility: 'ALL' | 'POS_ONLY' | 'WEB_ONLY' | 'APP_ONLY';
+  allowCustomPrice: boolean;
+  requiresDesign: boolean;  // For design team processing
+  requiresKitchen: boolean; // For kitchen team processing
+  allowCustomImages: boolean; // For customer custom image uploads
+}
+
+export interface ProductWithDesign extends Product {
+  allowCustomPrice: boolean;
+  customImages?: CustomImage[];
 }
 
 export interface Category {
@@ -214,23 +230,52 @@ export interface Category {
   updatedAt?: string;
 }
 
-// Types for custom products
-export interface CustomProductData {
-  name: string;
-  price: number;
-  isCustom: boolean;
-  designImages?: DesignImage[];
+export type POSOrderStatus = 
+  | "PENDING"
+  | "KITCHEN_QUEUE"
+  | "KITCHEN_PROCESSING"
+  | "KITCHEN_READY"
+  | "DESIGN_QUEUE"
+  | "DESIGN_PROCESSING"
+  | "DESIGN_READY"
+  | "COMPLETED";
+
+export interface POSOrderItemData {
+  productId: string;
+  productName: string;
+  unitPrice: number;
+  totalPrice?: number;
+  quantity?: number;
+  variations?: Record<string, any>;
+  notes?: string;
+  customImages?: OrderCustomImage[];
 }
 
-export interface CustomProductResponse {
-  id: string;
-  name: string;
-  price: number;
-  isCustom: boolean;
-  designImages: Array<{
-    url: string;
-    comment: string;
-  }>;
+export interface POSOrderData {
+  items: POSOrderItemData[];
+  paymentMethod: 'CASH' | 'CARD';
+  customerName?: string;
+  customerPhone?: string;
+  customerEmail?: string;
+  paymentReference?: string;
+  requiresKitchen?: boolean;
+  requiresDesign?: boolean;
+  status?: POSOrderStatus;
+  expectedReadyTime?: Date;
+  deliveryMethod: 'PICKUP' | 'DELIVERY';
+  deliveryDate?: string;
+  deliveryTimeSlot?: string;
+  deliveryCharge?: number;
+  deliveryInstructions?: string;
+  streetAddress?: string;
+  apartment?: string;
+  emirate?: string;
+  city?: string;
+  pickupDate?: string;
+  pickupTimeSlot?: string;
+  totalAmount: number;
+  paidAmount: number;
+  changeAmount: number;
 }
 
 // API methods
@@ -304,141 +349,97 @@ export const apiMethods = {
   },
   pos: {
     // Get products
-    getProducts: async () => {
+    async getProducts(): Promise<APIResponse<ProductWithDesign[]>> {
       try {
-        const [productsResponse, customProductsResponse] = await Promise.all([
-          api.get<APIResponse<Product[]>>('/api/pos/products'),
-          api.get<APIResponse<CustomProductResponse[]>>('/api/pos/custom-products')
-        ]);
-
-        if (!productsResponse.data.success) {
-          throw new Error(productsResponse.data.message || 'Failed to fetch products');
-        }
-
-        // Combine regular and custom products
-        const regularProducts = productsResponse.data.data;
-        const customProducts = customProductsResponse.data.success ? customProductsResponse.data.data.map(cp => ({
-          ...cp,
-          id: `custom_${cp.id}`, // Prefix custom product IDs
-          images: cp.designImages.map(img => ({
-            id: nanoid(),
-            url: img.url,
-            alt: img.comment || '',
-            isPrimary: true
-          }))
-        })) : [];
-
-        return {
-          success: true,
-          data: [...regularProducts, ...customProducts]
-        };
-      } catch (error: any) {
-        console.error('Error fetching products:', error);
-        return {
-          success: false,
-          message: error.response?.data?.message || 'Failed to fetch products',
-          data: []
-        };
-      }
-    },
-    
-    // Get a custom product
-    getCustomProduct: async (id: string): Promise<APIResponse<CustomProductResponse>> => {
-      try {
-        const response = await api.get(`/api/pos/custom-products/${id}`);
+        const response = await api.get('/api/pos/products');
         return response.data;
-      } catch (error: any) {
-        console.error('Get custom product error:', error.response?.data || error.message);
+      } catch (error) {
+        console.error('Error fetching products:', error);
         throw error;
       }
     },
     
-    // Create custom product
-    createCustomProduct: async (data: FormData): Promise<APIResponse<CustomProductResponse>> => {
+    // Upload custom images
+    async uploadCustomImages(orderItemId: string, images: { file: File; comment?: string }[]) {
+      const formData = new FormData();
+      images.forEach(image => {
+        formData.append('images', image.file);
+      });
+      formData.append('comments', JSON.stringify(
+        images.reduce((acc, img) => ({ ...acc, [img.file.name]: img.comment }), {})
+      ));
+
+      const response = await api.post<APIResponse<{ url: string }[]>>(
+        `/api/pos/custom-images/order-item/${orderItemId}/upload`,
+        formData,
+        {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        }
+      );
+      return response.data;
+    },
+
+    // Delete custom image
+    async deleteCustomImage(imageId: string): Promise<APIResponse<any>> {
       try {
-        const response = await api.post('/api/pos/custom-products', data, {
+        const response = await api.delete(`/api/pos/custom-images/${imageId}`);
+        return response.data;
+      } catch (error) {
+        console.error('Error deleting custom image:', error);
+        throw error;
+      }
+    },
+
+    // Get custom images for order item
+    async getOrderItemCustomImages(orderItemId: string): Promise<APIResponse<CustomImage[]>> {
+      try {
+        const response = await api.get(`/api/pos/custom-images/order-item/${orderItemId}`);
+        return response.data;
+      } catch (error) {
+        console.error('Error fetching custom images:', error);
+        throw error;
+      }
+    },
+    
+    createOrder: async (orderData: POSOrderData & { items: Array<POSOrderItemData & { customImages?: (CustomImage | OrderCustomImage)[] }> }) => {
+      // Check if any items have custom images with files
+      const hasCustomImages = orderData.items.some(item => 
+        item.customImages?.some(img => 'file' in img && img.file instanceof File)
+      );
+
+      if (hasCustomImages) {
+        // Create form data
+        const formData = new FormData();
+        formData.append('orderData', JSON.stringify({
+          ...orderData,
+          items: orderData.items.map(item => ({
+            ...item,
+            customImages: item.customImages?.filter(img => !('file' in img))
+          }))
+        }));
+
+        // Add custom images
+        orderData.items.forEach((item, itemIndex) => {
+          item.customImages?.forEach((image, imageIndex) => {
+            if ('file' in image && image.file instanceof File) {
+              formData.append(`item_${itemIndex}_image_${imageIndex}`, image.file);
+              formData.append(`item_${itemIndex}_comment_${imageIndex}`, image.comment || '');
+            }
+          });
+        });
+
+        // Send multipart request
+        return api.post<APIResponse<any>>('/api/pos/orders', formData, {
           headers: {
             'Content-Type': 'multipart/form-data',
           },
         });
-        return response.data;
-      } catch (error: any) {
-        console.error('Create custom product error:', error.response?.data || error.message);
-        throw error;
       }
-    },
-    createOrder: async (orderData: {
-      items: Array<{
-        productId?: string;  
-        productName: string;
-        quantity: number;
-        unitPrice: number;
-        totalPrice: number;
-        variations: any;
-        requiresDesign: boolean;
-        designDetails?: string;
-        kitchenNotes?: string;
-        designImages?: DesignImage[];
-      }>;
-      customerName: string;
-      customerPhone: string;
-      customerEmail?: string;
-      paymentMethod: 'CASH' | 'CREDIT_CARD';
-      totalAmount: number;
-      paidAmount: number;
-      changeAmount: number;
-      requiresKitchen?: boolean;
-      requiresDesign?: boolean;
-      kitchenNotes?: string;
-      designNotes?: string;
-      internalNotes?: string;
-      expectedReadyTime?: Date;
-    }) => {
-      try {
-        const formData = new FormData();
-        const hasDesignImages = orderData.items.some(item => 
-          Array.isArray(item.designImages) && item.designImages.length > 0
-        );
 
-        // Add order data
-        formData.append('orderData', JSON.stringify({
-          ...orderData,
-          // Remove design images from JSON data as they'll be handled separately
-          items: orderData.items.map(item => ({
-            ...item,
-            designImages: undefined
-          }))
-        }));
-
-        // Handle design images if any
-        if (hasDesignImages) {
-          let imageCount = 0;
-          orderData.items.forEach((item, itemIndex) => {
-            if (Array.isArray(item.designImages) && item.designImages.length > 0) {
-              item.designImages.forEach(image => {
-                if (image.file instanceof Blob) {
-                  formData.append(`image_${imageCount}`, image.file);
-                  formData.append(`comment_${imageCount}`, image.comment || '');
-                  formData.append(`itemIndex_${imageCount}`, itemIndex.toString());
-                  imageCount++;
-                }
-              });
-            }
-          });
-          formData.append('imageCount', imageCount.toString());
-        }
-
-        const response = await api.post('/api/pos/orders', formData, {
-          headers: {
-            'Content-Type': 'multipart/form-data'
-          }
-        });
-
-        return response.data;
-      } catch (error: any) {
-        console.error('Create order error:', error.response?.data || error.message);
-        throw error;
-      }
+      // No custom images, send regular JSON request
+      return api.post<APIResponse<any>>('/api/pos/orders', orderData);
     },
 
     updateOrderStatus: async (orderId: string, { status, notes }: { status: string, notes?: string }) => {
@@ -494,43 +495,6 @@ export const apiMethods = {
         };
       }
     },
-
-    uploadDesignImages: async (orderId: string, orderItemId: string, images: DesignImage[]) => {
-      try {
-        const formData = new FormData();
-        formData.append('orderId', orderId);
-        formData.append('orderItemId', orderItemId);
-        formData.append('imageCount', images.length.toString());
-
-        images.forEach((image, index) => {
-          if (image.file) {
-            formData.append(`image_${index}`, image.file);
-            formData.append(`comment_${index}`, image.comment || '');
-          }
-        });
-
-        const response = await api.post('/api/pos/design-images', formData, {
-          headers: {
-            'Content-Type': 'multipart/form-data'
-          }
-        });
-
-        return response.data;
-      } catch (error: any) {
-        console.error('Upload design images error:', error.response?.data || error.message);
-        throw error;
-      }
-    },
-
-    deleteDesignImage: async (imageId: string) => {
-      const response = await api.delete(`/api/pos/design-images/${imageId}`);
-      return response;
-    },
-
-    getOrderItemDesignImages: async (orderItemId: string) => {
-      const response = await api.get(`/api/pos/design-images/order-item/${orderItemId}`);
-      return response;
-    }
   }
 };
 

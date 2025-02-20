@@ -89,13 +89,6 @@ export default function Header() {
                 >
                   <Calculator className="w-5 h-5" />
                 </button>
-                <button
-                  onClick={handleCustomOrderClick}
-                  className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-black rounded-lg hover:bg-gray-800"
-                >
-                  <Plus className="w-4 h-4" />
-                  Custom Order
-                </button>
               </>
             )}
             <button
@@ -111,7 +104,7 @@ export default function Header() {
             </button>
             <div className="flex items-center text-gray-600">
               <User className="w-5 h-5 mr-2" />
-              <span>{user?.name || user?.email}</span>
+              <span>{user?.displayName || user?.email}</span>
             </div>
             <button
               onClick={signOut}

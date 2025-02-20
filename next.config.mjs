@@ -15,8 +15,14 @@ const nextConfig = {
         port: '',
         pathname: '/v0/b/**',
       },
+      {
+        protocol: 'https',
+        hostname: 'storage.googleapis.com',
+        port: '',
+        pathname: '/**',
+      },
     ],
-    domains: ['source.unsplash.com'],
+    domains: ['source.unsplash.com', 'storage.googleapis.com'],
   }
 }
 

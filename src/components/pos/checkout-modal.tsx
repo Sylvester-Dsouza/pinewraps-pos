@@ -4,8 +4,10 @@ import { Fragment, useState } from "react";
 import { Dialog, Transition } from "@headlessui/react";
 import { X } from "lucide-react";
 import { toast } from "react-hot-toast";
-import { apiMethods } from "@/services/api";
+import { apiMethods, type CustomImage, type POSOrderData, type POSOrderStatus } from "@/services/api";
 import Image from "next/image";
+import ImageUpload from "./custom-images/image-upload";
+import { useAuth } from "@/providers/auth-provider";
 
 interface CartItem {
   id: string;
@@ -14,10 +16,10 @@ interface CartItem {
     name: string;
     basePrice: number;
     status: string;
-    images?: Array<{
-      url: string;
-      comment: string;
-    }>;
+    allowCustomPrice?: boolean;
+    requiresDesign?: boolean;
+    requiresKitchen?: boolean;
+    allowCustomImages?: boolean;
   };
   quantity: number;
   selectedVariations: Array<{
@@ -28,13 +30,14 @@ interface CartItem {
   }>;
   totalPrice: number;
   notes?: string;
-  customProductId?: string;
+  customImages?: CustomImage[];
 }
 
 interface CheckoutModalProps {
   isOpen: boolean;
   onClose: () => void;
   cart: Array<CartItem>;
+  setCart: React.Dispatch<React.SetStateAction<CartItem[]>>;
   cartTotal: number;
   onCheckoutComplete: () => void;
 }
@@ -43,11 +46,13 @@ export default function CheckoutModal({
   isOpen,
   onClose,
   cart,
+  setCart,
   cartTotal,
   onCheckoutComplete
 }: CheckoutModalProps) {
+  const { refreshToken } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'CREDIT_CARD'>('CASH');
+  const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'CARD'>('CASH');
   const [paymentReference, setPaymentReference] = useState('');
   const [teamSelection, setTeamSelection] = useState<'KITCHEN' | 'DESIGN' | 'BOTH'>('KITCHEN');
   const [deliveryMethod, setDeliveryMethod] = useState<'PICKUP' | 'DELIVERY'>('PICKUP');
@@ -64,11 +69,24 @@ export default function CheckoutModal({
     apartment: "",
     emirate: "",
     city: "",
+    charge: 0,
   });
   const [pickupDetails, setPickupDetails] = useState({
     date: "",
     timeSlot: "",
   });
+  const [orderItems, setOrderItems] = useState<Array<{
+    productId?: string;
+    productName: string;
+    quantity: number;
+    unitPrice: number;
+    totalPrice: number;
+    variations: any;
+    requiresDesign: boolean;
+    designDetails?: string;
+    kitchenNotes?: string;
+    customImages?: CustomImage[];
+  }>>([]);
 
   // Time slots based on emirate
   const getTimeSlots = (emirate: string) => {
@@ -135,99 +153,164 @@ export default function CheckoutModal({
     setDeliveryDetails(prev => ({ ...prev, emirate: e.target.value }));
   };
 
-  const handleSubmit = async () => {
+  const handleCheckout = async () => {
     try {
-      setIsSubmitting(true);
+      // Validate pickup/delivery details first
+      if (deliveryMethod === 'PICKUP') {
+        if (!pickupDetails.date || !pickupDetails.timeSlot) {
+          toast.error('Please select both pickup date and time');
+          return;
+        }
+      } else if (deliveryMethod === 'DELIVERY') {
+        if (!deliveryDetails.date || !deliveryDetails.timeSlot || !deliveryDetails.streetAddress || 
+            !deliveryDetails.emirate || !deliveryDetails.city) {
+          toast.error('Please fill in all required delivery details');
+          return;
+        }
+      }
 
-      // Validate required fields
-      if (!customerDetails.name || !customerDetails.phone) {
-        toast.error("Please fill in required customer details");
-        setIsSubmitting(false);
+      // Validate payment reference for card payments
+      if (paymentMethod === 'CARD' && !paymentReference.trim()) {
+        toast.error('Please enter the transaction ID for card payment');
         return;
       }
 
-      // Validate delivery/pickup details
-      if (deliveryMethod === 'DELIVERY') {
-        if (!deliveryDetails.date || !deliveryDetails.timeSlot || !deliveryDetails.streetAddress || !deliveryDetails.emirate || !deliveryDetails.city) {
-          toast.error("Please fill in all required delivery details");
-          setIsSubmitting(false);
-          return;
-        }
-      } else {
-        if (!pickupDetails.date || !pickupDetails.timeSlot) {
-          toast.error("Please fill in all required pickup details");
-          setIsSubmitting(false);
-          return;
-        }
-      }
+      setIsSubmitting(true);
 
-      const orderData = {
-        items: cart.map(item => ({
-          productId: item.product.id,
-          customProductId: item.customProductId,
-          productName: item.product.name,
-          unitPrice: item.product.basePrice,
-          quantity: item.quantity,
-          totalPrice: item.totalPrice,
-          variations: item.selectedVariations || [],
-          notes: item.notes || "",
-          designImages: item.product.images || [],
-          requiresDesign: teamSelection === 'DESIGN' || teamSelection === 'BOTH',
-          kitchenNotes: item.notes || "",
-          designDetails: item.notes || ""
-        })),
+      // Refresh token before making API calls
+      await refreshToken();
+
+      // First create the order with basic item data
+      const orderItems = cart.map(item => ({
+        productId: item.product.id,
+        productName: item.product.name,
+        quantity: item.quantity,
+        unitPrice: item.product.basePrice,
+        totalPrice: item.totalPrice,
+        variations: item.selectedVariations.reduce((acc, variation) => ({
+          ...acc,
+          [variation.type]: {
+            name: variation.type,
+            value: variation.value
+          }
+        }), {}),
+        notes: item.notes || '',
+        customImages: item.customImages?.map(img => ({
+          ...(img.file ? { file: img.file } : {}),
+          url: img.url || '',
+          comment: img.comment || ''
+        }))
+      }));
+
+      // Create the order
+      const orderData: POSOrderData = {
+        items: orderItems,
         customerName: customerDetails.name,
         customerPhone: customerDetails.phone,
-        customerEmail: customerDetails.email,
+        customerEmail: customerDetails.email || undefined,
         paymentMethod,
-        paymentReference,
-        paidAmount: calculateTotal(),
-        totalAmount: calculateTotal(),
+        ...(paymentReference ? { paymentReference: paymentReference.trim() } : {}),
+        totalAmount: cartTotal + (deliveryMethod === 'DELIVERY' ? calculateDeliveryCharge(deliveryDetails.emirate) : 0),
+        paidAmount: cartTotal + (deliveryMethod === 'DELIVERY' ? calculateDeliveryCharge(deliveryDetails.emirate) : 0),
         changeAmount: 0,
-        requiresKitchen: teamSelection === 'KITCHEN' || teamSelection === 'BOTH',
-        requiresDesign: teamSelection === 'DESIGN' || teamSelection === 'BOTH',
-        status: teamSelection === 'BOTH' ? 
-          'DESIGN_QUEUE' : 
-          teamSelection === 'DESIGN' ? 
-            'DESIGN_QUEUE' : 
-            'KITCHEN_QUEUE',
-        expectedReadyTime: new Date(Date.now() + 30 * 60 * 1000),
-        
-        // Delivery/Pickup Information
         deliveryMethod,
+        requiresKitchen: cart.some(item => item.product.requiresKitchen === true),
+        requiresDesign: cart.some(item => item.product.requiresDesign === true),
+        status: 'PENDING' as POSOrderStatus,
         ...(deliveryMethod === 'DELIVERY' ? {
           deliveryDate: deliveryDetails.date,
           deliveryTimeSlot: deliveryDetails.timeSlot,
           deliveryCharge: calculateDeliveryCharge(deliveryDetails.emirate),
-          deliveryInstructions: deliveryDetails.instructions,
+          deliveryInstructions: deliveryDetails.instructions || '',
           streetAddress: deliveryDetails.streetAddress,
-          apartment: deliveryDetails.apartment,
+          apartment: deliveryDetails.apartment || '',
           emirate: deliveryDetails.emirate,
-          city: deliveryDetails.city,
+          city: deliveryDetails.city || ''
         } : {
           pickupDate: pickupDetails.date,
           pickupTimeSlot: pickupDetails.timeSlot
-        })
+        }),
       };
 
-      // Create order
       const response = await apiMethods.pos.createOrder(orderData);
 
-      if (!response.success) {
-        const error = response.message || 'Failed to create order';
-        throw new Error(error);
+      if (!response.data.success) {
+        throw new Error(response.data.message || 'Failed to create order');
       }
 
-      if (response.success) {
-        toast.success('Order created successfully!');
-        onCheckoutComplete();
-        onClose();
-      } else {
-        throw new Error(response.message || 'Failed to create order');
+      // After order is created, upload images for each order item
+      await Promise.all(response.data.data.items.map(async (orderItem, index) => {
+        const cartItem = cart[index];
+        if (cartItem.customImages && cartItem.customImages.length > 0) {
+          // Refresh token before uploading images
+          await refreshToken();
+          
+          const imageData = await Promise.all(cartItem.customImages.map(async (image) => {
+            if (!image.file) return null;
+
+            const formData = new FormData();
+            formData.append('images', image.file);
+            formData.append('comments', JSON.stringify({ [image.file.name]: image.comment }));
+            
+            const response = await apiMethods.pos.uploadCustomImages(orderItem.id, [{
+              file: image.file,
+              comment: image.comment
+            }]);
+
+            if (!response.success) {
+              console.error('Failed to upload image:', response.message);
+              return null;
+            }
+
+            // Get the first uploaded image from the response data array
+            const uploadedImage = response.data[0];
+            if (!uploadedImage) {
+              console.error('No image data in response');
+              return null;
+            }
+
+            return {
+              url: uploadedImage.url,
+              comment: image.comment
+            };
+          }));
+
+          // Filter out any failed uploads
+          const validImages = imageData.filter(img => img !== null) as CustomImage[];
+          if (validImages.length > 0) {
+            // Update order item with image URLs if needed
+            console.log('Images uploaded for order item:', orderItem.id, validImages);
+          }
+        }
+      }));
+
+      // Set initial order status based on requirements
+      if (orderData.requiresDesign && orderData.requiresKitchen) {
+        // If both design and kitchen are required, start with design
+        await apiMethods.pos.updateOrderStatus(response.data.data.id, { 
+          status: 'PENDING_DESIGN',
+          notes: 'Order requires both design and kitchen. Starting with design.'
+        });
+      } else if (orderData.requiresDesign) {
+        // If only design is required
+        await apiMethods.pos.updateOrderStatus(response.data.data.id, { 
+          status: 'PENDING_DESIGN',
+          notes: 'Order requires design work.'
+        });
+      } else if (orderData.requiresKitchen) {
+        // If only kitchen is required
+        await apiMethods.pos.updateOrderStatus(response.data.data.id, { 
+          status: 'PENDING_KITCHEN',
+          notes: 'Order sent to kitchen.'
+        });
       }
-    } catch (error: any) {
+
+      toast.success('Order created successfully!');
+      onCheckoutComplete();
+      onClose();
+    } catch (error) {
       console.error('Error creating order:', error);
-      toast.error(error.message || 'Failed to create order');
+      toast.error('Failed to create order');
     } finally {
       setIsSubmitting(false);
     }
@@ -329,7 +412,7 @@ export default function CheckoutModal({
 
                         {/* Delivery Form */}
                         {deliveryMethod === 'DELIVERY' && (
-                          <div className="grid grid-cols-1 gap-4">
+                          <div className="grid grid-cols-1 gap-4 pt-8">
                             <input
                               type="text"
                               value={deliveryDetails.streetAddress}
@@ -413,7 +496,7 @@ export default function CheckoutModal({
 
                         {/* Pickup Form */}
                         {deliveryMethod === 'PICKUP' && (
-                          <div className="grid grid-cols-1 gap-4">
+                          <div className="grid grid-cols-1 gap-4 pt-8">
                             <select
                               value={pickupDetails.date}
                               onChange={(e) => setPickupDetails(prev => ({ ...prev, date: e.target.value }))}
@@ -527,23 +610,6 @@ export default function CheckoutModal({
                               >
                                 <div className="flex-1">
                                   <p className="text-lg font-medium">{item.product.name}</p>
-                                  {item.product.images && item.product.images.length > 0 && (
-                                    <div className="mt-3 flex gap-2 overflow-x-auto pb-2">
-                                      {item.product.images.map((image, index) => (
-                                        <div 
-                                          key={index} 
-                                          className="relative min-w-[80px] h-[80px] rounded-lg overflow-hidden"
-                                        >
-                                          <Image
-                                            src={image.url}
-                                            alt={`Design ${index + 1}`}
-                                            fill
-                                            className="object-cover"
-                                          />
-                                        </div>
-                                      ))}
-                                    </div>
-                                  )}
                                   <p className="text-base text-gray-500 mt-2">
                                     Quantity: {item.quantity}
                                   </p>
@@ -556,9 +622,72 @@ export default function CheckoutModal({
                                     </p>
                                   ))}
                                   {item.notes && (
-                                    <p className="text-base text-gray-500 mt-2">
+                                    <p className="text-sm text-gray-600 mt-2">
                                       Notes: {item.notes}
                                     </p>
+                                  )}
+
+                                  {/* Custom Images Upload */}
+                                  <div className="mt-4">
+                                    <div className="flex items-center justify-between mb-2">
+                                      <label className="text-sm font-medium text-gray-700">
+                                        Custom Images
+                                      </label>
+                                      <span className="text-xs text-gray-500">
+                                        Upload reference images for your order
+                                      </span>
+                                    </div>
+                                    <ImageUpload
+                                      onChange={(images) => {
+                                        const updatedCart = cart.map(cartItem =>
+                                          cartItem.id === item.id
+                                            ? { ...cartItem, customImages: images }
+                                            : cartItem
+                                        );
+                                        setCart(updatedCart);
+                                      }}
+                                      value={item.customImages || []}
+                                    />
+                                    {item.customImages && item.customImages.length > 0 && (
+                                      <div className="mt-2 text-sm text-gray-500">
+                                        {item.customImages.length} image{item.customImages.length !== 1 ? 's' : ''} added
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {/* Display existing custom images */}
+                                  {item.customImages && item.customImages.length > 0 && (
+                                    <div className="mt-3">
+                                      <div className="flex gap-2 overflow-x-auto pb-2">
+                                        {item.customImages.map((image, index) => (
+                                          <div 
+                                            key={index} 
+                                            className="relative min-w-[80px] h-[80px] rounded-lg overflow-hidden bg-gray-100"
+                                          >
+                                            {image.file ? (
+                                              <Image
+                                                src={URL.createObjectURL(image.file)}
+                                                alt={`Custom ${index + 1}`}
+                                                fill
+                                                className="object-cover"
+                                              />
+                                            ) : image.url ? (
+                                              <Image
+                                                src={image.url}
+                                                alt={`Custom ${index + 1}`}
+                                                fill
+                                                className="object-cover"
+                                              />
+                                            ) : null}
+                                            {image.comment && (
+                                              <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-50 text-white text-xs p-1">
+                                                {image.comment}
+                                              </div>
+                                            )}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
                                   )}
                                 </div>
                                 <p className="text-lg font-medium ml-4">
@@ -640,9 +769,9 @@ export default function CheckoutModal({
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => setPaymentMethod('CREDIT_CARD')}
+                                  onClick={() => setPaymentMethod('CARD')}
                                   className={`p-6 text-lg font-medium rounded-xl border-2 transition-all ${
-                                    paymentMethod === 'CREDIT_CARD'
+                                    paymentMethod === 'CARD'
                                       ? 'border-black bg-black text-white'
                                       : 'border-gray-200 hover:border-gray-300'
                                   }`}
@@ -665,7 +794,7 @@ export default function CheckoutModal({
                             <div className="mt-8">
                               <button
                                 type="button"
-                                onClick={handleSubmit}
+                                onClick={handleCheckout}
                                 disabled={isSubmitting}
                                 className={`w-full inline-flex justify-center rounded-lg border border-transparent shadow-sm px-6 py-4 bg-black text-xl font-medium text-white hover:bg-gray-900 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors`}
                               >
