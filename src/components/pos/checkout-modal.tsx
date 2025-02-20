@@ -306,6 +306,33 @@ export default function CheckoutModal({
       }
 
       toast.success('Order created successfully!');
+      
+      // Reset all form state
+      setPaymentMethod('CASH');
+      setPaymentReference('');
+      setTeamSelection('KITCHEN');
+      setDeliveryMethod('PICKUP');
+      setCustomerDetails({
+        name: "",
+        email: "",
+        phone: "",
+      });
+      setDeliveryDetails({
+        date: "",
+        timeSlot: "",
+        instructions: "",
+        streetAddress: "",
+        apartment: "",
+        emirate: "",
+        city: "",
+        charge: 0,
+      });
+      setPickupDetails({
+        date: "",
+        timeSlot: "",
+      });
+      setOrderItems([]);
+      
       onCheckoutComplete();
       onClose();
     } catch (error) {
