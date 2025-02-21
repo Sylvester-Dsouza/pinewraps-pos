@@ -1,13 +1,14 @@
 "use client";
 
-import { Fragment, useState } from "react";
+import { Fragment, useState, useEffect, useRef } from "react";
 import { Dialog, Transition } from "@headlessui/react";
-import { X } from "lucide-react";
+import { X, Search, User } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { apiMethods, type CustomImage, type POSOrderData, type POSOrderStatus } from "@/services/api";
 import Image from "next/image";
 import ImageUpload from "./custom-images/image-upload";
 import { useAuth } from "@/providers/auth-provider";
+import debounce from 'lodash/debounce';
 
 interface CartItem {
   id: string;
@@ -31,6 +32,17 @@ interface CartItem {
   totalPrice: number;
   notes?: string;
   customImages?: CustomImage[];
+}
+
+interface Customer {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  reward: {
+    points: number;
+  };
 }
 
 interface CheckoutModalProps {
@@ -61,6 +73,10 @@ export default function CheckoutModal({
     email: "",
     phone: "",
   });
+  const [searchResults, setSearchResults] = useState<Customer[]>([]);
+  const [showSearchResults, setShowSearchResults] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
+  const searchRef = useRef<HTMLDivElement>(null);
   const [deliveryDetails, setDeliveryDetails] = useState({
     date: "",
     timeSlot: "",
@@ -87,6 +103,57 @@ export default function CheckoutModal({
     kitchenNotes?: string;
     customImages?: CustomImage[];
   }>>([]);
+
+  // Close search results when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
+        setShowSearchResults(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // Debounced search function
+  const searchCustomers = debounce(async (query: string) => {
+    if (!query || query.length < 2) {
+      setSearchResults([]);
+      setShowSearchResults(false);
+      return;
+    }
+
+    setIsSearching(true);
+    try {
+      const response = await apiMethods.pos.searchCustomers(query);
+      if (response.success) {
+        setSearchResults(response.data);
+        setShowSearchResults(true);
+      }
+    } catch (error) {
+      console.error('Error searching customers:', error);
+    } finally {
+      setIsSearching(false);
+    }
+  }, 300);
+
+  // Handle customer selection
+  const handleCustomerSelect = (customer: Customer) => {
+    setCustomerDetails({
+      name: `${customer.firstName} ${customer.lastName}`.trim(),
+      email: customer.email || "",
+      phone: customer.phone || "",
+    });
+    setShowSearchResults(false);
+    setSearchResults([]);
+  };
+
+  // Handle customer name change with search
+  const handleCustomerNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setCustomerDetails(prev => ({ ...prev, name: value }));
+    searchCustomers(value);
+  };
 
   // Time slots based on emirate
   const getTimeSlots = (emirate: string) => {
@@ -179,6 +246,20 @@ export default function CheckoutModal({
 
       // Refresh token before making API calls
       await refreshToken();
+
+      // Create or update customer if we have customer details
+      if (customerDetails.name && customerDetails.phone) {
+        try {
+          await apiMethods.pos.createOrUpdateCustomer({
+            customerName: customerDetails.name,
+            customerPhone: customerDetails.phone,
+            customerEmail: customerDetails.email
+          });
+        } catch (error) {
+          console.error('Error creating/updating customer:', error);
+          // Continue with order creation even if customer update fails
+        }
+      }
 
       // First create the order with basic item data
       const orderItems = cart.map(item => ({
@@ -746,15 +827,45 @@ export default function CheckoutModal({
                         <div className="mt-8 pt-8 border-t">
                           <h4 className="text-xl font-medium mb-6">Customer Details</h4>
                           <div className="space-y-6">
-                            <div>
-                              <input
-                                type="text"
-                                value={customerDetails.name}
-                                onChange={(e) => setCustomerDetails(prev => ({ ...prev, name: e.target.value }))}
-                                className="block w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4"
-                                placeholder="Name *"
-                                required
-                              />
+                            <div className="relative" ref={searchRef}>
+                              <div className="relative">
+                                <input
+                                  type="text"
+                                  value={customerDetails.name}
+                                  onChange={handleCustomerNameChange}
+                                  className="block w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4"
+                                  placeholder="Name *"
+                                  required
+                                />
+                                {isSearching && (
+                                  <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                                    <Search className="animate-spin h-5 w-5 text-gray-400" />
+                                  </div>
+                                )}
+                              </div>
+                              
+                              {/* Search Results Dropdown */}
+                              {showSearchResults && searchResults.length > 0 && (
+                                <div className="absolute z-10 w-full mt-1 bg-white rounded-xl shadow-lg border border-gray-200 max-h-60 overflow-auto">
+                                  {searchResults.map((customer) => (
+                                    <button
+                                      key={customer.id}
+                                      onClick={() => handleCustomerSelect(customer)}
+                                      className="w-full px-4 py-3 text-left hover:bg-gray-50 flex items-center space-x-3"
+                                    >
+                                      <User className="h-5 w-5 text-gray-400" />
+                                      <div>
+                                        <div className="font-medium">
+                                          {customer.firstName} {customer.lastName}
+                                        </div>
+                                        <div className="text-sm text-gray-500">
+                                          {customer.phone} {customer.reward?.points !== undefined ? `• ${customer.reward.points} points` : ''}
+                                        </div>
+                                      </div>
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
                             </div>
 
                             <div>

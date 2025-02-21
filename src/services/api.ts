@@ -348,6 +348,20 @@ export const apiMethods = {
       api.patch<APIResponse<void>>(`/api/pos/orders/${orderId}/transaction`, { transactionId }),
   },
   pos: {
+    // Search customers
+    searchCustomers: async (query: string): Promise<APIResponse<Array<{
+      id: string;
+      firstName: string;
+      lastName: string;
+      email: string;
+      phone: string;
+      reward: {
+        points: number;
+      };
+    }>>> => {
+      const response = await api.get(`/api/pos/customers/search?query=${encodeURIComponent(query)}`);
+      return response.data;
+    },
     // Get products
     async getProducts(): Promise<APIResponse<ProductWithDesign[]>> {
       try {
@@ -494,6 +508,15 @@ export const apiMethods = {
           message: error.response?.data?.message || 'Failed to fetch orders'
         };
       }
+    },
+    // Create or update customer
+    createOrUpdateCustomer: async (customerData: {
+      customerName: string;
+      customerPhone: string;
+      customerEmail?: string;
+    }): Promise<APIResponse<any>> => {
+      const response = await api.post('/api/pos/customers/create-or-update', customerData);
+      return response.data;
     },
   }
 };
