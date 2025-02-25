@@ -73,6 +73,15 @@ export default function CheckoutModal({
     email: "",
     phone: "",
   });
+  const [giftDetails, setGiftDetails] = useState({
+    isGift: false,
+    recipientName: '',
+    recipientPhone: '',
+    message: '',
+    note: '',
+    cashAmount: 0,
+    includeCash: false
+  });
   const [searchResults, setSearchResults] = useState<Customer[]>([]);
   const [showSearchResults, setShowSearchResults] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
@@ -311,6 +320,13 @@ export default function CheckoutModal({
           pickupDate: pickupDetails.date,
           pickupTimeSlot: pickupDetails.timeSlot
         }),
+        ...(giftDetails.isGift ? {
+          isGift: giftDetails.isGift,
+          giftMessage: giftDetails.message,
+          giftRecipientName: giftDetails.recipientName,
+          giftRecipientPhone: giftDetails.recipientPhone,
+          giftCashAmount: giftDetails.includeCash ? giftDetails.cashAmount : undefined
+        } : {}),
       };
 
       const response = await apiMethods.pos.createOrder(orderData);
@@ -397,6 +413,15 @@ export default function CheckoutModal({
         name: "",
         email: "",
         phone: "",
+      });
+      setGiftDetails({
+        isGift: false,
+        recipientName: '',
+        recipientPhone: '',
+        message: '',
+        note: '',
+        cashAmount: 0,
+        includeCash: false
       });
       setDeliveryDetails({
         date: "",
@@ -634,6 +659,128 @@ export default function CheckoutModal({
                             </select>
                           </div>
                         )}
+
+
+ {/* Gift Section */}
+ <div className="mt-6 space-y-4">
+                              <div className="flex items-center justify-between">
+                                <h3 className="text-lg font-medium text-gray-900">Send as a Gift</h3>
+                                <label className="relative inline-flex items-center cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    className="sr-only peer"
+                                    checked={giftDetails.isGift}
+                                    onChange={(e) => setGiftDetails(prev => ({ ...prev, isGift: e.target.checked }))}
+                                  />
+                                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                                </label>
+                              </div>
+
+                              {giftDetails.isGift && (
+                                <div className="space-y-4">
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                      <label className="block text-sm font-medium text-gray-900">
+                                        Recipient Name
+                                      </label>
+                                      <div className="mt-1">
+                                        <input
+                                          type="text"
+                                          className="block w-full rounded-lg border border-gray-300 bg-gray-50 p-2.5 text-gray-900 focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                                          value={giftDetails.recipientName}
+                                          onChange={(e) => setGiftDetails(prev => ({ ...prev, recipientName: e.target.value }))}
+                                          placeholder="Enter recipient's name"
+                                        />
+                                      </div>
+                                    </div>
+                                    <div>
+                                      <label className="block text-sm font-medium text-gray-900">
+                                        Recipient Phone
+                                      </label>
+                                      <div className="mt-1">
+                                        <input
+                                          type="tel"
+                                          className="block w-full rounded-lg border border-gray-300 bg-gray-50 p-2.5 text-gray-900 focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                                          value={giftDetails.recipientPhone}
+                                          onChange={(e) => setGiftDetails(prev => ({ ...prev, recipientPhone: e.target.value }))}
+                                          placeholder="Enter recipient's phone"
+                                        />
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-900">
+                                      Gift Message
+                                    </label>
+                                    <div className="mt-1">
+                                      <textarea
+                                        className="block w-full rounded-lg border border-gray-300 bg-gray-50 p-2.5 text-gray-900 focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                                        rows={3}
+                                        value={giftDetails.message}
+                                        onChange={(e) => setGiftDetails(prev => ({ ...prev, message: e.target.value }))}
+                                        placeholder="Enter a message for the gift card"
+                                      />
+                                    </div>
+                                  </div>
+
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-900">
+                                      Special Instructions
+                                    </label>
+                                    <div className="mt-1">
+                                      <textarea
+                                        className="block w-full rounded-lg border border-gray-300 bg-gray-50 p-2.5 text-gray-900 focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                                        rows={2}
+                                        value={giftDetails.note}
+                                        onChange={(e) => setGiftDetails(prev => ({ ...prev, note: e.target.value }))}
+                                        placeholder="Any special instructions for gift wrapping or handling"
+                                      />
+                                    </div>
+                                  </div>
+
+                                  <div className="border-t pt-4">
+                                    <div className="flex items-center justify-between mb-2">
+                                      <label className="text-sm font-medium text-gray-900">Include Cash Gift</label>
+                                      <label className="relative inline-flex items-center cursor-pointer">
+                                        <input
+                                          type="checkbox"
+                                          className="sr-only peer"
+                                          checked={giftDetails.includeCash}
+                                          onChange={(e) => setGiftDetails(prev => ({ ...prev, includeCash: e.target.checked }))}
+                                        />
+                                        <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                                      </label>
+                                    </div>
+                                    
+                                    {giftDetails.includeCash && (
+                                      <div className="mt-2">
+                                        <label className="block text-sm font-medium text-gray-900">
+                                          Cash Amount
+                                        </label>
+                                        <div className="mt-1 relative">
+                                          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                            <span className="text-gray-500 sm:text-sm">AED</span>
+                                          </div>
+                                          <input
+                                            type="number"
+                                            min="0"
+                                            step="1"
+                                            className="block w-full pl-12 rounded-lg border border-gray-300 bg-gray-50 p-2.5 text-gray-900 focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                                            value={giftDetails.cashAmount}
+                                            onChange={(e) => setGiftDetails(prev => ({ ...prev, cashAmount: parseFloat(e.target.value) || 0 }))}
+                                            placeholder="Enter cash amount"
+                                          />
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+
+
+
 
                         {/* Team Selection */}
                         <div className="mt-8 pt-8 border-t space-y-4">
@@ -928,6 +1075,8 @@ export default function CheckoutModal({
                                 className="block w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4"
                               />
                             </div>
+
+                           
 
                             <div className="mt-8">
                               <button

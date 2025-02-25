@@ -57,6 +57,11 @@ interface KitchenOrder {
   designEndTime?: string;
   requiresKitchen: boolean;
   requiresDesign: boolean;
+  deliveryMethod?: 'PICKUP' | 'DELIVERY';
+  pickupDate?: string;
+  pickupTimeSlot?: string;
+  deliveryDate?: string;
+  deliveryTimeSlot?: string;
 }
 
 interface OrderTimerProps {
@@ -460,6 +465,22 @@ export default function KitchenDisplay() {
             <h3 className="text-lg font-semibold">Order #{order.orderNumber}</h3>
             <p className="text-sm text-gray-500">Customer: {order.customerName}</p>
             <OrderTimer2 createdAt={new Date(order.createdAt)} />
+            {order.deliveryMethod && (
+              <div className="mt-2 text-sm">
+                <span className="font-medium">{order.deliveryMethod === 'PICKUP' ? 'Pickup' : 'Delivery'}: </span>
+                {order.deliveryMethod === 'PICKUP' ? (
+                  <span className="text-blue-600">
+                    {order.pickupDate && format(new Date(order.pickupDate), 'MMM d, yyyy')}
+                    {order.pickupTimeSlot && ` at ${order.pickupTimeSlot}`}
+                  </span>
+                ) : (
+                  <span className="text-green-600">
+                    {order.deliveryDate && format(new Date(order.deliveryDate), 'MMM d, yyyy')}
+                    {order.deliveryTimeSlot && ` at ${order.deliveryTimeSlot}`}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -550,7 +571,7 @@ export default function KitchenDisplay() {
         <div className="bg-gray-50 border-t">
           {order.status === 'PENDING' && (
             <button
-              onClick={() => handleStatusUpdate('KITCHEN_QUEUE')}
+              onClick={() => handleStatusUpdate('KITCHEN_PROCESSING')}
               className="w-full py-4 px-4 bg-blue-500 hover:bg-blue-600 text-white text-lg font-medium rounded-lg flex items-center justify-center gap-2 transition-colors active:bg-blue-700 touch-manipulation"
             >
               <ChefHat className="w-6 h-6" />

@@ -119,17 +119,17 @@ const generateReceiptContent = (order: Order): string => `
         <div style="margin: 10px 0;">
           <p style="margin: 2px 0; font-weight: bold;">${order.deliveryMethod === 'DELIVERY' ? 'Delivery Details' : 'Pickup Details'}</p>
           ${order.deliveryMethod === 'DELIVERY' ? `
-            <p style="margin: 2px 0;">${formatLineItem('Date:', format(new Date(order.deliveryDate || ''), 'dd/MM/yyyy'))}</p>
-            <p style="margin: 2px 0;">${formatLineItem('Time:', order.deliveryTimeSlot || '')}</p>
-            <p style="margin: 2px 0;">${formatLineItem('Address:', order.streetAddress || '')}</p>
+            ${order.deliveryDate ? `<p style="margin: 2px 0;">${formatLineItem('Date:', format(new Date(order.deliveryDate), 'dd/MM/yyyy'))}</p>` : ''}
+            ${order.deliveryTimeSlot ? `<p style="margin: 2px 0;">${formatLineItem('Time:', order.deliveryTimeSlot)}</p>` : ''}
+            ${order.streetAddress ? `<p style="margin: 2px 0;">${formatLineItem('Address:', order.streetAddress)}</p>` : ''}
             ${order.apartment ? `<p style="margin: 2px 0;">${formatLineItem('Apartment:', order.apartment)}</p>` : ''}
-            <p style="margin: 2px 0;">${formatLineItem('City:', order.city || '')}</p>
-            <p style="margin: 2px 0;">${formatLineItem('Emirate:', order.emirate || '')}</p>
+            ${order.city ? `<p style="margin: 2px 0;">${formatLineItem('City:', order.city)}</p>` : ''}
+            ${order.emirate ? `<p style="margin: 2px 0;">${formatLineItem('Emirate:', order.emirate)}</p>` : ''}
             ${order.deliveryInstructions ? `<p style="margin: 2px 0;">${formatLineItem('Instructions:', order.deliveryInstructions)}</p>` : ''}
-            <p style="margin: 2px 0;">${formatLineItem('Delivery Charge:', formatCurrency(order.deliveryCharge || 0))}</p>
+            ${order.deliveryCharge ? `<p style="margin: 2px 0;">${formatLineItem('Delivery Charge:', formatCurrency(order.deliveryCharge))}</p>` : ''}
           ` : `
-            <p style="margin: 2px 0;">${formatLineItem('Date:', format(new Date(order.pickupDate || ''), 'dd/MM/yyyy'))}</p>
-            <p style="margin: 2px 0;">${formatLineItem('Time:', order.pickupTimeSlot || '')}</p>
+            ${order.pickupDate ? `<p style="margin: 2px 0;">${formatLineItem('Date:', format(new Date(order.pickupDate), 'dd/MM/yyyy'))}</p>` : ''}
+            ${order.pickupTimeSlot ? `<p style="margin: 2px 0;">${formatLineItem('Time:', order.pickupTimeSlot)}</p>` : ''}
           `}
         </div>
       ` : ''}

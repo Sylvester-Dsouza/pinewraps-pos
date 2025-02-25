@@ -4,7 +4,7 @@ import React from 'react';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Header from '@/components/header/header';
-import { Search, RefreshCcw, Clock, CheckCircle, XCircle, RotateCcw, Truck, Store } from 'lucide-react';
+import { Search, RefreshCcw, Clock, CheckCircle, XCircle, RotateCcw, Truck, Store, Download, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { apiMethods } from '@/services/api';
 import { toast } from 'react-hot-toast';
@@ -12,6 +12,7 @@ import { getAuth, onAuthStateChanged } from 'firebase/auth';
 import OrderReceipt from '@/components/receipt/OrderReceipt';
 import Cookies from 'js-cookie';
 import { nanoid } from 'nanoid';
+import { invoiceService } from '@/services/invoice.service';
 
 interface OrderItem {
   productId: string;
@@ -35,7 +36,7 @@ interface Order {
   customerPhone: string;
   customerEmail?: string;
   createdAt: string;
-  status: 'PENDING' | 'DESIGN_QUEUE' | 'DESIGN_PROCESSING' | 'DESIGN_READY' | 'KITCHEN_QUEUE' | 'KITCHEN_PROCESSING' | 'KITCHEN_READY' | 'COMPLETED';
+  status: 'PENDING' | 'DESIGN_QUEUE' | 'DESIGN_PROCESSING' | 'DESIGN_READY' | 'KITCHEN_QUEUE' | 'KITCHEN_PROCESSING' | 'KITCHEN_READY' | 'COMPLETED' | 'CANCELLED' | 'PENDING_PAYMENT';
   totalAmount: number;
   paidAmount: number;
   paymentMethod: 'CASH' | 'CARD';
@@ -52,6 +53,11 @@ interface Order {
   city?: string;
   pickupDate?: string;
   pickupTimeSlot?: string;
+  isGift?: boolean;
+  giftRecipientName?: string;
+  giftRecipientPhone?: string;
+  giftMessage?: string;
+  giftCashAmount?: number;
 }
 
 const statusColors = {
@@ -62,7 +68,9 @@ const statusColors = {
   KITCHEN_QUEUE: { bg: 'bg-blue-100', text: 'text-blue-800', icon: RotateCcw },
   KITCHEN_PROCESSING: { bg: 'bg-blue-100', text: 'text-blue-800', icon: RefreshCcw },
   KITCHEN_READY: { bg: 'bg-green-100', text: 'text-green-800', icon: CheckCircle },
-  COMPLETED: { bg: 'bg-green-100', text: 'text-green-800', icon: CheckCircle }
+  COMPLETED: { bg: 'bg-green-100', text: 'text-green-800', icon: CheckCircle },
+  CANCELLED: { bg: 'bg-red-100', text: 'text-red-800', icon: XCircle },
+  PENDING_PAYMENT: { bg: 'bg-orange-100', text: 'text-orange-800', icon: Clock }
 } as const;
 
 const statusLabels = {
@@ -73,7 +81,9 @@ const statusLabels = {
   KITCHEN_QUEUE: 'Kitchen Queue',
   KITCHEN_PROCESSING: 'In Kitchen',
   KITCHEN_READY: 'Kitchen Ready',
-  COMPLETED: 'Completed'
+  COMPLETED: 'Completed',
+  CANCELLED: 'Cancelled',
+  PENDING_PAYMENT: 'Pending Payment'
 } as const;
 
 const deliveryMethodColors = {
@@ -91,6 +101,8 @@ const OrdersPage = () => {
   const [selectedDateRange, setSelectedDateRange] = useState('all');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [downloadingInvoices, setDownloadingInvoices] = useState<Record<string, boolean>>({});
+  const [showCancelConfirm, setShowCancelConfirm] = useState<string | null>(null);
 
   // Check authentication status
   useEffect(() => {
@@ -241,8 +253,35 @@ const OrdersPage = () => {
     return acc;
   }, {} as Record<string, number>);
 
-  const handleReorder = async (order: Order) => {
+  const handleReorder = async (order: any) => {
     try {
+      // Get the original order items
+      const items = order.items.map((item: any) => ({
+        ...item,
+        id: undefined // Remove the original ID to create new items
+      }));
+
+      // Set up the initial order state
+      // setOrderItems(items);
+      // setCustomerDetails({
+      //   name: order.customerName || '',
+      //   phone: order.customerPhone || '',
+      //   email: order.customerEmail || '',
+      // });
+
+      // Set gift details if it was a gift order
+      if (order.isGift) {
+        // setGiftDetails({
+        //   isGift: true,
+        //   recipientName: order.giftRecipientName || '',
+        //   recipientPhone: order.giftRecipientPhone || '',
+        //   message: order.giftMessage || '',
+        //   note: '',
+        //   cashAmount: order.giftCashAmount || 0,
+        //   includeCash: order.giftCashAmount > 0
+        // });
+      }
+
       // Format cart items to match the POS cart structure
       const cartItems = order.items.map(item => ({
         id: nanoid(), // Generate a new cart item ID
@@ -270,8 +309,8 @@ const OrdersPage = () => {
       toast.success('Items added to cart');
       router.push('/pos');
     } catch (error) {
-      console.error('Error reordering:', error);
-      toast.error('Failed to reorder items');
+      console.error('Error handling reorder:', error);
+      toast.error('Failed to process reorder');
     }
   };
 
@@ -283,6 +322,39 @@ const OrdersPage = () => {
   const handlePrintReceipt = (order: Order) => {
     console.log('Printing order:', order); // Debug log
     setSelectedOrder(order);
+  };
+
+  const handleCancelOrder = async (orderId: string) => {
+    try {
+      const response = await apiMethods.pos.updateOrderStatus(orderId, {
+        status: 'CANCELLED',
+        notes: 'Order cancelled by POS user'
+      });
+
+      if (response.success) {
+        toast.success('Order cancelled successfully');
+        setShowCancelConfirm(null);
+        fetchOrders(); // Refresh orders list
+      } else {
+        throw new Error(response.message || 'Failed to cancel order');
+      }
+    } catch (error: any) {
+      console.error('Error cancelling order:', error);
+      toast.error(error.message || 'Failed to cancel order');
+    }
+  };
+
+  const handleDownloadInvoice = async (orderId: string) => {
+    try {
+      setDownloadingInvoices(prev => ({ ...prev, [orderId]: true }));
+      await invoiceService.downloadInvoice(orderId);
+      toast.success('Invoice downloaded successfully');
+    } catch (error: any) {
+      console.error('Error downloading invoice:', error);
+      toast.error(error.message || 'Failed to download invoice');
+    } finally {
+      setDownloadingInvoices(prev => ({ ...prev, [orderId]: false }));
+    }
   };
 
   if (!isAuthenticated) {
@@ -340,7 +412,7 @@ const OrdersPage = () => {
             
             <button
               onClick={handleRefresh}
-              className="w-full md:w-auto px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 flex items-center justify-center gap-2"
+              className="w-full md:w-auto px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 flex items-center justify-center gap-2"
             >
               <RotateCcw className="h-4 w-4" />
               Refresh
@@ -392,44 +464,38 @@ const OrdersPage = () => {
                         <p>Total Amount: AED {order.totalAmount?.toFixed(2) || '0.00'}</p>
                         <p>Payment Method: {order.paymentMethod}</p>
                         
-                        {/* Update delivery/pickup information styling */}
-                        {order.deliveryMethod && (
-                          <div className="mt-2 border-t pt-2">
-                            <p className={`font-medium flex items-center gap-1 ${deliveryMethodColors[order.deliveryMethod].text}`}>
-                              {(() => {
-                                const Icon = deliveryMethodColors[order.deliveryMethod].icon;
-                                return <Icon className="h-4 w-4" />;
-                              })()}
-                              {order.deliveryMethod === 'DELIVERY' ? 'Delivery Details' : 'Pickup Details'}
-                            </p>
-                            {order.deliveryMethod === 'DELIVERY' ? (
-                              <>
-                                <p>Date: {format(new Date(order.deliveryDate || ''), 'PP')}</p>
-                                <p>Time: {order.deliveryTimeSlot}</p>
-                                <p>Address: {order.streetAddress}</p>
-                                {order.apartment && <p>Apartment: {order.apartment}</p>}
-                                <p>City: {order.city}</p>
-                                <p>Emirate: {order.emirate}</p>
-                                {order.deliveryInstructions && (
-                                  <p>Instructions: {order.deliveryInstructions}</p>
-                                )}
-                                <p className="font-medium">Delivery Charge: AED {(order.deliveryCharge || 0).toFixed(2)}</p>
-                              </>
-                            ) : (
-                              <>
-                                <p>Date: {order.pickupDate ? format(new Date(order.pickupDate), 'PP') : 'Not specified'}</p>
-                                <p>Time: {order.pickupTimeSlot || 'Not specified'}</p>
-                              </>
-                            )}
-                          </div>
+                        {/* Delivery/Pickup Details */}
+                        {order.deliveryMethod === 'DELIVERY' ? (
+                          <>
+                            <div className="mt-2 pt-2 border-t border-gray-200">
+                              <p className="font-medium text-gray-700">Delivery Details:</p>
+                              {order.deliveryDate && order.deliveryTimeSlot && (
+                                <p>Date & Time: {format(new Date(order.deliveryDate), 'PP')} - {order.deliveryTimeSlot}</p>
+                              )}
+                              {order.streetAddress && (
+                                <p>Address: {[
+                                  order.streetAddress,
+                                  order.apartment,
+                                  order.city,
+                                  order.emirate
+                                ].filter(Boolean).join(', ')}</p>
+                              )}
+                              {order.deliveryInstructions && (
+                                <p>Instructions: {order.deliveryInstructions}</p>
+                              )}
+                            </div>
+                          </>
+                        ) : order.deliveryMethod === 'PICKUP' && (
+                          <>
+                            <div className="mt-2 pt-2 border-t border-gray-200">
+                              <p className="font-medium text-gray-700">Pickup Details:</p>
+                              {order.pickupDate && order.pickupTimeSlot && (
+                                <p>Date & Time: {format(new Date(order.pickupDate), 'PP')} - {order.pickupTimeSlot}</p>
+                              )}
+                            </div>
+                          </>
                         )}
                       </div>
-                    </div>
-                    
-                    <div className="text-right">
-                      <p className="text-sm text-gray-600">Total Amount</p>
-                      <p className="text-xl font-semibold">AED {(order.totalAmount || 0).toFixed(2)}</p>
-                      <p className="text-sm text-gray-600">Method: {order.paymentMethod}</p>
                     </div>
                   </div>
                   
@@ -468,26 +534,39 @@ const OrdersPage = () => {
                     </div>
                   </div>
                   
-                  <div className="flex gap-2 mt-4 pt-4 border-t">
+                  <div className="flex items-center gap-2 mt-4">
                     <button
-                      onClick={() => handlePrintReceipt(order)}
-                      className="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 flex items-center justify-center gap-2"
+                      onClick={() => setSelectedOrder(order)}
+                      className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 flex-1"
                     >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2-4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-                      </svg>
-                      Print
+                      View Receipt
                     </button>
-                    
+                    {!['COMPLETED', 'CANCELLED'].includes(order.status) && (
+                      <button
+                        onClick={() => setShowCancelConfirm(order.id)}
+                        className="px-4 py-2 text-sm font-medium text-red-700 bg-red-100 rounded-md hover:bg-red-200 flex-1"
+                      >
+                        Cancel Order
+                      </button>
+                    )}
                     <button
                       onClick={() => handleReorder(order)}
-                      className="flex-1 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500 flex items-center justify-center gap-2"
+                      className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 flex-1"
                     >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                      </svg>
                       Reorder
                     </button>
+                    <button
+                        onClick={() => handleDownloadInvoice(order.id)}
+                        disabled={downloadingInvoices[order.id]}
+                        className="px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {downloadingInvoices[order.id] ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Download className="h-4 w-4" />
+                        )}
+                        {downloadingInvoices[order.id] ? 'Downloading...' : 'Download Invoice'}
+                      </button>
                   </div>
                 </div>
               </div>
@@ -495,6 +574,34 @@ const OrdersPage = () => {
           </div>
         )}
       </main>
+
+      {/* Cancel Confirmation Modal */}
+      {showCancelConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold mb-4">Cancel Order</h3>
+            <p className="text-gray-600 mb-6">
+              Are you sure you want to cancel this order? This action cannot be undone.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setShowCancelConfirm(null)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
+              >
+                No, Keep Order
+              </button>
+              <button
+                onClick={() => {
+                  handleCancelOrder(showCancelConfirm);
+                }}
+                className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700"
+              >
+                Yes, Cancel Order
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Receipt Modal */}
       {selectedOrder && (
