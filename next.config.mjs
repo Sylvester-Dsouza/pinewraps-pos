@@ -21,8 +21,26 @@ const nextConfig = {
         port: '',
         pathname: '/**',
       },
-    ],
-    domains: ['source.unsplash.com', 'storage.googleapis.com'],
+      {
+        protocol: 'https',
+        hostname: 'source.unsplash.com',
+        port: '',
+        pathname: '/**',
+      }
+    ]
+  },
+  webpack: (config, { isServer }) => {
+    if (!isServer) {
+      // Don't attempt to load these modules on the client side
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        'child_process': false,
+        'fs': false,
+        'net': false,
+        'serialport': false
+      };
+    }
+    return config;
   }
 }
 

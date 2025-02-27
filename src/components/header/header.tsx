@@ -2,7 +2,7 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
-import { LogOut, Settings, User, Maximize2, Minimize2, Plus, Calculator } from "lucide-react";
+import { LogOut, Settings, User, Maximize2, Minimize2, Plus, Calculator, DollarSign } from "lucide-react";
 import { useAuth } from "@/providers/auth-provider";
 import { useState, useEffect } from "react";
 import CalculatorModal from "../pos/calculator-modal";
@@ -49,18 +49,29 @@ export default function Header() {
                 href="/pos"
                 className={`text-sm font-medium ${
                   pathname === "/pos"
-                    ? "text-black"
-                    : "text-gray-600 hover:text-black"
+                    ? "text-primary"
+                    : "text-muted-foreground hover:text-primary"
                 }`}
               >
-                Point of Sale
+                Orders
+              </Link>
+              <Link
+                href="/drawer"
+                className={`text-sm font-medium flex items-center gap-1 ${
+                  pathname === "/drawer"
+                    ? "text-primary"
+                    : "text-muted-foreground hover:text-primary"
+                }`}
+              >
+                <DollarSign className="w-4 h-4" />
+                Cash Drawer
               </Link>
               <Link
                 href="/orders"
                 className={`text-sm font-medium ${
                   pathname === "/orders"
-                    ? "text-black"
-                    : "text-gray-600 hover:text-black"
+                    ? "text-primary"
+                    : "text-muted-foreground hover:text-primary"
                 }`}
               >
                 Orders
@@ -69,8 +80,8 @@ export default function Header() {
                 href="/kitchen"
                 className={`text-sm font-medium ${
                   pathname === "/kitchen"
-                    ? "text-black"
-                    : "text-gray-600 hover:text-black"
+                    ? "text-primary"
+                    : "text-muted-foreground hover:text-primary"
                 }`}
               >
                 Kitchen Display
@@ -79,8 +90,8 @@ export default function Header() {
                 href="/design"
                 className={`text-sm font-medium ${
                   pathname === "/design"
-                    ? "text-black"
-                    : "text-gray-600 hover:text-black"
+                    ? "text-primary"
+                    : "text-muted-foreground hover:text-primary"
                 }`}
               >
                 Design Display

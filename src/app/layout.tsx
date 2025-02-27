@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
-import "../styles/print.css";
-import { Toaster } from "react-hot-toast";
+import { Toaster } from "@/components/ui/toaster";
 import { QueryProvider } from "@/providers/query-provider";
 import { AuthProvider } from "@/providers/auth-provider";
 import Script from "next/script";
@@ -14,7 +13,7 @@ const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "Pinewraps POS",
-  description: "Modern Point of Sale System for Pinewraps",
+  description: "Point of Sale System for Pinewraps",
   manifest: "/manifest.json",
 };
 
@@ -29,21 +28,11 @@ export default function RootLayout({
         <QueryProvider>
           <AuthProvider>
             <div className="min-h-screen bg-gray-50">
-              <Toaster position="top-right" />
               {children}
             </div>
-            <Toaster
-              position="top-right"
-              toastOptions={{
-                duration: 3000,
-                style: {
-                  background: '#333',
-                  color: '#fff',
-                },
-              }}
-            />
           </AuthProvider>
         </QueryProvider>
+        <Toaster />
         <Script
           id="register-sw"
           strategy="afterInteractive"

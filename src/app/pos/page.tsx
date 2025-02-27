@@ -476,10 +476,17 @@ export default function POSPage() {
                     {product.images && product.images.length > 0 ? (
                       <div className="relative w-full aspect-square mb-4 rounded-xl overflow-hidden bg-gray-50">
                         <Image
-                          src={product.images.find(img => img.isPrimary)?.url || product.images[0].url}
+                          src={product.images.find(img => img.isPrimary)?.url?.replace('.jpg.jpg', '.jpg') || product.images[0].url?.replace('.jpg.jpg', '.jpg')}
                           alt={product.name}
                           fill
                           className="object-cover transition-transform group-hover:scale-105"
+                          onError={() => {
+                            // If image fails to load, show fallback
+                            const imgElement = document.querySelector(`[alt="${product.name}"]`);
+                            if (imgElement) {
+                              imgElement.parentElement.innerHTML = '<span class="text-gray-400">No image</span>';
+                            }
+                          }}
                         />
                       </div>
                     ) : (
