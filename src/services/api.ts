@@ -459,11 +459,12 @@ export const apiMethods = {
       return api.post<APIResponse<any>>('/api/pos/orders', orderData);
     },
 
-    updateOrderStatus: async (orderId: string, { status, notes }: { status: string, notes?: string }) => {
+    updateOrderStatus: async (orderId: string, { status, notes, teamNotes }: { status: string, notes?: string, teamNotes?: string }) => {
       try {
         const response = await api.patch(`/api/pos/orders/${orderId}/status`, {
           status,
-          notes: notes || ''
+          notes: notes || '',
+          teamNotes: teamNotes || ''
         });
         return response.data;
       } catch (error: any) {
@@ -509,6 +510,30 @@ export const apiMethods = {
           success: false,
           data: [],
           message: error.response?.data?.message || 'Failed to fetch orders'
+        };
+      }
+    },
+
+    getOrderById: async (orderId: string) => {
+      try {
+        const response = await api.get(`/api/pos/orders/${orderId}`);
+        
+        if (response.data && typeof response.data === 'object') {
+          const { success, data, message } = response.data;
+          return { success, data, message };
+        }
+        
+        return {
+          success: false,
+          data: null,
+          message: 'Unexpected API response format'
+        };
+      } catch (error: any) {
+        console.error('Error in getOrderById:', error);
+        return {
+          success: false,
+          data: null,
+          message: error.response?.data?.message || 'Failed to fetch order'
         };
       }
     },

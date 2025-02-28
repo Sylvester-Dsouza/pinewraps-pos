@@ -9,10 +9,17 @@ class WebSocketService {
   private isConnecting = false;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private authInitialized = false;
+  private user: any = null;
 
-  constructor() {
+  constructor(user?: any) {
     if (typeof window !== 'undefined') {
-      this.initializeAuth();
+      if (user) {
+        this.user = user;
+        this.authInitialized = true;
+        this.connect();
+      } else {
+        this.initializeAuth();
+      }
     }
   }
 
@@ -21,6 +28,7 @@ class WebSocketService {
     onAuthStateChanged(auth, (user) => {
       console.log('Auth state changed:', user ? 'User logged in' : 'No user');
       this.authInitialized = true;
+      this.user = user;
       if (user) {
         this.connect();
       } else if (this.ws) {
@@ -30,12 +38,17 @@ class WebSocketService {
   }
 
   private async getAuthToken(): Promise<string | null> {
+    if (this.user) {
+      return this.user.getIdToken();
+    }
+
     if (!this.authInitialized) {
       console.log('Waiting for auth to initialize...');
       return new Promise((resolve) => {
         const auth = getAuth();
         const unsubscribe = onAuthStateChanged(auth, (user) => {
           unsubscribe();
+          this.user = user;
           if (user) {
             user.getIdToken().then(resolve);
           } else {
@@ -48,8 +61,9 @@ class WebSocketService {
     try {
       const auth = getAuth();
       const user = auth.currentUser;
+      this.user = user;
       if (user) {
-        return await user.getIdToken(true); // Force refresh token
+        return await user.getIdToken();
       }
     } catch (error) {
       console.error('Error getting auth token:', error);
@@ -169,8 +183,26 @@ class WebSocketService {
     }
     this.connect();
   }
+
+  // Disconnect WebSocket
+  public disconnect() {
+    if (this.ws) {
+      this.ws.close();
+      this.ws = null;
+    }
+    
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    
+    this.subscribers = {};
+    this.reconnectAttempts = 0;
+    console.log('WebSocket disconnected');
+  }
 }
 
-// Create a singleton instance
+// Create a singleton instance for backward compatibility
 const wsService = typeof window !== 'undefined' ? new WebSocketService() : null;
-export default wsService;
+export default WebSocketService;
+export { wsService };

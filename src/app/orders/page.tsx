@@ -36,7 +36,7 @@ interface Order {
   customerPhone: string;
   customerEmail?: string;
   createdAt: string;
-  status: 'PENDING' | 'DESIGN_QUEUE' | 'DESIGN_PROCESSING' | 'DESIGN_READY' | 'KITCHEN_QUEUE' | 'KITCHEN_PROCESSING' | 'KITCHEN_READY' | 'COMPLETED' | 'CANCELLED' | 'PENDING_PAYMENT';
+  status: 'PENDING' | 'DESIGN_QUEUE' | 'DESIGN_PROCESSING' | 'DESIGN_READY' | 'KITCHEN_QUEUE' | 'KITCHEN_PROCESSING' | 'KITCHEN_READY' | 'FINAL_CHECK_QUEUE' | 'FINAL_CHECK_PROCESSING' | 'FINAL_CHECK_COMPLETE' | 'COMPLETED' | 'CANCELLED' | 'PENDING_PAYMENT';
   totalAmount: number;
   paidAmount: number;
   paymentMethod: 'CASH' | 'CARD';
@@ -68,6 +68,9 @@ const statusColors = {
   KITCHEN_QUEUE: { bg: 'bg-blue-100', text: 'text-blue-800', icon: RotateCcw },
   KITCHEN_PROCESSING: { bg: 'bg-blue-100', text: 'text-blue-800', icon: RefreshCcw },
   KITCHEN_READY: { bg: 'bg-green-100', text: 'text-green-800', icon: CheckCircle },
+  FINAL_CHECK_QUEUE: { bg: 'bg-amber-100', text: 'text-amber-800', icon: RotateCcw },
+  FINAL_CHECK_PROCESSING: { bg: 'bg-amber-100', text: 'text-amber-800', icon: RefreshCcw },
+  FINAL_CHECK_COMPLETE: { bg: 'bg-amber-100', text: 'text-amber-800', icon: CheckCircle },
   COMPLETED: { bg: 'bg-green-100', text: 'text-green-800', icon: CheckCircle },
   CANCELLED: { bg: 'bg-red-100', text: 'text-red-800', icon: XCircle },
   PENDING_PAYMENT: { bg: 'bg-orange-100', text: 'text-orange-800', icon: Clock }
@@ -81,6 +84,9 @@ const statusLabels = {
   KITCHEN_QUEUE: 'Kitchen Queue',
   KITCHEN_PROCESSING: 'In Kitchen',
   KITCHEN_READY: 'Kitchen Ready',
+  FINAL_CHECK_QUEUE: 'Final Check Queue',
+  FINAL_CHECK_PROCESSING: 'Final Check Processing',
+  FINAL_CHECK_COMPLETE: 'Final Check Complete',
   COMPLETED: 'Completed',
   CANCELLED: 'Cancelled',
   PENDING_PAYMENT: 'Pending Payment'

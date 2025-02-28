@@ -96,6 +96,16 @@ export default function Header() {
               >
                 Design Display
               </Link>
+              <Link
+                href="/final-check"
+                className={`text-sm font-medium ${
+                  pathname === "/final-check"
+                    ? "text-primary"
+                    : "text-muted-foreground hover:text-primary"
+                }`}
+              >
+                Final Check
+              </Link>
             </nav>
           </div>
 
