@@ -111,6 +111,9 @@ export default function ProductDetailsModal({
     }
   }, [selectedOptions, product]);
 
+  // Check if product is in Sets category
+  const isSetProduct = product.category?.name === 'Sets';
+
   // Calculate total price based on quantity, custom price, and selected variant
   const calculateTotalPrice = () => {
     if (!product) return 0;
@@ -118,6 +121,11 @@ export default function ProductDetailsModal({
     // If custom price is set, use it
     if (product.allowCustomPrice && customPrice !== null) {
       return customPrice * quantity;
+    }
+
+    // For Sets category, always use base price regardless of options
+    if (isSetProduct) {
+      return product.basePrice * quantity;
     }
 
     // If variant is selected, use variant price
@@ -134,6 +142,9 @@ export default function ProductDetailsModal({
     // If no options, always ready
     if (!product.options?.length) return true;
 
+    // For Sets category, allow any number of options
+    if (isSetProduct) return true;
+
     // Check if all options have been selected
     const allOptionsSelected = product.options.every(option =>
       selectedOptions.some(selected => selected.optionId === option.id)
@@ -144,13 +155,31 @@ export default function ProductDetailsModal({
 
   const handleOptionChange = (optionId: string, valueId: string) => {
     setSelectedOptions(prev => {
-      // Remove any existing selection for this option
-      const newOptions = prev.filter(opt => opt.optionId !== optionId);
-      // Add new selection
-      const updatedOptions = [...newOptions, { optionId, valueId }];
+      let newOptions = [...prev];
+      
+      // For Sets category, allow multiple selections per option
+      if (isSetProduct) {
+        const existingSelection = newOptions.find(
+          opt => opt.optionId === optionId && opt.valueId === valueId
+        );
+        
+        if (existingSelection) {
+          // Remove the selection if it exists
+          newOptions = newOptions.filter(
+            opt => !(opt.optionId === optionId && opt.valueId === valueId)
+          );
+        } else {
+          // Add the new selection
+          newOptions.push({ optionId, valueId });
+        }
+      } else {
+        // Original behavior for non-Sets products
+        newOptions = newOptions.filter(opt => opt.optionId !== optionId);
+        newOptions.push({ optionId, valueId });
+      }
       
       // Sort by option position to maintain consistent order
-      return updatedOptions.sort((a, b) => {
+      return newOptions.sort((a, b) => {
         const optionA = product.options?.find(o => o.id === a.optionId);
         const optionB = product.options?.find(o => o.id === b.optionId);
         return (optionA?.position || 0) - (optionB?.position || 0);
@@ -311,7 +340,14 @@ export default function ProductDetailsModal({
                     {/* Product Options */}
                     {product.options?.sort((a, b) => a.position - b.position).map((option) => (
                       <div key={option.id} className="mb-6">
-                        <h4 className="text-lg font-medium mb-3">{option.name}</h4>
+                        <h4 className="text-lg font-medium mb-3">
+                          {option.name}
+                          {isSetProduct && (
+                            <span className="text-sm text-gray-500 ml-2">
+                              (Select multiple)
+                            </span>
+                          )}
+                        </h4>
                         <div className="grid grid-cols-2 gap-3">
                           {option.values?.sort((a, b) => a.position - b.position).map((value) => {
                             const isSelected = selectedOptions.some(

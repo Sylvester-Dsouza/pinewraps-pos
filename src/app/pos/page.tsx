@@ -476,15 +476,19 @@ export default function POSPage() {
                     {product.images && product.images.length > 0 ? (
                       <div className="relative w-full aspect-square mb-4 rounded-xl overflow-hidden bg-gray-50">
                         <Image
-                          src={product.images.find(img => img.isPrimary)?.url?.replace('.jpg.jpg', '.jpg') || product.images[0].url?.replace('.jpg.jpg', '.jpg')}
+                          src={product.images[0]?.url || '/placeholder.jpg'}
                           alt={product.name}
                           fill
+                          priority
                           className="object-cover transition-transform group-hover:scale-105"
-                          onError={() => {
-                            // If image fails to load, show fallback
-                            const imgElement = document.querySelector(`[alt="${product.name}"]`);
-                            if (imgElement) {
-                              imgElement.parentElement.innerHTML = '<span class="text-gray-400">No image</span>';
+                          sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+                          onError={(e) => {
+                            const target = e.target as HTMLImageElement;
+                            if (target.parentElement) {
+                              target.parentElement.innerHTML = '<span class="text-gray-400">No image</span>';
+                            } else {
+                              // If no parent element, just hide the image
+                              target.style.display = 'none';
                             }
                           }}
                         />

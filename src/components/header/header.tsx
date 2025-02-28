@@ -53,7 +53,7 @@ export default function Header() {
                     : "text-muted-foreground hover:text-primary"
                 }`}
               >
-                Orders
+                Point of Sale
               </Link>
               <Link
                 href="/drawer"

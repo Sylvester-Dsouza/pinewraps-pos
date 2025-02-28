@@ -437,15 +437,17 @@ const OrdersPage = () => {
                     <div>
                       <div className="flex items-center gap-2 mb-2">
                         <h3 className="text-lg font-semibold">Order #{order.orderNumber}</h3>
-                        <div className={`px-3 py-1 rounded-full text-sm ${statusColors[order.status].bg} ${statusColors[order.status].text} flex items-center gap-1`}>
-                          {(() => {
-                            const Icon = statusColors[order.status].icon;
-                            return <Icon className="h-4 w-4" />;
-                          })()}
-                          {statusLabels[order.status]}
-                        </div>
+                        {statusColors[order.status] && (
+                          <div className={`px-3 py-1 rounded-full text-sm ${statusColors[order.status].bg} ${statusColors[order.status].text} flex items-center gap-1`}>
+                            {(() => {
+                              const Icon = statusColors[order.status].icon;
+                              return <Icon className="h-4 w-4" />;
+                            })()}
+                            {statusLabels[order.status] || order.status}
+                          </div>
+                        )}
                         {/* Add delivery method badge */}
-                        {order.deliveryMethod && (
+                        {order.deliveryMethod && deliveryMethodColors[order.deliveryMethod] && (
                           <div className={`px-3 py-1 rounded-full text-sm ${deliveryMethodColors[order.deliveryMethod].bg} ${deliveryMethodColors[order.deliveryMethod].text} flex items-center gap-1`}>
                             {(() => {
                               const Icon = deliveryMethodColors[order.deliveryMethod].icon;

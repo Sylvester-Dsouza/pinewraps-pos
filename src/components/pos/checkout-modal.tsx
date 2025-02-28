@@ -1,8 +1,8 @@
 "use client";
 
-import { Fragment, useState, useEffect, useRef } from "react";
+import { Fragment, useState, useEffect, useRef, useCallback } from "react";
 import { Dialog, Transition } from "@headlessui/react";
-import { X, Search, User } from "lucide-react";
+import { X, Search, User, MapPin } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { apiMethods, type CustomImage, type POSOrderData, type POSOrderStatus } from "@/services/api";
 import Image from "next/image";
@@ -34,12 +34,25 @@ interface CartItem {
   customImages?: CustomImage[];
 }
 
+interface CustomerAddress {
+  id: string;
+  street: string;
+  apartment: string;
+  emirate: string;
+  city: string;
+  country: string;
+  pincode: string;
+  isDefault: boolean;
+  type: string;
+}
+
 interface Customer {
   id: string;
   firstName: string;
   lastName: string;
   email: string;
   phone: string;
+  addresses: CustomerAddress[];
   reward: {
     points: number;
   };
@@ -112,6 +125,13 @@ export default function CheckoutModal({
     kitchenNotes?: string;
     customImages?: CustomImage[];
   }>>([]);
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [customerAddresses, setCustomerAddresses] = useState<CustomerAddress[]>([]);
+  const [selectedAddress, setSelectedAddress] = useState<CustomerAddress | null>(null);
+  const [couponCode, setCouponCode] = useState('');
+  const [isValidatingCoupon, setIsValidatingCoupon] = useState(false);
+  const [couponError, setCouponError] = useState('');
+  const [appliedCoupon, setAppliedCoupon] = useState(null);
 
   // Close search results when clicking outside
   useEffect(() => {
@@ -124,9 +144,9 @@ export default function CheckoutModal({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Debounced search function
-  const searchCustomers = debounce(async (query: string) => {
-    if (!query || query.length < 2) {
+  // Search customers with debounce
+  const searchCustomers = useCallback(async (query: string) => {
+    if (!query) {
       setSearchResults([]);
       setShowSearchResults(false);
       return;
@@ -136,7 +156,12 @@ export default function CheckoutModal({
     try {
       const response = await apiMethods.pos.searchCustomers(query);
       if (response.success) {
-        setSearchResults(response.data);
+        // Transform the response to match Customer type
+        const customersWithAddresses = response.data.map(customer => ({
+          ...customer,
+          addresses: [] as CustomerAddress[] // Initialize empty addresses array
+        }));
+        setSearchResults(customersWithAddresses);
         setShowSearchResults(true);
       }
     } catch (error) {
@@ -144,17 +169,75 @@ export default function CheckoutModal({
     } finally {
       setIsSearching(false);
     }
-  }, 300);
+  }, []);
 
   // Handle customer selection
-  const handleCustomerSelect = (customer: Customer) => {
+  const handleCustomerSelect = async (customer: Customer) => {
     setCustomerDetails({
       name: `${customer.firstName} ${customer.lastName}`.trim(),
       email: customer.email || "",
       phone: customer.phone || "",
     });
+    setSelectedCustomer(customer);
     setShowSearchResults(false);
     setSearchResults([]);
+
+    // Fetch customer addresses if needed
+    try {
+      const addressResponse = await apiMethods.pos.getCustomerAddresses(customer.id);
+      if (addressResponse.success) {
+        const addresses = addressResponse.data;
+        setCustomerAddresses(addresses);
+        
+        // Update customer with addresses
+        setSelectedCustomer(prev => prev ? { ...prev, addresses } : null);
+        
+        // If delivery method is selected, auto-select default address
+        if (deliveryMethod === 'DELIVERY' && addresses.length > 0) {
+          const defaultAddress = addresses.find(addr => addr.isDefault) || addresses[0];
+          setSelectedAddress(defaultAddress);
+          setDeliveryDetails(prev => ({
+            ...prev,
+            streetAddress: defaultAddress.street,
+            apartment: defaultAddress.apartment,
+            emirate: defaultAddress.emirate,
+            city: defaultAddress.city || 'Dubai'
+          }));
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching customer addresses:', error);
+    }
+  };
+
+  // Handle address selection
+  const handleAddressSelect = (address: CustomerAddress) => {
+    setSelectedAddress(address);
+    setDeliveryDetails(prev => ({
+      ...prev,
+      streetAddress: address.street,
+      apartment: address.apartment,
+      emirate: address.emirate,
+      city: address.city || 'Dubai'
+    }));
+  };
+
+  // Update delivery method
+  const handleDeliveryMethodChange = (method: 'PICKUP' | 'DELIVERY') => {
+    setDeliveryMethod(method);
+    
+    // If switching to delivery and customer has addresses, auto-select default
+    if (method === 'DELIVERY' && selectedCustomer?.addresses?.length > 0) {
+      const defaultAddress = selectedCustomer.addresses.find(addr => addr.isDefault) || selectedCustomer.addresses[0];
+      setSelectedAddress(defaultAddress);
+      setDeliveryDetails(prev => ({
+        ...prev,
+        streetAddress: defaultAddress.street,
+        apartment: defaultAddress.apartment,
+        emirate: defaultAddress.emirate,
+        city: defaultAddress.city || 'Dubai'
+      }));
+    }
   };
 
   // Handle customer name change with search
@@ -217,11 +300,71 @@ export default function CheckoutModal({
 
   // Calculate total with delivery charge
   const calculateTotal = () => {
-    const baseTotal = cartTotal;
-    if (deliveryMethod === 'DELIVERY' && deliveryDetails.emirate) {
-      return baseTotal + calculateDeliveryCharge(deliveryDetails.emirate);
+    const baseTotal = parseFloat(cartTotal.toString());
+    console.log('Base Total:', baseTotal);
+    
+    if (isNaN(baseTotal)) {
+      console.error('Invalid cart total:', cartTotal);
+      return 0;
     }
-    return baseTotal;
+    
+    let total = baseTotal;
+    
+    // Add delivery charge if applicable
+    if (deliveryMethod === 'DELIVERY') {
+      const deliveryCharge = calculateDeliveryCharge(deliveryDetails.emirate);
+      console.log('Delivery Charge:', deliveryCharge);
+      total += deliveryCharge;
+    }
+    
+    // Apply coupon discount if any
+    if (appliedCoupon) {
+      console.log('Applied Coupon:', appliedCoupon);
+      const couponValue = parseFloat(appliedCoupon.value.toString());
+      
+      if (!isNaN(couponValue)) {
+        const discount = appliedCoupon.type === 'PERCENTAGE'
+          ? (total * couponValue) / 100
+          : couponValue;
+        console.log('Calculated Discount:', discount);
+        total = Math.max(0, total - discount);
+      } else {
+        console.error('Invalid coupon value:', appliedCoupon.value);
+      }
+    }
+    
+    console.log('Final Total:', total);
+    return total;
+  };
+
+  // Calculate coupon discount for display
+  const calculateCouponDiscount = () => {
+    if (!appliedCoupon) return 0;
+    
+    const baseAmount = parseFloat(cartTotal.toString());
+    if (isNaN(baseAmount)) {
+      console.error('Invalid cart total for coupon:', cartTotal);
+      return 0;
+    }
+    
+    const couponValue = parseFloat(appliedCoupon.value.toString());
+    if (isNaN(couponValue)) {
+      console.error('Invalid coupon value:', appliedCoupon.value);
+      return 0;
+    }
+    
+    const discount = appliedCoupon.type === 'PERCENTAGE'
+      ? (baseAmount * couponValue) / 100
+      : couponValue;
+      
+    console.log('Coupon Discount Calculation:', {
+      baseAmount,
+      couponValue,
+      type: appliedCoupon.type,
+      calculatedDiscount: discount
+    });
+    
+    return Math.min(discount, baseAmount);
   };
 
   // Update emirate and recalculate total
@@ -229,223 +372,263 @@ export default function CheckoutModal({
     setDeliveryDetails(prev => ({ ...prev, emirate: e.target.value }));
   };
 
+  const handleApplyCoupon = async () => {
+    if (!couponCode) return;
+    
+    setIsValidatingCoupon(true);
+    setCouponError('');
+    
+    try {
+      const response = await apiMethods.pos.validateCoupon(couponCode, cartTotal);
+      console.log('Coupon Response:', response);
+      
+      if (!response.success) {
+        setCouponError(response.message || 'Invalid coupon code');
+        setAppliedCoupon(null);
+        return;
+      }
+      
+      // Parse numeric values and validate
+      const parsedValue = parseFloat(response.data.value);
+      const parsedDiscount = parseFloat(response.data.discount);
+      
+      if (isNaN(parsedValue)) {
+        console.error('Invalid coupon value:', response.data.value);
+        setCouponError('Invalid coupon value');
+        setAppliedCoupon(null);
+        return;
+      }
+
+      // Create coupon data with validated numbers
+      const couponData = {
+        ...response.data,
+        value: parsedValue,
+        discount: parsedDiscount || 0
+      };
+      
+      console.log('Parsed Coupon Data:', couponData);
+      setAppliedCoupon(couponData);
+      
+    } catch (error) {
+      console.error('Error validating coupon:', error);
+      setCouponError('Failed to validate coupon');
+      setAppliedCoupon(null);
+    } finally {
+      setIsValidatingCoupon(false);
+    }
+  };
+
+  const handleRemoveCoupon = () => {
+    setAppliedCoupon(null);
+    setCouponCode('');
+  };
+
+  const handleCreateCustomer = async () => {
+    try {
+      const response = await apiMethods.pos.createOrUpdateCustomer({
+        customerName: customerDetails.name,
+        customerPhone: customerDetails.phone,
+        customerEmail: customerDetails.email,
+        deliveryAddress: deliveryMethod === 'DELIVERY' ? {
+          streetAddress: deliveryDetails.streetAddress,
+          apartment: deliveryDetails.apartment,
+          emirate: deliveryDetails.emirate,
+          city: deliveryDetails.city
+        } : undefined
+      });
+
+      if (!response.success || !response.data.customer) {
+        return false;
+      }
+
+      // Update selected customer with the response
+      const newCustomer: Customer = {
+        id: response.data.customer.id,
+        firstName: response.data.customer.firstName,
+        lastName: response.data.customer.lastName,
+        email: response.data.customer.email,
+        phone: response.data.customer.phone,
+        addresses: response.data.customer.addresses,
+        reward: response.data.customer.reward
+      };
+      
+      setSelectedCustomer(newCustomer);
+      setCustomerAddresses(response.data.customer.addresses);
+
+      // If delivery method is selected and we have addresses, select the first one
+      if (deliveryMethod === 'DELIVERY' && response.data.customer.addresses.length > 0) {
+        const defaultAddress = response.data.customer.addresses.find(addr => addr.isDefault) 
+          || response.data.customer.addresses[0];
+        setSelectedAddress(defaultAddress);
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Error creating/updating customer:', error);
+      return false;
+    }
+  };
+
   const handleCheckout = async () => {
     try {
       // Validate pickup/delivery details first
-      if (deliveryMethod === 'PICKUP') {
+      if (deliveryMethod === 'DELIVERY') {
+        if (!deliveryDetails.emirate || !deliveryDetails.streetAddress) {
+          toast.error('Please fill in all delivery details');
+          return;
+        }
+      } else if (deliveryMethod === 'PICKUP') {
         if (!pickupDetails.date || !pickupDetails.timeSlot) {
           toast.error('Please select both pickup date and time');
           return;
         }
-      } else if (deliveryMethod === 'DELIVERY') {
-        if (!deliveryDetails.date || !deliveryDetails.timeSlot || !deliveryDetails.streetAddress || 
-            !deliveryDetails.emirate || !deliveryDetails.city) {
-          toast.error('Please fill in all required delivery details');
-          return;
-        }
       }
-
-      // Validate payment reference for card payments
-      if (paymentMethod === 'CARD' && !paymentReference.trim()) {
-        toast.error('Please enter the transaction ID for card payment');
-        return;
-      }
-
-      setIsSubmitting(true);
-
-      // Refresh token before making API calls
-      await refreshToken();
 
       // Create or update customer if we have customer details
       if (customerDetails.name && customerDetails.phone) {
-        try {
-          await apiMethods.pos.createOrUpdateCustomer({
-            customerName: customerDetails.name,
-            customerPhone: customerDetails.phone,
-            customerEmail: customerDetails.email
-          });
-        } catch (error) {
-          console.error('Error creating/updating customer:', error);
+        if (!await handleCreateCustomer()) {
           // Continue with order creation even if customer update fails
         }
       }
 
-      // First create the order with basic item data
-      const orderItems = cart.map(item => ({
-        productId: item.product.id,
-        productName: item.product.name,
-        quantity: item.quantity,
-        unitPrice: item.product.basePrice,
-        totalPrice: item.totalPrice,
-        variations: item.selectedVariations.reduce((acc, variation) => ({
-          ...acc,
-          [variation.type]: {
-            name: variation.type,
-            value: variation.value
-          }
-        }), {}),
-        notes: item.notes || '',
-        customImages: item.customImages?.map(img => ({
-          ...(img.file ? { file: img.file } : {}),
-          url: img.url || '',
-          comment: img.comment || ''
-        }))
-      }));
+      const total = calculateTotal();
+      const baseTotal = parseFloat(cartTotal.toString());
+      
+      // Calculate coupon discount
+      let couponDiscount = 0;
+      if (appliedCoupon) {
+        const couponValue = parseFloat(appliedCoupon.value.toString());
+        couponDiscount = appliedCoupon.type === 'PERCENTAGE'
+          ? (baseTotal * couponValue) / 100
+          : couponValue;
+      }
 
-      // Create the order
+      // Format variations as a Record object
+      const orderItems = cart.map(item => {
+        const variations = item.selectedVariations.reduce((acc, v) => ({
+          ...acc,
+          [v.type]: {
+            id: v.id,
+            value: v.value,
+            priceAdjustment: v.priceAdjustment
+          }
+        }), {});
+
+        return {
+          productId: item.product.id,
+          productName: item.product.name,
+          quantity: item.quantity,
+          unitPrice: item.product.basePrice,
+          totalPrice: item.totalPrice,
+          variations,
+          notes: item.notes,
+          customImages: item.customImages?.map(img => ({
+            url: img.url!,
+            comment: img.comment
+          }))
+        };
+      });
+
       const orderData: POSOrderData = {
         items: orderItems,
-        customerName: customerDetails.name,
-        customerPhone: customerDetails.phone,
-        customerEmail: customerDetails.email || undefined,
+        totalAmount: total,
+        paidAmount: paymentMethod === 'CASH' ? total : total,
+        changeAmount: paymentMethod === 'CASH' ? 0 : 0,
         paymentMethod,
-        ...(paymentReference ? { paymentReference: paymentReference.trim() } : {}),
-        totalAmount: cartTotal + (deliveryMethod === 'DELIVERY' ? calculateDeliveryCharge(deliveryDetails.emirate) : 0),
-        paidAmount: cartTotal + (deliveryMethod === 'DELIVERY' ? calculateDeliveryCharge(deliveryDetails.emirate) : 0),
-        changeAmount: 0,
+        customerName: customerDetails.name || undefined,
+        customerPhone: customerDetails.phone || undefined,
+        customerEmail: customerDetails.email || undefined,
         deliveryMethod,
-        requiresKitchen: cart.some(item => item.product.requiresKitchen === true),
-        requiresDesign: cart.some(item => item.product.requiresDesign === true),
-        status: 'PENDING' as POSOrderStatus,
         ...(deliveryMethod === 'DELIVERY' ? {
-          deliveryDate: deliveryDetails.date,
-          deliveryTimeSlot: deliveryDetails.timeSlot,
           deliveryCharge: calculateDeliveryCharge(deliveryDetails.emirate),
-          deliveryInstructions: deliveryDetails.instructions || '',
           streetAddress: deliveryDetails.streetAddress,
-          apartment: deliveryDetails.apartment || '',
+          apartment: deliveryDetails.apartment,
           emirate: deliveryDetails.emirate,
-          city: deliveryDetails.city || ''
-        } : {
+          city: deliveryDetails.city || 'Dubai'
+        } : {}),
+        ...(deliveryMethod === 'PICKUP' ? {
           pickupDate: pickupDetails.date,
           pickupTimeSlot: pickupDetails.timeSlot
-        }),
-        ...(giftDetails.isGift ? {
-          isGift: giftDetails.isGift,
-          giftMessage: giftDetails.message,
-          giftRecipientName: giftDetails.recipientName,
-          giftRecipientPhone: giftDetails.recipientPhone,
-          giftCashAmount: giftDetails.includeCash ? giftDetails.cashAmount : undefined
         } : {}),
+        // Add coupon information if present
+        ...(appliedCoupon ? {
+          couponCode: appliedCoupon.code,
+          couponDiscount: couponDiscount,
+          couponType: appliedCoupon.type
+        } : {})
       };
 
+      console.log('Sending order data:', JSON.stringify(orderData, null, 2));
       const response = await apiMethods.pos.createOrder(orderData);
 
-      if (!response.data.success) {
-        throw new Error(response.data.message || 'Failed to create order');
-      }
-
-      // After order is created, upload images for each order item
-      await Promise.all(response.data.data.items.map(async (orderItem, index) => {
-        const cartItem = cart[index];
-        if (cartItem.customImages && cartItem.customImages.length > 0) {
-          // Refresh token before uploading images
-          await refreshToken();
-          
-          const imageData = await Promise.all(cartItem.customImages.map(async (image) => {
-            if (!image.file) return null;
-
-            const formData = new FormData();
-            formData.append('images', image.file);
-            formData.append('comments', JSON.stringify({ [image.file.name]: image.comment }));
+      if (response.data.success) {
+        // If it's a cash payment, open the drawer and record the transaction
+        if (paymentMethod === 'CASH') {
+          try {
+            const orderId = response.data.data.id;
+            const orderNumber = response.data.data.orderNumber;
+            console.log('Processing cash payment for order:', orderId, orderNumber);
             
-            const response = await apiMethods.pos.uploadCustomImages(orderItem.id, [{
-              file: image.file,
-              comment: image.comment
-            }]);
-
-            if (!response.success) {
-              console.error('Failed to upload image:', response.message);
-              return null;
+            try {
+              // Open cash drawer with string amount
+              console.log('Opening cash drawer...');
+              const drawerResponse = await apiMethods.pos.openDrawer(
+                orderData.totalAmount.toFixed(2),
+                `Order #${orderNumber}`
+              );
+              console.log('Cash drawer response:', drawerResponse);
+            } catch (drawerError) {
+              console.error('Failed to open cash drawer:', drawerError);
+            }
+            
+            try {
+              // Record cash transaction with string amount
+              console.log('Recording cash payment...');
+              const paymentResponse = await apiMethods.pos.addDrawerOperation(
+                'CASH_IN',
+                orderData.paidAmount.toFixed(2),
+                `Cash payment for Order #${orderNumber}`
+              );
+              console.log('Payment record response:', paymentResponse);
+            } catch (paymentError) {
+              console.error('Failed to record cash payment:', paymentError);
             }
 
-            // Get the first uploaded image from the response data array
-            const uploadedImage = response.data[0];
-            if (!uploadedImage) {
-              console.error('No image data in response');
-              return null;
+            // If change is needed, record that too
+            if (orderData.changeAmount > 0) {
+              try {
+                console.log('Recording change given...');
+                const changeResponse = await apiMethods.pos.addDrawerOperation(
+                  'CASH_OUT',
+                  orderData.changeAmount.toFixed(2),
+                  `Change for Order #${orderNumber}`
+                );
+                console.log('Change record response:', changeResponse);
+              } catch (changeError) {
+                console.error('Failed to record change:', changeError);
+              }
             }
-
-            return {
-              url: uploadedImage.url,
-              comment: image.comment
-            };
-          }));
-
-          // Filter out any failed uploads
-          const validImages = imageData.filter(img => img !== null) as CustomImage[];
-          if (validImages.length > 0) {
-            // Update order item with image URLs if needed
-            console.log('Images uploaded for order item:', orderItem.id, validImages);
+          } catch (drawerError) {
+            console.error('Error handling cash drawer operations:', drawerError);
+            // Show error but don't block order completion
+            toast.error('Failed to process cash drawer operations. Please record this transaction manually.');
           }
         }
-      }));
 
-      // Set initial order status based on requirements
-      if (orderData.requiresDesign && orderData.requiresKitchen) {
-        // If both design and kitchen are required, start with design
-        await apiMethods.pos.updateOrderStatus(response.data.data.id, { 
-          status: 'PENDING_DESIGN',
-          notes: 'Order requires both design and kitchen. Starting with design.'
-        });
-      } else if (orderData.requiresDesign) {
-        // If only design is required
-        await apiMethods.pos.updateOrderStatus(response.data.data.id, { 
-          status: 'PENDING_DESIGN',
-          notes: 'Order requires design work.'
-        });
-      } else if (orderData.requiresKitchen) {
-        // If only kitchen is required
-        await apiMethods.pos.updateOrderStatus(response.data.data.id, { 
-          status: 'PENDING_KITCHEN',
-          notes: 'Order sent to kitchen.'
-        });
+        toast.success('Order created successfully!');
+        setCart([]);
+        onCheckoutComplete();
+        onClose();
+      } else {
+        toast.error(response.data.message || 'Failed to create order');
       }
-
-      toast.success('Order created successfully!');
-      
-      // Reset all form state
-      setPaymentMethod('CASH');
-      setPaymentReference('');
-      setTeamSelection('KITCHEN');
-      setDeliveryMethod('PICKUP');
-      setCustomerDetails({
-        name: "",
-        email: "",
-        phone: "",
-      });
-      setGiftDetails({
-        isGift: false,
-        recipientName: '',
-        recipientPhone: '',
-        message: '',
-        note: '',
-        cashAmount: 0,
-        includeCash: false
-      });
-      setDeliveryDetails({
-        date: "",
-        timeSlot: "",
-        instructions: "",
-        streetAddress: "",
-        apartment: "",
-        emirate: "",
-        city: "",
-        charge: 0,
-      });
-      setPickupDetails({
-        date: "",
-        timeSlot: "",
-      });
-      setOrderItems([]);
-      
-      onCheckoutComplete();
-      onClose();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error creating order:', error);
-      toast.error('Failed to create order');
-    } finally {
-      setIsSubmitting(false);
+      // Log the response data if available
+      if (error.response?.data) {
+        console.error('Server error details:', error.response.data);
+      }
+      toast.error(error.response?.data?.message || 'Failed to create order');
     }
   };
 
@@ -493,8 +676,75 @@ export default function CheckoutModal({
                     </Dialog.Title>
 
                     <div className="flex flex-col lg:flex-row h-full space-y-8 lg:space-y-0 lg:space-x-8">
-                      {/* Left Side - Delivery/Pickup & Team Selection */}
+                      {/* Left Side - Customer Details & Delivery/Pickup */}
                       <div className="flex-1 lg:pr-8 lg:border-r">
+                        {/* Customer Details */}
+                        <div className="space-y-4 mb-8">
+                          <h3 className="text-lg font-semibold">Customer Details:</h3>
+                          <div ref={searchRef} className="relative">
+                            <div className="relative">
+                              <input
+                                type="text"
+                                value={customerDetails.name}
+                                onChange={handleCustomerNameChange}
+                                className="block w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4 pl-12"
+                                placeholder="Customer Name *"
+                              />
+                              <User className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
+                            </div>
+
+                            {/* Search Results Dropdown */}
+                            {showSearchResults && (
+                              <div className="absolute z-10 w-full mt-1 bg-white rounded-md shadow-lg border border-gray-200">
+                                {isSearching ? (
+                                  <div className="p-4 text-center text-gray-500">
+                                    Searching...
+                                  </div>
+                                ) : searchResults.length > 0 ? (
+                                  <ul className="max-h-60 overflow-auto">
+                                    {searchResults.map((customer) => (
+                                      <li
+                                        key={customer.id}
+                                        className="p-4 hover:bg-gray-50 cursor-pointer border-b last:border-b-0"
+                                        onClick={() => handleCustomerSelect(customer)}
+                                      >
+                                        <div className="font-medium">
+                                          {customer.firstName} {customer.lastName}
+                                        </div>
+                                        <div className="text-sm text-gray-500">
+                                          {customer.phone}
+                                          {customer.email && ` • ${customer.email}`}
+                                        </div>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                ) : (
+                                  <div className="p-4 text-center text-gray-500">
+                                    No customers found
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <input
+                              type="tel"
+                              value={customerDetails.phone}
+                              onChange={(e) => setCustomerDetails(prev => ({ ...prev, phone: e.target.value }))}
+                              className="block w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4"
+                              placeholder="Phone Number *"
+                            />
+                            <input
+                              type="email"
+                              value={customerDetails.email}
+                              onChange={(e) => setCustomerDetails(prev => ({ ...prev, email: e.target.value }))}
+                              className="block w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4"
+                              placeholder="Email (Optional)"
+                            />
+                          </div>
+                        </div>
+
                         {/* Delivery/Pickup Selection */}
                         <div className="space-y-4">
                           <h3 className="text-lg font-semibold">Delivery/Pickup:</h3>
@@ -663,127 +913,82 @@ export default function CheckoutModal({
 
  {/* Gift Section */}
  <div className="mt-6 space-y-4">
-                              <div className="flex items-center justify-between">
-                                <h3 className="text-lg font-medium text-gray-900">Send as a Gift</h3>
-                                <label className="relative inline-flex items-center cursor-pointer">
-                                  <input
-                                    type="checkbox"
-                                    className="sr-only peer"
-                                    checked={giftDetails.isGift}
-                                    onChange={(e) => setGiftDetails(prev => ({ ...prev, isGift: e.target.checked }))}
-                                  />
-                                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                          <div className="flex items-center justify-between">
+                            <h3 className="text-lg font-medium text-gray-900">Send as a Gift</h3>
+                            <label className="relative inline-flex items-center cursor-pointer">
+                              <input
+                                type="checkbox"
+                                className="sr-only peer"
+                                checked={giftDetails.isGift}
+                                onChange={(e) => setGiftDetails(prev => ({ ...prev, isGift: e.target.checked }))}
+                              />
+                              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                            </label>
+                          </div>
+
+                          {giftDetails.isGift && (
+                            <div className="space-y-4">
+                              <input
+                                type="text"
+                                value={giftDetails.recipientName}
+                                onChange={(e) => setGiftDetails(prev => ({ ...prev, recipientName: e.target.value }))}
+                                className="block w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4"
+                                placeholder="Recipient Name *"
+                              />
+
+                              <input
+                                type="tel"
+                                value={giftDetails.recipientPhone}
+                                onChange={(e) => setGiftDetails(prev => ({ ...prev, recipientPhone: e.target.value }))}
+                                className="block w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4"
+                                placeholder="Recipient Phone *"
+                              />
+
+                              <textarea
+                                value={giftDetails.message}
+                                onChange={(e) => setGiftDetails(prev => ({ ...prev, message: e.target.value }))}
+                                className="block w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4"
+                                placeholder="Gift Message (Optional)"
+                                rows={2}
+                              />
+
+                              <div className="flex items-center space-x-2">
+                                <input
+                                  type="checkbox"
+                                  id="includeCash"
+                                  checked={giftDetails.includeCash}
+                                  onChange={(e) => setGiftDetails(prev => ({ ...prev, includeCash: e.target.checked }))}
+                                  className="h-4 w-4 rounded border-gray-300 text-black focus:ring-black"
+                                />
+                                <label htmlFor="includeCash" className="text-sm font-medium text-gray-900">
+                                  Include Cash Gift
                                 </label>
                               </div>
-
-                              {giftDetails.isGift && (
-                                <div className="space-y-4">
-                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <div>
-                                      <label className="block text-sm font-medium text-gray-900">
-                                        Recipient Name
-                                      </label>
-                                      <div className="mt-1">
-                                        <input
-                                          type="text"
-                                          className="block w-full rounded-lg border border-gray-300 bg-gray-50 p-2.5 text-gray-900 focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                                          value={giftDetails.recipientName}
-                                          onChange={(e) => setGiftDetails(prev => ({ ...prev, recipientName: e.target.value }))}
-                                          placeholder="Enter recipient's name"
-                                        />
-                                      </div>
-                                    </div>
-                                    <div>
-                                      <label className="block text-sm font-medium text-gray-900">
-                                        Recipient Phone
-                                      </label>
-                                      <div className="mt-1">
-                                        <input
-                                          type="tel"
-                                          className="block w-full rounded-lg border border-gray-300 bg-gray-50 p-2.5 text-gray-900 focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                                          value={giftDetails.recipientPhone}
-                                          onChange={(e) => setGiftDetails(prev => ({ ...prev, recipientPhone: e.target.value }))}
-                                          placeholder="Enter recipient's phone"
-                                        />
-                                      </div>
-                                    </div>
+                              
+                              {giftDetails.includeCash && (
+                                <div className="relative">
+                                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                                    <span className="text-gray-500 text-lg">AED</span>
                                   </div>
-
-                                  <div>
-                                    <label className="block text-sm font-medium text-gray-900">
-                                      Gift Message
-                                    </label>
-                                    <div className="mt-1">
-                                      <textarea
-                                        className="block w-full rounded-lg border border-gray-300 bg-gray-50 p-2.5 text-gray-900 focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                                        rows={3}
-                                        value={giftDetails.message}
-                                        onChange={(e) => setGiftDetails(prev => ({ ...prev, message: e.target.value }))}
-                                        placeholder="Enter a message for the gift card"
-                                      />
-                                    </div>
-                                  </div>
-
-                                  <div>
-                                    <label className="block text-sm font-medium text-gray-900">
-                                      Special Instructions
-                                    </label>
-                                    <div className="mt-1">
-                                      <textarea
-                                        className="block w-full rounded-lg border border-gray-300 bg-gray-50 p-2.5 text-gray-900 focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                                        rows={2}
-                                        value={giftDetails.note}
-                                        onChange={(e) => setGiftDetails(prev => ({ ...prev, note: e.target.value }))}
-                                        placeholder="Any special instructions for gift wrapping or handling"
-                                      />
-                                    </div>
-                                  </div>
-
-                                  <div className="border-t pt-4">
-                                    <div className="flex items-center justify-between mb-2">
-                                      <label className="text-sm font-medium text-gray-900">Include Cash Gift</label>
-                                      <label className="relative inline-flex items-center cursor-pointer">
-                                        <input
-                                          type="checkbox"
-                                          className="sr-only peer"
-                                          checked={giftDetails.includeCash}
-                                          onChange={(e) => setGiftDetails(prev => ({ ...prev, includeCash: e.target.checked }))}
-                                        />
-                                        <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                                      </label>
-                                    </div>
-                                    
-                                    {giftDetails.includeCash && (
-                                      <div className="mt-2">
-                                        <label className="block text-sm font-medium text-gray-900">
-                                          Cash Amount
-                                        </label>
-                                        <div className="mt-1 relative">
-                                          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                            <span className="text-gray-500 sm:text-sm">AED</span>
-                                          </div>
-                                          <input
-                                            type="number"
-                                            min="0"
-                                            step="1"
-                                            className="block w-full pl-12 rounded-lg border border-gray-300 bg-gray-50 p-2.5 text-gray-900 focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                                            value={giftDetails.cashAmount}
-                                            onChange={(e) => setGiftDetails(prev => ({ ...prev, cashAmount: parseFloat(e.target.value) || 0 }))}
-                                            placeholder="Enter cash amount"
-                                          />
-                                        </div>
-                                      </div>
-                                    )}
-                                  </div>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="1"
+                                    value={giftDetails.cashAmount}
+                                    onChange={(e) => setGiftDetails(prev => ({ ...prev, cashAmount: parseFloat(e.target.value) || 0 }))}
+                                    className="block w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4 pl-16"
+                                    placeholder="Cash Amount"
+                                  />
                                 </div>
                               )}
                             </div>
+                          )}
+                        </div>
 
-
-
+                       
 
                         {/* Team Selection */}
-                        <div className="mt-8 pt-8 border-t space-y-4">
+                        {/* <div className="mt-8 pt-8 border-t space-y-4">
                           <h3 className="text-lg font-semibold">Send Order To:</h3>
                           <div className="grid grid-cols-3 gap-4">
                             <button
@@ -849,10 +1054,10 @@ export default function CheckoutModal({
                               <span className="text-base lg:text-lg">Both Teams</span>
                             </button>
                           </div>
-                        </div>
+                        </div> */}
                       </div>
 
-                      {/* Right Side - Order Summary & Customer Details */}
+                      {/* Right Side - Order Summary */}
                       <div className="flex-1 lg:pl-8">
                         {/* Order Summary */}
                         <div className="mb-8">
@@ -963,6 +1168,14 @@ export default function CheckoutModal({
                                 <p className="text-xl">AED {calculateDeliveryCharge(deliveryDetails.emirate).toFixed(2)}</p>
                               </div>
                             )}
+                            {appliedCoupon && (
+                              <div className="flex justify-between items-center font-medium mt-2">
+                                <p className="text-xl">Coupon Discount ({appliedCoupon.code})</p>
+                                <p className="text-xl">
+                                  AED {calculateCouponDiscount().toFixed(2)}
+                                </p>
+                              </div>
+                            )}
                             <div className="flex justify-between items-center font-medium mt-4 pt-4 border-t">
                               <p className="text-xl font-bold">Total</p>
                               <p className="text-2xl font-bold">AED {calculateTotal().toFixed(2)}</p>
@@ -970,124 +1183,100 @@ export default function CheckoutModal({
                           </div>
                         </div>
 
-                        {/* Customer Details */}
-                        <div className="mt-8 pt-8 border-t">
-                          <h4 className="text-xl font-medium mb-6">Customer Details</h4>
-                          <div className="space-y-6">
-                            <div className="relative" ref={searchRef}>
-                              <div className="relative">
-                                <input
-                                  type="text"
-                                  value={customerDetails.name}
-                                  onChange={handleCustomerNameChange}
-                                  className="block w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4"
-                                  placeholder="Name *"
-                                  required
-                                />
-                                {isSearching && (
-                                  <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-                                    <Search className="animate-spin h-5 w-5 text-gray-400" />
-                                  </div>
-                                )}
-                              </div>
-                              
-                              {/* Search Results Dropdown */}
-                              {showSearchResults && searchResults.length > 0 && (
-                                <div className="absolute z-10 w-full mt-1 bg-white rounded-xl shadow-lg border border-gray-200 max-h-60 overflow-auto">
-                                  {searchResults.map((customer) => (
-                                    <button
-                                      key={customer.id}
-                                      onClick={() => handleCustomerSelect(customer)}
-                                      className="w-full px-4 py-3 text-left hover:bg-gray-50 flex items-center space-x-3"
-                                    >
-                                      <User className="h-5 w-5 text-gray-400" />
-                                      <div>
-                                        <div className="font-medium">
-                                          {customer.firstName} {customer.lastName}
-                                        </div>
-                                        <div className="text-sm text-gray-500">
-                                          {customer.phone} {customer.reward?.points !== undefined ? `• ${customer.reward.points} points` : ''}
-                                        </div>
-                                      </div>
-                                    </button>
-                                  ))}
+ {/* Coupon Section */}
+ <div className="mt-6 space-y-4">
+                          <div className="flex items-center justify-between">
+                            <h3 className="text-lg font-medium text-gray-900">Apply Coupon</h3>
+                          </div>
+                          <div className="flex space-x-2">
+                            <input
+                              type="text"
+                              value={couponCode}
+                              onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                              className="flex-1 rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4"
+                              placeholder="Enter Coupon Code"
+                            />
+                            <button
+                              onClick={handleApplyCoupon}
+                              disabled={!couponCode || isValidatingCoupon}
+                              className="px-6 py-4 bg-black text-white rounded-xl hover:bg-gray-800 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                            >
+                              {isValidatingCoupon ? 'Validating...' : 'Apply'}
+                            </button>
+                          </div>
+                          {couponError && (
+                            <p className="text-red-500">{couponError}</p>
+                          )}
+                          {appliedCoupon && (
+                            <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+                              <div className="flex justify-between items-center">
+                                <div>
+                                  <p className="text-green-700 font-medium">{appliedCoupon.code}</p>
+                                  <p className="text-green-600 text-sm">
+                                    {appliedCoupon.type === 'PERCENTAGE' 
+                                      ? `${appliedCoupon.value}% off`
+                                      : `AED ${appliedCoupon.value} off`
+                                    }
+                                  </p>
                                 </div>
-                              )}
-                            </div>
-
-                            <div>
-                              <input
-                                type="tel"
-                                value={customerDetails.phone}
-                                onChange={(e) => setCustomerDetails(prev => ({ ...prev, phone: e.target.value }))}
-                                className="block w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4"
-                                placeholder="Phone *"
-                                required
-                              />
-                            </div>
-
-                            <div>
-                              <input
-                                type="email"
-                                value={customerDetails.email}
-                                onChange={(e) => setCustomerDetails(prev => ({ ...prev, email: e.target.value }))}
-                                className="block w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4"
-                                placeholder="Email"
-                              />
-                            </div>
-
-                            <div className="space-y-4">
-                              <h4 className="text-lg font-medium text-gray-700">
-                                Payment Method *
-                              </h4>
-                              <div className="grid grid-cols-2 gap-4">
                                 <button
-                                  type="button"
-                                  onClick={() => setPaymentMethod('CASH')}
-                                  className={`p-6 text-lg font-medium rounded-xl border-2 transition-all ${
-                                    paymentMethod === 'CASH'
-                                      ? 'border-black bg-black text-white'
-                                      : 'border-gray-200 hover:border-gray-300'
-                                  }`}
+                                  onClick={handleRemoveCoupon}
+                                  className="text-green-700 hover:text-green-800"
                                 >
-                                  Cash
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setPaymentMethod('CARD')}
-                                  className={`p-6 text-lg font-medium rounded-xl border-2 transition-all ${
-                                    paymentMethod === 'CARD'
-                                      ? 'border-black bg-black text-white'
-                                      : 'border-gray-200 hover:border-gray-300'
-                                  }`}
-                                >
-                                  Card
+                                  <X className="h-5 w-5" />
                                 </button>
                               </div>
                             </div>
+                          )}
+                        </div>
 
-                            <div>
-                              <input
-                                type="text"
-                                value={paymentReference}
-                                onChange={(e) => setPaymentReference(e.target.value)}
-                                placeholder="Payment Reference"
-                                className="block w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4"
-                              />
-                            </div>
 
-                           
-
-                            <div className="mt-8">
+                        {/* Payment Method */}
+                        <div className="mt-8 pt-8 border-t">
+                          <h4 className="text-xl font-medium mb-6">Payment Method</h4>
+                          <div className="space-y-4">
+                            <div className="grid grid-cols-2 gap-4">
                               <button
                                 type="button"
-                                onClick={handleCheckout}
-                                disabled={isSubmitting}
-                                className={`w-full inline-flex justify-center rounded-lg border border-transparent shadow-sm px-6 py-4 bg-black text-xl font-medium text-white hover:bg-gray-900 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors`}
+                                onClick={() => setPaymentMethod('CASH')}
+                                className={`p-6 text-lg font-medium rounded-xl border-2 transition-all ${
+                                  paymentMethod === 'CASH'
+                                    ? 'border-black bg-black text-white'
+                                    : 'border-gray-200 hover:border-gray-300'
+                                }`}
                               >
-                                {isSubmitting ? "Processing..." : "Complete Order"}
+                                Cash
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setPaymentMethod('CARD')}
+                                className={`p-6 text-lg font-medium rounded-xl border-2 transition-all ${
+                                  paymentMethod === 'CARD'
+                                    ? 'border-black bg-black text-white'
+                                    : 'border-gray-200 hover:border-gray-300'
+                                }`}
+                              >
+                                Card
                               </button>
                             </div>
+                            <input
+                              type="text"
+                              value={paymentReference}
+                              onChange={(e) => setPaymentReference(e.target.value)}
+                              placeholder="Payment Reference"
+                              className="block w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4"
+                            />
+                          </div>
+
+                          <div className="mt-8">
+                            <button
+                              type="button"
+                              onClick={handleCheckout}
+                              disabled={isSubmitting}
+                              className={`w-full inline-flex justify-center rounded-lg border border-transparent shadow-sm px-6 py-4 bg-black text-xl font-medium text-white hover:bg-gray-900 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors`}
+                            >
+                              {isSubmitting ? "Processing..." : "Complete Order"}
+                            </button>
                           </div>
                         </div>
                       </div>

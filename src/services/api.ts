@@ -276,6 +276,9 @@ export interface POSOrderData {
   totalAmount: number;
   paidAmount: number;
   changeAmount: number;
+  couponCode?: string;
+  couponDiscount?: number;
+  couponType?: 'PERCENTAGE' | 'FIXED_AMOUNT';
 }
 
 // API methods
@@ -509,14 +512,134 @@ export const apiMethods = {
         };
       }
     },
+    // Validate coupon
+    validateCoupon: async (code: string, total: number): Promise<APIResponse<{
+      code: string;
+      type: 'PERCENTAGE' | 'FIXED_AMOUNT';
+      value: number;
+      description?: string;
+      minOrderAmount?: number;
+      maxDiscount?: number;
+      discount: number;
+    }>> => {
+      const response = await api.post(`/api/coupons/${code}/validate`, { total });
+      return response.data;
+    },
     // Create or update customer
     createOrUpdateCustomer: async (customerData: {
       customerName: string;
       customerPhone: string;
       customerEmail?: string;
-    }): Promise<APIResponse<any>> => {
+      deliveryAddress?: {
+        streetAddress: string;
+        apartment?: string;
+        emirate: string;
+        city?: string;
+      };
+    }): Promise<APIResponse<{
+      customer: {
+        id: string;
+        firstName: string;
+        lastName: string;
+        email: string;
+        phone: string;
+        addresses: Array<{
+          id: string;
+          street: string;
+          apartment: string;
+          emirate: string;
+          city: string;
+          country: string;
+          pincode: string;
+          isDefault: boolean;
+          type: string;
+        }>;
+        reward: {
+          points: number;
+        };
+      };
+      credentials?: {
+        username: string;
+        temporaryPassword: string;
+      };
+    }>> => {
       const response = await api.post('/api/pos/customers/create-or-update', customerData);
       return response.data;
+    },
+
+    // Get customer addresses
+    getCustomerAddresses: async (customerId: string): Promise<APIResponse<Array<{
+      id: string;
+      street: string;
+      apartment: string;
+      emirate: string;
+      city: string;
+      country: string;
+      pincode: string;
+      isDefault: boolean;
+      type: string;
+    }>>> => {
+      const response = await api.get(`/api/pos/customers/${customerId}/addresses`);
+      return response.data;
+    },
+
+    // Open cash drawer
+    openDrawer: async (amount: string, note?: string): Promise<APIResponse<{
+      id: string;
+      type: string;
+      amount: string;
+      note?: string;
+      createdAt: string;
+    }>> => {
+      try {
+        const response = await api.post('/api/pos/drawer/open', { amount, note });
+        return response.data;
+      } catch (error: any) {
+        console.error('Error opening cash drawer:', error.response?.data || error);
+        throw error;
+      }
+    },
+
+    // Add cash drawer operation
+    addDrawerOperation: async (type: string, amount: string, note?: string): Promise<APIResponse<{
+      id: string;
+      type: string;
+      amount: string;
+      note?: string;
+      createdAt: string;
+    }>> => {
+      try {
+        const response = await api.post('/api/pos/drawer/operations', { type, amount, note });
+        return response.data;
+      } catch (error: any) {
+        console.error('Error adding drawer operation:', error.response?.data || error);
+        throw error;
+      }
+    },
+
+    // Get current drawer session
+    getCurrentDrawerSession: async (): Promise<APIResponse<{
+      id: string;
+      openingAmount: number;
+      closingAmount?: number;
+      status: string;
+      createdAt: string;
+      updatedAt: string;
+      operations: Array<{
+        id: string;
+        type: string;
+        amount: number;
+        note?: string;
+        createdAt: string;
+      }>;
+    }>> => {
+      try {
+        const response = await api.get('/api/pos/drawer/current');
+        return response.data;
+      } catch (error: any) {
+        console.error('Error getting drawer session:', error.response?.data || error);
+        throw error;
+      }
     },
   }
 };
