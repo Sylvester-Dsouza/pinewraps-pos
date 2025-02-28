@@ -214,6 +214,7 @@ export interface Product {
 export interface ProductWithDesign extends Product {
   allowCustomPrice: boolean;
   customImages?: CustomImage[];
+  position?: number;
 }
 
 export interface Category {

@@ -7,6 +7,7 @@ import OrderTimer from "./order-timer";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
+import Image from "next/image";
 
 // Types for order and status
 type FinalCheckOrderStatus = 

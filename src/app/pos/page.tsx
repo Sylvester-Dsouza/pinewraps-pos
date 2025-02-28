@@ -144,11 +144,16 @@ export default function POSPage() {
   const { data: categoriesResponse, isLoading: isCategoriesLoading } = useQuery<APIResponse<Category[]>>({
     queryKey: ['categories'],
     queryFn: async () => {
-      const response = await apiMethods.products.getCategories();
-      if (!response.success) {
-        throw new Error(response.message ?? 'Failed to fetch categories');
+      try {
+        const response = await apiMethods.products.getCategories();
+        if (!response.success) {
+          throw new Error(response.message ?? 'Failed to fetch categories');
+        }
+        return response;
+      } catch (error) {
+        console.error('Error fetching categories:', error);
+        throw error;
       }
-      return response;
     },
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes
   });
@@ -172,27 +177,26 @@ export default function POSPage() {
     ];
   }, [categoriesResponse]);
 
-  // Filter products based on category and search
+  // Filter and sort products
   const filteredProducts = useMemo(() => {
-    if (!productsData) return [];
-
-    let filtered = productsData;
-
-    // Filter by category
-    if (selectedCategory && selectedCategory !== 'all') {
-      filtered = filtered.filter(product => product.categoryId === selectedCategory);
+    let result = productsData || [];
+    
+    // Filter by category if selected
+    if (selectedCategory) {
+      result = result.filter(product => product.categoryId === selectedCategory);
     }
-
+    
     // Filter by search query
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(product => 
-        product.name.toLowerCase().includes(query) ||
-        product.sku.toLowerCase().includes(query)
+      result = result.filter(product => 
+        product.name.toLowerCase().includes(query) || 
+        product.description?.toLowerCase().includes(query)
       );
     }
-
-    return filtered;
+    
+    // Sort by position
+    return result.sort((a, b) => (a.position || 0) - (b.position || 0));
   }, [productsData, selectedCategory, searchQuery]);
 
   // Calculate price range for a product
@@ -362,8 +366,8 @@ export default function POSPage() {
     cart.forEach(item => {
       if (item.customImages) {
         item.customImages.forEach(image => {
-          if ('previewUrl' in image && image.previewUrl) {
-            URL.revokeObjectURL(image.previewUrl);
+          if (image && 'previewUrl' in image && image.previewUrl) {
+            URL.revokeObjectURL(image.previewUrl as string);
           }
         });
       }
@@ -462,7 +466,7 @@ export default function POSPage() {
                 ))}
               </div>
             ) : filteredProducts?.length === 0 ? (
-              <div className="text-center text-gray-500 py-12 text-lg">
+              <div className="text-center text-gray-500 py-12">
                 No products found
               </div>
             ) : (
@@ -472,6 +476,7 @@ export default function POSPage() {
                     key={product.id}
                     onClick={() => setSelectedProduct(product)}
                     className="group bg-white rounded-xl p-4 border border-gray-100 hover:border-gray-300 transition-all hover:shadow-lg text-left"
+                    style={{ order: product.position || 0 }}
                   >
                     {product.images && product.images.length > 0 ? (
                       <div className="relative w-full aspect-square mb-4 rounded-xl overflow-hidden bg-gray-50">

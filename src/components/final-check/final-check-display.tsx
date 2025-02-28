@@ -5,7 +5,7 @@ import { FileCheck, Bell, RotateCw, Maximize2, Minimize2 } from "lucide-react";
 import { AnimatePresence } from "framer-motion";
 import OrderCard from "@/components/final-check/order-card";
 import { apiMethods } from "@/services/api";
-import WebSocketService from "@/services/websocket"; // Import WebSocketService class
+import { wsService } from "@/services/websocket"; // Import wsService instance
 import { toast } from "react-hot-toast";
 import { useAuth } from "@/providers/auth-provider";
 import { useRouter } from "next/navigation";
@@ -61,7 +61,6 @@ export default function FinalCheckDisplay() {
   const [orders, setOrders] = useState<FinalCheckOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [wsService, setWsService] = useState<WebSocketService | null>(null); // Add wsService state
   const { user } = useAuth();
   const router = useRouter();
 
@@ -131,75 +130,68 @@ export default function FinalCheckDisplay() {
   const initWebSocket = useCallback(() => {
     if (!user) return;
     
-    // Initialize WebSocket service if not already done
-    if (!wsService) {
-      const newWsService = new WebSocketService(user);
-      setWsService(newWsService);
-      
-      // Subscribe to WebSocket events
-      const unsubscribeNew = newWsService.subscribe('NEW_ORDER', (data) => {
-        // Only add orders that are in final check queue
-        if (data.order.status === 'FINAL_CHECK_QUEUE') {
-          setOrders(prev => {
-            // Check if order already exists
-            if (prev.some(order => order.id === data.order.id)) {
-              return prev;
-            }
-            return [data.order, ...prev];
-          });
-          
-          toast.custom(() => (
-            <div className="bg-white rounded-lg shadow-lg p-4 flex items-center space-x-3">
-              <Bell className="w-5 h-5 text-blue-500" />
-              <div>
-                <p className="font-medium">New Order #{data.order.orderNumber}</p>
-                <p className="text-sm text-gray-500">{data.order.customerName}</p>
-              </div>
-            </div>
-          ));
-        }
-      });
-
-      const unsubscribeUpdate = newWsService.subscribe('ORDER_STATUS_UPDATE', (data) => {
+    // Subscribe to WebSocket events
+    const unsubscribeNew = wsService.subscribe('NEW_ORDER', (data) => {
+      // Only add orders that are in final check queue
+      if (data.order.status === 'FINAL_CHECK_QUEUE') {
         setOrders(prev => {
-          // If the order is now in final check status, add it if not already present
-          if (
-            ['FINAL_CHECK_QUEUE', 'FINAL_CHECK_PROCESSING', 'FINAL_CHECK_COMPLETE', 'KITCHEN_QUEUE', 'DESIGN_QUEUE'].includes(data.status) &&
-            !prev.some(order => order.id === data.id)
-          ) {
-            // Fetch the full order details
-            fetchOrderById(data.id);
+          // Check if order already exists
+          if (prev.some(order => order.id === data.order.id)) {
             return prev;
           }
-          
-          // Update existing order
-          return prev.map(order => {
-            if (order.id === data.id) {
-              // Only update the specific fields that changed
-              return {
-                ...order,
-                status: data.status,
-                ...(data.finalCheckStartTime && { finalCheckStartTime: data.finalCheckStartTime }),
-                ...(data.finalCheckEndTime && { finalCheckEndTime: data.finalCheckEndTime }),
-                ...(data.finalCheckNotes && { finalCheckNotes: data.finalCheckNotes })
-              };
-            }
-            return order;
-          });
+          return [data.order, ...prev];
+        });
+        
+        toast.custom(() => (
+          <div className="bg-white rounded-lg shadow-lg p-4 flex items-center space-x-3">
+            <Bell className="w-5 h-5 text-blue-500" />
+            <div>
+              <p className="font-medium">New Order #{data.order.orderNumber}</p>
+              <p className="text-sm text-gray-500">{data.order.customerName}</p>
+            </div>
+          </div>
+        ));
+      }
+    });
+
+    const unsubscribeUpdate = wsService.subscribe('ORDER_STATUS_UPDATE', (data) => {
+      setOrders(prev => {
+        // If the order is now in final check status, add it if not already present
+        if (
+          ['FINAL_CHECK_QUEUE', 'FINAL_CHECK_PROCESSING', 'FINAL_CHECK_COMPLETE', 'KITCHEN_QUEUE', 'DESIGN_QUEUE'].includes(data.status) &&
+          !prev.some(order => order.id === data.id)
+        ) {
+          // Fetch the full order details
+          fetchOrderById(data.id);
+          return prev;
+        }
+        
+        // Update existing order
+        return prev.map(order => {
+          if (order.id === data.id) {
+            // Only update the specific fields that changed
+            return {
+              ...order,
+              status: data.status,
+              ...(data.finalCheckStartTime && { finalCheckStartTime: data.finalCheckStartTime }),
+              ...(data.finalCheckEndTime && { finalCheckEndTime: data.finalCheckEndTime }),
+              ...(data.finalCheckNotes && { finalCheckNotes: data.finalCheckNotes })
+            };
+          }
+          return order;
         });
       });
+    });
 
-      // Set up auto-refresh every 5 minutes
-      const refreshInterval = setInterval(fetchOrders, 5 * 60 * 1000);
-      
-      // Return cleanup function
-      return () => {
-        unsubscribeNew();
-        unsubscribeUpdate();
-        clearInterval(refreshInterval);
-        newWsService.disconnect();
-      };
-    }
+    // Set up auto-refresh every 5 minutes
+    const refreshInterval = setInterval(fetchOrders, 5 * 60 * 1000);
+    
+    // Return cleanup function
+    return () => {
+      unsubscribeNew();
+      unsubscribeUpdate();
+      clearInterval(refreshInterval);
+    };
   }, [user]);
 
   const fetchOrderById = async (orderId: string) => {
