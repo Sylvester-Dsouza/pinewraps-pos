@@ -197,6 +197,57 @@ export class HardwareService {
     }
   }
 
+  async openCashDrawer(): Promise<{ success: boolean; error?: string }> {
+    try {
+      console.log('Opening cash drawer...');
+      
+      // If we have a connected drawer, use that
+      if (this.connectedDrawerId) {
+        const response = await api.post('/api/pos/drawer/hardware/drawer/open', {
+          drawerId: this.connectedDrawerId
+        });
+        return response.data;
+      }
+      
+      // Otherwise, try to find a default drawer
+      const drawers = await this.listCashDrawers();
+      if (drawers.length > 0) {
+        // Use the first drawer in the list
+        const response = await api.post('/api/pos/drawer/hardware/drawer/open', {
+          drawerId: drawers[0].id
+        });
+        return response.data;
+      }
+      
+      // Try to find a default printer
+      try {
+        const printersResponse = await api.get('/api/pos/printers');
+        const printers = printersResponse.data.printers || [];
+        
+        // Find default printer or first receipt printer
+        const defaultPrinter = printers.find((p: any) => p.isDefault) || 
+                              printers.find((p: any) => p.printerType === 'RECEIPT');
+        
+        if (defaultPrinter) {
+          const response = await api.post('/api/pos/drawer/hardware/drawer/open-via-printer', {
+            printerId: defaultPrinter.id
+          });
+          return response.data;
+        }
+      } catch (error) {
+        console.error('Error finding default printer:', error);
+      }
+      
+      return { success: false, error: 'No cash drawer or printer configured' };
+    } catch (error) {
+      console.error('Error opening cash drawer:', error);
+      return { 
+        success: false, 
+        error: error.response?.data?.error || 'Failed to open cash drawer' 
+      };
+    }
+  }
+
   isDrawerConnected(): boolean {
     return this.isConnected;
   }

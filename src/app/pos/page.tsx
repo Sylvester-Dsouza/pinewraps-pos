@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/providers/auth-provider';
 import { useRouter } from 'next/navigation';
 import { useSearchParams } from 'next/navigation';
-import { Search, X, Minus, Plus } from 'lucide-react';
+import { Search, X, Minus, Plus, DollarSign } from 'lucide-react';
 import { apiMethods, type Product, type Category, CustomImage, type APIResponse } from '@/services/api';
 import toast from 'react-hot-toast';
 import ProductDetailsModal from '@/components/pos/product-details-modal';
@@ -13,6 +13,7 @@ import Header from '@/components/header/header';
 import { useQuery } from '@tanstack/react-query';
 import Image from 'next/image';
 import { nanoid } from 'nanoid';
+import { hardwareService } from '@/services/hardware.service';
 
 interface CartItem {
   id: string;
@@ -376,6 +377,20 @@ export default function POSPage() {
     localStorage.removeItem('pos-cart');
   };
 
+  const handleOpenCashDrawer = async () => {
+    try {
+      const result = await hardwareService.openCashDrawer();
+      if (result.success) {
+        toast.success('Cash drawer opened successfully');
+      } else {
+        toast.error(result.error || 'Failed to open cash drawer');
+      }
+    } catch (error) {
+      console.error('Error opening cash drawer:', error);
+      toast.error('Failed to open cash drawer');
+    }
+  };
+
   // If still loading or no user, show loading state
   if (authLoading || !user) {
     return (
@@ -634,6 +649,13 @@ export default function POSPage() {
               className="w-full py-3 bg-black text-white rounded-lg disabled:opacity-50"
             >
               Checkout
+            </button>
+            <button
+              onClick={handleOpenCashDrawer}
+              className="w-full py-3 bg-gray-700 text-white rounded-lg mt-4 flex items-center justify-center"
+            >
+              <DollarSign className="w-5 h-5 mr-2" />
+              Open Cash Drawer
             </button>
           </div>
         </div>
