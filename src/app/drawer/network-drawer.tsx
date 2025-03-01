@@ -9,7 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/components/ui/use-toast';
 import { HardwareService, CashDrawer } from '@/services/hardware.service';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Trash2, Plus, Save, RefreshCw } from 'lucide-react';
+import { Trash2, Plus, Save, RefreshCw, Edit } from 'lucide-react';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 const hardwareService = HardwareService.getInstance();
 
@@ -26,9 +27,11 @@ interface DrawerFormData {
 export function NetworkDrawerManager() {
   const { toast } = useToast();
   const [drawers, setDrawers] = useState<CashDrawer[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
   const [selectedDrawer, setSelectedDrawer] = useState<CashDrawer | null>(null);
   const [isConnected, setIsConnected] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [formData, setFormData] = useState<DrawerFormData>({
     id: '',
     name: '',
@@ -43,15 +46,30 @@ export function NetworkDrawerManager() {
   }, []);
 
   const loadDrawers = async () => {
-    setIsLoading(true);
     try {
-      const drawersList = await hardwareService.listCashDrawers();
-      setDrawers(drawersList);
+      setIsLoading(true);
+      setErrorMessage(null);
+      
+      const response = await hardwareService.listCashDrawers();
+      const networkDrawers = response.filter((drawer: CashDrawer) => 
+        drawer.connectionType === 'NETWORK'
+      );
+      setDrawers(networkDrawers);
+      
+      if (networkDrawers.length === 0) {
+        toast({
+          title: 'No Network Drawers',
+          description: 'No network drawers found. Please add one first.',
+          variant: 'destructive',
+        });
+      }
     } catch (error) {
       console.error('Error loading drawers:', error);
+      const errorMsg = error.message || 'Failed to load drawers';
+      setErrorMessage(errorMsg);
       toast({
         title: 'Error',
-        description: 'Failed to load cash drawers',
+        description: 'Failed to load drawers',
         variant: 'destructive',
       });
     } finally {
@@ -81,6 +99,13 @@ export function NetworkDrawerManager() {
       connectionType: 'NETWORK',
       locationId: ''
     });
+    
+    // Switch to the configuration tab
+    const tabsList = document.querySelector('[role="tablist"]');
+    const configTab = tabsList?.querySelector('[value="config"]');
+    if (configTab) {
+      (configTab as HTMLElement).click();
+    }
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -112,6 +137,9 @@ export function NetworkDrawerManager() {
         return;
       }
 
+      setIsLoading(true);
+      setErrorMessage(null);
+
       // Create a new object with the correct types for the API
       const drawerData: Partial<CashDrawer> = {
         id: formData.id,
@@ -136,11 +164,15 @@ export function NetworkDrawerManager() {
       setSelectedDrawer(drawer);
     } catch (error) {
       console.error('Error saving drawer:', error);
+      const errorMsg = error.message || 'Failed to save drawer';
+      setErrorMessage(errorMsg);
       toast({
         title: 'Error',
         description: 'Failed to save cash drawer',
         variant: 'destructive',
       });
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -155,72 +187,151 @@ export function NetworkDrawerManager() {
     }
 
     try {
-      const connected = await hardwareService.connectDrawer(selectedDrawer.id);
-      setIsConnected(connected);
+      setIsLoading(true);
+      setErrorMessage(null);
       
-      if (connected) {
+      const result = await hardwareService.connectDrawer(selectedDrawer.id);
+      setIsConnected(result.success);
+      
+      if (result.success) {
         toast({
           title: 'Success',
           description: `Connected to ${selectedDrawer.name}`,
         });
       } else {
+        const errorMsg = result.error || `Failed to connect to ${selectedDrawer.name}`;
+        setErrorMessage(errorMsg);
         toast({
-          title: 'Error',
-          description: `Failed to connect to ${selectedDrawer.name}`,
+          title: 'Connection Error',
+          description: errorMsg,
           variant: 'destructive',
         });
       }
     } catch (error) {
-      console.error('Error connecting to drawer:', error);
+      console.error('Error connecting drawer:', error);
+      const errorMsg = error.message || 'An unexpected error occurred';
+      setErrorMessage(errorMsg);
       toast({
         title: 'Error',
-        description: 'Failed to connect to cash drawer',
+        description: `Failed to connect to ${selectedDrawer.name}`,
         variant: 'destructive',
       });
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const handleOpenDrawer = async () => {
     try {
-      const opened = await hardwareService.openDrawer();
+      setIsLoading(true);
+      setErrorMessage(null);
       
-      if (opened) {
+      const result = await hardwareService.openDrawer();
+      
+      if (result.success) {
         toast({
           title: 'Success',
-          description: 'Cash drawer opened',
+          description: 'Drawer opened',
         });
       } else {
+        const errorMsg = result.error || 'Failed to open drawer';
+        setErrorMessage(errorMsg);
         toast({
-          title: 'Error',
-          description: 'Failed to open cash drawer',
+          title: 'Open Drawer Error',
+          description: errorMsg,
           variant: 'destructive',
         });
       }
     } catch (error) {
       console.error('Error opening drawer:', error);
+      const errorMsg = error.message || 'An unexpected error occurred';
+      setErrorMessage(errorMsg);
       toast({
         title: 'Error',
-        description: 'Failed to open cash drawer',
+        description: 'Failed to open drawer',
         variant: 'destructive',
       });
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const handleDisconnectDrawer = async () => {
     try {
-      await hardwareService.disconnectDrawer();
-      setIsConnected(false);
-      toast({
-        title: 'Success',
-        description: 'Disconnected from cash drawer',
-      });
+      setIsLoading(true);
+      setErrorMessage(null);
+      
+      const result = await hardwareService.disconnectDrawer();
+      
+      if (result.success) {
+        setIsConnected(false);
+        toast({
+          title: 'Success',
+          description: 'Disconnected from drawer',
+        });
+      } else {
+        const errorMsg = result.error || 'Failed to disconnect from drawer';
+        setErrorMessage(errorMsg);
+        toast({
+          title: 'Disconnection Error',
+          description: errorMsg,
+          variant: 'destructive',
+        });
+      }
     } catch (error) {
-      console.error('Error disconnecting from drawer:', error);
+      console.error('Error disconnecting drawer:', error);
+      const errorMsg = error.message || 'An unexpected error occurred';
+      setErrorMessage(errorMsg);
       toast({
         title: 'Error',
-        description: 'Failed to disconnect from cash drawer',
+        description: 'Failed to disconnect from drawer',
         variant: 'destructive',
       });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDeleteDrawer = async () => {
+    if (!formData.id) return;
+    
+    try {
+      setIsLoading(true);
+      setErrorMessage(null);
+      
+      const result = await hardwareService.deleteCashDrawer(formData.id);
+      
+      if (result.success) {
+        toast({
+          title: 'Success',
+          description: `Drawer "${formData.name}" deleted successfully`,
+        });
+        
+        // Reset form and selection
+        handleNewDrawer();
+        
+        // Refresh drawer list
+        await loadDrawers();
+      } else {
+        const errorMsg = result.error || 'Failed to delete drawer';
+        setErrorMessage(errorMsg);
+        toast({
+          title: 'Error',
+          description: errorMsg,
+          variant: 'destructive',
+        });
+      }
+    } catch (error) {
+      console.error('Error deleting drawer:', error);
+      const errorMsg = error.message || 'An unexpected error occurred';
+      setErrorMessage(errorMsg);
+      toast({
+        title: 'Error',
+        description: 'Failed to delete drawer',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -264,17 +375,38 @@ export function NetworkDrawerManager() {
                     <Card 
                       key={drawer.id} 
                       className={`cursor-pointer hover:border-primary transition-all ${selectedDrawer?.id === drawer.id ? 'border-primary bg-primary/5' : ''}`}
-                      onClick={() => handleSelectDrawer(drawer)}
                     >
                       <CardContent className="p-4">
-                        <div className="font-medium">{drawer.name}</div>
-                        {drawer.connectionType === 'NETWORK' && (
-                          <div className="text-sm text-gray-500">
-                            {drawer.ipAddress}:{drawer.port}
+                        <div className="flex justify-between items-start">
+                          <div 
+                            className="flex-1"
+                            onClick={() => handleSelectDrawer(drawer)}
+                          >
+                            <div className="font-medium">{drawer.name}</div>
+                            {drawer.connectionType === 'NETWORK' && (
+                              <div className="text-sm text-gray-500">
+                                {drawer.ipAddress}:{drawer.port}
+                              </div>
+                            )}
+                            <div className="text-xs text-gray-400 mt-1">
+                              Type: {drawer.connectionType}
+                            </div>
                           </div>
-                        )}
-                        <div className="text-xs text-gray-400 mt-1">
-                          Type: {drawer.connectionType}
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSelectDrawer(drawer);
+                              const tabsList = document.querySelector('[role="tablist"]');
+                              const configTab = tabsList?.querySelector('[value="config"]');
+                              if (configTab) {
+                                (configTab as HTMLElement).click();
+                              }
+                            }}
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
                         </div>
                       </CardContent>
                     </Card>
@@ -285,20 +417,42 @@ export function NetworkDrawerManager() {
               {selectedDrawer && (
                 <div className="flex flex-col space-y-2 mt-4 pt-4 border-t">
                   <div className="font-medium">Selected: {selectedDrawer.name}</div>
-                  <div className="flex space-x-2">
+                  <div className="flex flex-col space-y-2">
                     {!isConnected ? (
-                      <Button onClick={handleConnectDrawer}>
+                      <Button 
+                        onClick={handleConnectDrawer} 
+                        disabled={!selectedDrawer || isLoading}
+                      >
                         Connect
                       </Button>
                     ) : (
                       <>
-                        <Button onClick={handleOpenDrawer} variant="secondary">
+                        <Button 
+                          onClick={handleOpenDrawer} 
+                          disabled={isLoading}
+                        >
                           Open Drawer
                         </Button>
-                        <Button onClick={handleDisconnectDrawer} variant="outline">
+                        <Button 
+                          onClick={handleDisconnectDrawer} 
+                          variant="outline"
+                          disabled={isLoading}
+                        >
                           Disconnect
                         </Button>
                       </>
+                    )}
+                    {isLoading && (
+                      <div className="flex items-center space-x-2 text-sm text-muted-foreground">
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
+                        <span>Processing...</span>
+                      </div>
+                    )}
+                    {errorMessage && (
+                      <div className="mt-2 p-3 bg-red-50 border border-red-200 rounded-md">
+                        <h4 className="text-sm font-medium text-red-800">Error Details:</h4>
+                        <p className="text-sm text-red-700 whitespace-pre-wrap break-words">{errorMessage}</p>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -307,6 +461,24 @@ export function NetworkDrawerManager() {
             
             <TabsContent value="config" className="space-y-4">
               <div className="grid gap-4">
+                <div className="flex justify-between items-center">
+                  <h3 className="text-lg font-medium">
+                    {formData.id ? `Edit Drawer: ${formData.name}` : 'New Drawer'}
+                  </h3>
+                  <div className="flex space-x-2">
+                    {formData.id && (
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={handleNewDrawer}
+                      >
+                        <Plus className="h-4 w-4 mr-2" />
+                        New Drawer
+                      </Button>
+                    )}
+                  </div>
+                </div>
+                
                 <div className="grid gap-2">
                   <Label htmlFor="name">Drawer Name</Label>
                   <Input 
@@ -373,10 +545,65 @@ export function NetworkDrawerManager() {
                   />
                 </div>
                 
-                <Button onClick={handleSaveDrawer} className="mt-4">
-                  <Save className="h-4 w-4 mr-2" />
-                  Save Drawer
-                </Button>
+                <div className="flex justify-between mt-4">
+                  <Button 
+                    onClick={handleSaveDrawer} 
+                    disabled={isLoading}
+                  >
+                    {isLoading ? (
+                      <>
+                        <div className="h-4 w-4 mr-2 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        <Save className="h-4 w-4 mr-2" />
+                        Save Drawer
+                      </>
+                    )}
+                  </Button>
+                  
+                  {formData.id && (
+                    <Button 
+                      variant="destructive"
+                      disabled={isLoading}
+                      onClick={() => setShowDeleteConfirm(true)}
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Delete Drawer
+                    </Button>
+                  )}
+                </div>
+                
+                {/* Delete Confirmation Dialog */}
+                <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Are you absolutely sure?</DialogTitle>
+                      <DialogDescription>
+                        This will permanently delete the drawer "{formData.name}". 
+                        This action cannot be undone.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter className="flex justify-between">
+                      <Button 
+                        variant="outline" 
+                        onClick={() => setShowDeleteConfirm(false)}
+                      >
+                        Cancel
+                      </Button>
+                      <Button 
+                        variant="destructive" 
+                        onClick={() => {
+                          setShowDeleteConfirm(false);
+                          handleDeleteDrawer();
+                        }}
+                      >
+                        Delete
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
               </div>
             </TabsContent>
           </Tabs>

@@ -33,6 +33,8 @@ export default function DrawerPage() {
   const [ports, setPorts] = useState<Port[]>([]);
   const [selectedPort, setSelectedPort] = useState<string>('');
   const [isConnected, setIsConnected] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [amount, setAmount] = useState('');
   const [notes, setNotes] = useState('');
   const [selectedDrawer, setSelectedDrawer] = useState<CashDrawer | null>(null);
@@ -105,23 +107,29 @@ export default function DrawerPage() {
 
   const handleConnect = async () => {
     try {
+      setIsLoading(true);
+      setErrorMessage(null);
+      
       // If a drawer is selected, connect to it
       if (selectedDrawer) {
-        const connected = await hardwareService.connectDrawer(selectedDrawer.id);
-        setIsConnected(connected);
+        const result = await hardwareService.connectDrawer(selectedDrawer.id);
+        setIsConnected(result.success);
         
-        if (connected) {
+        if (result.success) {
           toast({
             title: 'Success',
             description: `Connected to ${selectedDrawer.name}`,
           });
         } else {
+          const errorMsg = result.error || `Failed to connect to ${selectedDrawer.name}`;
+          setErrorMessage(errorMsg);
           toast({
-            title: 'Error',
-            description: `Failed to connect to ${selectedDrawer.name}`,
+            title: 'Connection Error',
+            description: errorMsg,
             variant: 'destructive',
           });
         }
+        setIsLoading(false);
         return;
       }
       
@@ -132,75 +140,109 @@ export default function DrawerPage() {
           description: 'Please select a port',
           variant: 'destructive',
         });
+        setIsLoading(false);
         return;
       }
 
-      const connected = await hardwareService.connectDrawer(selectedPort);
-      setIsConnected(connected);
+      const result = await hardwareService.connectDrawer(selectedPort);
+      setIsConnected(result.success);
       
-      if (connected) {
+      if (result.success) {
         toast({
           title: 'Success',
           description: 'Connected to drawer',
         });
       } else {
+        const errorMsg = result.error || 'Failed to connect to drawer';
+        setErrorMessage(errorMsg);
         toast({
-          title: 'Error',
-          description: 'Failed to connect to drawer',
+          title: 'Connection Error',
+          description: errorMsg,
           variant: 'destructive',
         });
       }
-    } catch (error) {
-      console.error('Error connecting to drawer:', error);
+    } catch (err) {
+      console.error('Unexpected error during connection:', err);
+      const errorMsg = err.message || 'An unexpected error occurred';
+      setErrorMessage(errorMsg);
       toast({
-        title: 'Error',
-        description: 'Failed to connect to drawer',
+        title: 'Connection Error',
+        description: errorMsg,
         variant: 'destructive',
       });
-    }
-  };
-
-  const handleOpenDrawer = async () => {
-    try {
-      const opened = await hardwareService.openDrawer();
-      
-      if (opened) {
-        toast({
-          title: 'Success',
-          description: 'Drawer opened',
-        });
-      } else {
-        toast({
-          title: 'Error',
-          description: 'Failed to open drawer',
-          variant: 'destructive',
-        });
-      }
-    } catch (error) {
-      console.error('Error opening drawer:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to open drawer',
-        variant: 'destructive',
-      });
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const handleDisconnect = async () => {
     try {
-      await hardwareService.disconnectDrawer();
-      setIsConnected(false);
+      setIsLoading(true);
+      setErrorMessage(null);
+      
+      const result = await hardwareService.disconnectDrawer();
+      
+      if (result.success) {
+        setIsConnected(false);
+        toast({
+          title: 'Success',
+          description: 'Disconnected from drawer',
+        });
+      } else {
+        const errorMsg = result.error || 'Failed to disconnect from drawer';
+        setErrorMessage(errorMsg);
+        toast({
+          title: 'Disconnection Error',
+          description: errorMsg,
+          variant: 'destructive',
+        });
+      }
+    } catch (err) {
+      console.error('Unexpected error during disconnection:', err);
+      const errorMsg = err.message || 'An unexpected error occurred';
+      setErrorMessage(errorMsg);
       toast({
-        title: 'Success',
-        description: 'Disconnected from drawer',
-      });
-    } catch (error) {
-      console.error('Error disconnecting from drawer:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to disconnect from drawer',
+        title: 'Disconnection Error',
+        description: errorMsg,
         variant: 'destructive',
       });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleOpenDrawer = async () => {
+    try {
+      setIsLoading(true);
+      setErrorMessage(null);
+      
+      const result = await hardwareService.openDrawer();
+      
+      if (result.success) {
+        toast({
+          title: 'Success',
+          description: 'Drawer opened',
+        });
+      } else {
+        const errorMsg = result.error || 'Failed to open drawer';
+        setErrorMessage(errorMsg);
+        toast({
+          title: 'Open Drawer Error',
+          description: errorMsg,
+          variant: 'destructive',
+        });
+      }
+    } catch (err) {
+      console.error('Unexpected error opening drawer:', err);
+      const errorMsg = err.message || 'An unexpected error occurred';
+      setErrorMessage(errorMsg);
+      toast({
+        title: 'Open Drawer Error',
+        description: errorMsg,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -442,6 +484,18 @@ export default function DrawerPage() {
                       Disconnect
                     </Button>
                   </>
+                )}
+                {isLoading && (
+                  <div className="flex items-center space-x-2 text-sm text-muted-foreground">
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
+                    <span>Processing...</span>
+                  </div>
+                )}
+                {errorMessage && (
+                  <div className="mt-2 p-3 bg-red-50 border border-red-200 rounded-md">
+                    <h4 className="text-sm font-medium text-red-800">Error Details:</h4>
+                    <p className="text-sm text-red-700 whitespace-pre-wrap break-words">{errorMessage}</p>
+                  </div>
                 )}
               </div>
             </CardContent>
