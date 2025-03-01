@@ -103,7 +103,9 @@ export class HardwareService {
       
       // Check if this is a drawer ID (UUID format) or a port path
       const isDrawerId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(portPathOrDrawerId) || 
-                         /^[0-9a-f]{25}$/i.test(portPathOrDrawerId); // For CUID format
+                         /^[a-z0-9]{25}$/i.test(portPathOrDrawerId); // For CUID format
+      
+      console.log('Is drawer ID:', isDrawerId);
       
       let payload;
       if (isDrawerId) {
@@ -113,6 +115,7 @@ export class HardwareService {
         payload = { portPath: portPathOrDrawerId };
       }
       
+      console.log('Connect payload:', payload);
       const response = await api.post('/api/pos/drawer/hardware/drawer/connect', payload);
       console.log('Connect response:', response.data);
       this.isConnected = response.data.success;

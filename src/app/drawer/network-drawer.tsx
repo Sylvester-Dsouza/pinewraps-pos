@@ -32,6 +32,7 @@ export function NetworkDrawerManager() {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [activeTab, setActiveTab] = useState<string>("list");
   const [formData, setFormData] = useState<DrawerFormData>({
     id: '',
     name: '',
@@ -90,6 +91,7 @@ export function NetworkDrawerManager() {
   };
 
   const handleNewDrawer = () => {
+    console.log('New drawer button clicked');
     setSelectedDrawer(null);
     setFormData({
       id: '',
@@ -101,11 +103,7 @@ export function NetworkDrawerManager() {
     });
     
     // Switch to the configuration tab
-    const tabsList = document.querySelector('[role="tablist"]');
-    const configTab = tabsList?.querySelector('[value="config"]');
-    if (configTab) {
-      (configTab as HTMLElement).click();
-    }
+    setActiveTab("config");
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -176,45 +174,43 @@ export function NetworkDrawerManager() {
     }
   };
 
-  const handleConnectDrawer = async () => {
-    if (!selectedDrawer) {
-      toast({
-        title: 'Error',
-        description: 'Please select a drawer to connect',
-        variant: 'destructive',
-      });
-      return;
-    }
-
+  const handleConnect = async (drawer: CashDrawer) => {
     try {
       setIsLoading(true);
       setErrorMessage(null);
+      console.log('Connecting to drawer:', drawer);
       
-      const result = await hardwareService.connectDrawer(selectedDrawer.id);
-      setIsConnected(result.success);
+      if (!drawer.id) {
+        setErrorMessage('Invalid drawer: missing ID');
+        return;
+      }
+      
+      const result = await hardwareService.connectDrawer(drawer.id);
       
       if (result.success) {
         toast({
-          title: 'Success',
-          description: `Connected to ${selectedDrawer.name}`,
+          title: "Connected",
+          description: `Successfully connected to drawer: ${drawer.name}`,
         });
+        setIsConnected(true);
+        setSelectedDrawer(drawer);
       } else {
-        const errorMsg = result.error || `Failed to connect to ${selectedDrawer.name}`;
-        setErrorMessage(errorMsg);
+        console.error('Failed to connect:', result.error);
+        setErrorMessage(result.error || 'Failed to connect to drawer');
         toast({
-          title: 'Connection Error',
-          description: errorMsg,
-          variant: 'destructive',
+          variant: "destructive",
+          title: "Connection Failed",
+          description: result.error || 'Failed to connect to drawer',
         });
       }
     } catch (error) {
-      console.error('Error connecting drawer:', error);
-      const errorMsg = error.message || 'An unexpected error occurred';
-      setErrorMessage(errorMsg);
+      console.error('Error connecting to drawer:', error);
+      const errorMessage = error.message || 'Unknown error occurred';
+      setErrorMessage(errorMessage);
       toast({
-        title: 'Error',
-        description: `Failed to connect to ${selectedDrawer.name}`,
-        variant: 'destructive',
+        variant: "destructive",
+        title: "Connection Error",
+        description: errorMessage,
       });
     } finally {
       setIsLoading(false);
@@ -354,58 +350,76 @@ export function NetworkDrawerManager() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <Tabs defaultValue="list" className="w-full">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="list">Drawer List</TabsTrigger>
               <TabsTrigger value="config">Configuration</TabsTrigger>
             </TabsList>
             
-            <TabsContent value="list" className="space-y-4">
-              {isLoading ? (
-                <div className="flex justify-center p-4">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+            <TabsContent value="list" className="pt-4">
+              <div className="flex justify-between mb-4">
+                <h3 className="text-lg font-medium">Available Drawers</h3>
+                <Button onClick={handleNewDrawer} size="sm">
+                  <Plus className="h-4 w-4 mr-2" />
+                  New Drawer
+                </Button>
+              </div>
+              
+              {isLoading && drawers.length === 0 ? (
+                <div className="flex flex-col items-center justify-center p-8">
+                  <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent mb-4"></div>
+                  <p className="text-muted-foreground">Loading drawers...</p>
                 </div>
               ) : drawers.length === 0 ? (
-                <div className="text-center p-4 text-gray-500">
-                  No cash drawers configured. Create one in the Configuration tab.
+                <div className="text-center p-8 border rounded-md">
+                  <p className="text-muted-foreground mb-4">No drawers configured yet</p>
+                  <Button onClick={handleNewDrawer} variant="outline" size="sm">
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Your First Drawer
+                  </Button>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
                   {drawers.map(drawer => (
                     <Card 
                       key={drawer.id} 
-                      className={`cursor-pointer hover:border-primary transition-all ${selectedDrawer?.id === drawer.id ? 'border-primary bg-primary/5' : ''}`}
+                      className={`cursor-pointer ${selectedDrawer?.id === drawer.id ? 'border-primary' : ''}`}
+                      onClick={() => handleSelectDrawer(drawer)}
                     >
-                      <CardContent className="p-4">
-                        <div className="flex justify-between items-start">
-                          <div 
-                            className="flex-1"
-                            onClick={() => handleSelectDrawer(drawer)}
-                          >
-                            <div className="font-medium">{drawer.name}</div>
-                            {drawer.connectionType === 'NETWORK' && (
-                              <div className="text-sm text-gray-500">
-                                {drawer.ipAddress}:{drawer.port}
-                              </div>
-                            )}
-                            <div className="text-xs text-gray-400 mt-1">
-                              Type: {drawer.connectionType}
-                            </div>
-                          </div>
+                      <CardHeader className="p-4 pb-2">
+                        <CardTitle className="text-base flex justify-between items-center">
+                          <span>{drawer.name}</span>
                           <Button 
                             variant="ghost" 
-                            size="sm" 
+                            size="icon"
                             onClick={(e) => {
                               e.stopPropagation();
                               handleSelectDrawer(drawer);
-                              const tabsList = document.querySelector('[role="tablist"]');
-                              const configTab = tabsList?.querySelector('[value="config"]');
-                              if (configTab) {
-                                (configTab as HTMLElement).click();
-                              }
+                              setActiveTab("config");
                             }}
                           >
                             <Edit className="h-4 w-4" />
+                          </Button>
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="p-4 pt-0">
+                        <div className="text-sm text-muted-foreground">
+                          {drawer.connectionType === 'NETWORK' ? (
+                            <p>Network: {drawer.ipAddress}:{drawer.port}</p>
+                          ) : (
+                            <p>Serial: {drawer.serialPath || 'Not specified'}</p>
+                          )}
+                        </div>
+                        <div className="mt-2 flex justify-end">
+                          <Button 
+                            size="sm" 
+                            variant="secondary"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleConnect(drawer);
+                            }}
+                          >
+                            Connect
                           </Button>
                         </div>
                       </CardContent>
@@ -420,10 +434,17 @@ export function NetworkDrawerManager() {
                   <div className="flex flex-col space-y-2">
                     {!isConnected ? (
                       <Button 
-                        onClick={handleConnectDrawer} 
+                        onClick={() => selectedDrawer && handleConnect(selectedDrawer)} 
                         disabled={!selectedDrawer || isLoading}
                       >
-                        Connect
+                        {isLoading ? (
+                          <>
+                            <div className="h-4 w-4 mr-2 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
+                            Connecting...
+                          </>
+                        ) : (
+                          <>Connect</>
+                        )}
                       </Button>
                     ) : (
                       <>

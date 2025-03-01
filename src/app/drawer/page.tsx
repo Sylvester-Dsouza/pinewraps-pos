@@ -62,10 +62,22 @@ export default function DrawerPage() {
 
   const loadPorts = async () => {
     try {
+      setIsLoading(true);
       const portsList = await hardwareService.listPorts();
+      console.log('Available ports:', portsList);
       setPorts(portsList);
+      
+      // If no ports are available, show a message but don't treat it as an error
+      if (portsList.length === 0) {
+        console.log('No serial ports detected. Network drawers can still be used.');
+      }
+      
+      setErrorMessage(null);
     } catch (error) {
       console.error('Error loading ports:', error);
+      setErrorMessage('Failed to load available ports. Network drawers can still be used.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
