@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/components/ui/use-toast';
-import { HardwareService, CashDrawer } from '@/services/hardware.service';
+import { HardwareService, CashDrawer, Printer } from '@/services/hardware.service';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Trash2, Plus, Save, RefreshCw, Edit } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -21,12 +21,15 @@ interface DrawerFormData {
   ipAddress: string;
   port: string;
   connectionType: string;
+  serialPath: string;
+  printerId: string;
   locationId: string;
 }
 
 export function NetworkDrawerManager() {
   const { toast } = useToast();
   const [drawers, setDrawers] = useState<CashDrawer[]>([]);
+  const [printers, setPrinters] = useState<Printer[]>([]);
   const [selectedDrawer, setSelectedDrawer] = useState<CashDrawer | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -39,597 +42,476 @@ export function NetworkDrawerManager() {
     ipAddress: '',
     port: '',
     connectionType: 'NETWORK',
+    serialPath: '',
+    printerId: '',
     locationId: ''
   });
 
   useEffect(() => {
     loadDrawers();
+    loadPrinters();
   }, []);
 
   const loadDrawers = async () => {
     try {
       setIsLoading(true);
-      setErrorMessage(null);
-      
-      const response = await hardwareService.listCashDrawers();
-      const networkDrawers = response.filter((drawer: CashDrawer) => 
-        drawer.connectionType === 'NETWORK'
-      );
-      setDrawers(networkDrawers);
-      
-      if (networkDrawers.length === 0) {
-        toast({
-          title: 'No Network Drawers',
-          description: 'No network drawers found. Please add one first.',
-          variant: 'destructive',
-        });
-      }
+      const drawerList = await hardwareService.listCashDrawers();
+      setDrawers(drawerList);
+      setIsLoading(false);
     } catch (error) {
       console.error('Error loading drawers:', error);
-      const errorMsg = error.message || 'Failed to load drawers';
-      setErrorMessage(errorMsg);
-      toast({
-        title: 'Error',
-        description: 'Failed to load drawers',
-        variant: 'destructive',
-      });
-    } finally {
       setIsLoading(false);
+      toast({
+        variant: "destructive",
+        title: "Error loading cash drawers",
+        description: error.message || "An error occurred while loading cash drawers",
+      });
     }
   };
 
-  const handleSelectDrawer = (drawer: CashDrawer) => {
-    setSelectedDrawer(drawer);
-    setFormData({
-      id: drawer.id,
-      name: drawer.name,
-      ipAddress: drawer.ipAddress || '',
-      port: drawer.port?.toString() || '',
-      connectionType: drawer.connectionType,
-      locationId: drawer.locationId || ''
-    });
+  const loadPrinters = async () => {
+    try {
+      const printerList = await hardwareService.listPrinters();
+      setPrinters(printerList);
+    } catch (error) {
+      console.error('Error loading printers:', error);
+      toast({
+        variant: "destructive",
+        title: "Error loading printers",
+        description: error.message || "An error occurred while loading printers",
+      });
+    }
   };
 
-  const handleNewDrawer = () => {
-    console.log('New drawer button clicked');
-    setSelectedDrawer(null);
+  const handleConnectDrawer = async (drawer: CashDrawer) => {
+    try {
+      setIsLoading(true);
+      setErrorMessage(null);
+      const response = await hardwareService.connectDrawer(drawer.id);
+      
+      if (response.success) {
+        setIsConnected(true);
+        setSelectedDrawer(drawer);
+        toast({
+          title: "Connected",
+          description: `Successfully connected to ${drawer.name}`,
+        });
+      } else {
+        setErrorMessage(response.error || 'Failed to connect to cash drawer');
+        toast({
+          variant: "destructive",
+          title: "Connection Failed",
+          description: response.error || "Failed to connect to cash drawer",
+        });
+      }
+      setIsLoading(false);
+    } catch (error) {
+      console.error('Error connecting to drawer:', error);
+      setIsLoading(false);
+      setErrorMessage(error.message || 'Failed to connect to cash drawer');
+      toast({
+        variant: "destructive",
+        title: "Connection Error",
+        description: error.message || "An error occurred while connecting to cash drawer",
+      });
+    }
+  };
+
+  const handleOpenDrawer = async (drawer: CashDrawer) => {
+    try {
+      setIsLoading(true);
+      setErrorMessage(null);
+      const response = await hardwareService.openDrawer(drawer.id);
+      
+      if (response.success) {
+        toast({
+          title: "Success",
+          description: `Cash drawer ${drawer.name} opened successfully`,
+        });
+      } else {
+        setErrorMessage(response.error || 'Failed to open cash drawer');
+        toast({
+          variant: "destructive",
+          title: "Failed to Open",
+          description: response.error || "Failed to open cash drawer",
+        });
+      }
+      setIsLoading(false);
+    } catch (error) {
+      console.error('Error opening drawer:', error);
+      setIsLoading(false);
+      setErrorMessage(error.message || 'Failed to open cash drawer');
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "An error occurred while opening cash drawer",
+      });
+    }
+  };
+
+  const handleFormChange = (field: keyof DrawerFormData) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFormData({ ...formData, [field]: e.target.value });
+  };
+
+  const handleSelectChange = (field: keyof DrawerFormData) => (value: string) => {
+    setFormData({ ...formData, [field]: value });
+    
+    // Clear fields that are no longer relevant based on connection type
+    if (field === 'connectionType') {
+      if (value === 'NETWORK') {
+        setFormData(prev => ({ ...prev, connectionType: value, serialPath: '', printerId: '' }));
+      } else if (value === 'SERIAL') {
+        setFormData(prev => ({ ...prev, connectionType: value, ipAddress: '', port: '', printerId: '' }));
+      } else if (value === 'PRINTER') {
+        setFormData(prev => ({ ...prev, connectionType: value, ipAddress: '', port: '', serialPath: '' }));
+      }
+    }
+  };
+
+  const handleAddDrawer = () => {
     setFormData({
       id: '',
       name: '',
       ipAddress: '',
       port: '',
       connectionType: 'NETWORK',
+      serialPath: '',
+      printerId: '',
       locationId: ''
     });
-    
-    // Switch to the configuration tab
-    setActiveTab("config");
+    setActiveTab("add");
   };
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-  };
-
-  const handleSelectChange = (name: string, value: string) => {
-    setFormData(prev => ({ ...prev, [name]: value }));
+  const handleEditDrawer = (drawer: CashDrawer) => {
+    setFormData({
+      id: drawer.id,
+      name: drawer.name,
+      ipAddress: drawer.ipAddress || '',
+      port: drawer.port ? drawer.port.toString() : '',
+      connectionType: drawer.connectionType,
+      serialPath: drawer.serialPath || '',
+      printerId: drawer.printerId || '',
+      locationId: drawer.locationId || '',
+    });
+    setActiveTab("add");
   };
 
   const handleSaveDrawer = async () => {
     try {
-      if (!formData.name) {
-        toast({
-          title: 'Error',
-          description: 'Drawer name is required',
-          variant: 'destructive',
-        });
-        return;
-      }
-
-      if (formData.connectionType === 'NETWORK' && (!formData.ipAddress || !formData.port)) {
-        toast({
-          title: 'Error',
-          description: 'IP Address and Port are required for network drawers',
-          variant: 'destructive',
-        });
-        return;
-      }
-
       setIsLoading(true);
       setErrorMessage(null);
-
-      // Create a new object with the correct types for the API
-      const drawerData: Partial<CashDrawer> = {
-        id: formData.id,
+      
+      // Validate required fields
+      if (!formData.name) {
+        setErrorMessage('Name is required');
+        setIsLoading(false);
+        return;
+      }
+      
+      // Validate connection type specific fields
+      if (formData.connectionType === 'NETWORK' && (!formData.ipAddress || !formData.port)) {
+        setErrorMessage('IP address and port are required for network connections');
+        setIsLoading(false);
+        return;
+      } else if (formData.connectionType === 'SERIAL' && !formData.serialPath) {
+        setErrorMessage('Serial path is required for serial connections');
+        setIsLoading(false);
+        return;
+      } else if (formData.connectionType === 'PRINTER' && !formData.printerId) {
+        setErrorMessage('Printer is required for printer-connected cash drawers');
+        setIsLoading(false);
+        return;
+      }
+      
+      const payload = {
         name: formData.name,
-        ipAddress: formData.ipAddress,
-        connectionType: formData.connectionType as 'SERIAL' | 'NETWORK' | 'USB',
+        connectionType: formData.connectionType,
+        ipAddress: formData.connectionType === 'NETWORK' ? formData.ipAddress : undefined,
+        port: formData.connectionType === 'NETWORK' && formData.port ? parseInt(formData.port) : undefined,
+        serialPath: formData.connectionType === 'SERIAL' ? formData.serialPath : undefined,
+        printerId: formData.connectionType === 'PRINTER' ? formData.printerId : undefined,
         locationId: formData.locationId || undefined
       };
       
-      // Convert port string to number for network drawers
-      if (formData.connectionType === 'NETWORK' && formData.port) {
-        drawerData.port = parseInt(formData.port, 10);
+      let result: CashDrawer;
+      
+      if (formData.id) {
+        // Update existing drawer
+        result = await hardwareService.updateCashDrawer(formData.id, payload);
+        toast({
+          title: "Updated",
+          description: `Cash drawer ${result.name} updated successfully`,
+        });
+      } else {
+        // Create new drawer
+        result = await hardwareService.saveCashDrawer(payload);
+        toast({
+          title: "Created",
+          description: `Cash drawer ${result.name} created successfully`,
+        });
       }
-
-      const drawer = await hardwareService.saveCashDrawer(drawerData);
-      toast({
-        title: 'Success',
-        description: `Cash drawer ${drawer.name} saved successfully`,
+      
+      // Reset form and reload drawers
+      setFormData({
+        id: '',
+        name: '',
+        ipAddress: '',
+        port: '',
+        connectionType: 'NETWORK',
+        serialPath: '',
+        printerId: '',
+        locationId: ''
       });
       
       await loadDrawers();
-      setSelectedDrawer(drawer);
+      setActiveTab("list");
+      setIsLoading(false);
     } catch (error) {
       console.error('Error saving drawer:', error);
-      const errorMsg = error.message || 'Failed to save drawer';
-      setErrorMessage(errorMsg);
-      toast({
-        title: 'Error',
-        description: 'Failed to save cash drawer',
-        variant: 'destructive',
-      });
-    } finally {
       setIsLoading(false);
-    }
-  };
-
-  const handleConnect = async (drawer: CashDrawer) => {
-    try {
-      setIsLoading(true);
-      setErrorMessage(null);
-      console.log('Connecting to drawer:', drawer);
-      
-      if (!drawer.id) {
-        setErrorMessage('Invalid drawer: missing ID');
-        return;
-      }
-      
-      const result = await hardwareService.connectDrawer(drawer.id);
-      
-      if (result.success) {
-        toast({
-          title: "Connected",
-          description: `Successfully connected to drawer: ${drawer.name}`,
-        });
-        setIsConnected(true);
-        setSelectedDrawer(drawer);
-      } else {
-        console.error('Failed to connect:', result.error);
-        setErrorMessage(result.error || 'Failed to connect to drawer');
-        toast({
-          variant: "destructive",
-          title: "Connection Failed",
-          description: result.error || 'Failed to connect to drawer',
-        });
-      }
-    } catch (error) {
-      console.error('Error connecting to drawer:', error);
-      const errorMessage = error.message || 'Unknown error occurred';
-      setErrorMessage(errorMessage);
+      setErrorMessage(error.message || 'Failed to save cash drawer');
       toast({
         variant: "destructive",
-        title: "Connection Error",
-        description: errorMessage,
+        title: "Error",
+        description: error.message || "An error occurred while saving cash drawer",
       });
-    } finally {
-      setIsLoading(false);
     }
   };
 
-  const handleOpenDrawer = async () => {
-    try {
-      setIsLoading(true);
-      setErrorMessage(null);
-      
-      const result = await hardwareService.openDrawer();
-      
-      if (result.success) {
-        toast({
-          title: 'Success',
-          description: 'Drawer opened',
-        });
-      } else {
-        const errorMsg = result.error || 'Failed to open drawer';
-        setErrorMessage(errorMsg);
-        toast({
-          title: 'Open Drawer Error',
-          description: errorMsg,
-          variant: 'destructive',
-        });
-      }
-    } catch (error) {
-      console.error('Error opening drawer:', error);
-      const errorMsg = error.message || 'An unexpected error occurred';
-      setErrorMessage(errorMsg);
-      toast({
-        title: 'Error',
-        description: 'Failed to open drawer',
-        variant: 'destructive',
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleDisconnectDrawer = async () => {
-    try {
-      setIsLoading(true);
-      setErrorMessage(null);
-      
-      const result = await hardwareService.disconnectDrawer();
-      
-      if (result.success) {
-        setIsConnected(false);
-        toast({
-          title: 'Success',
-          description: 'Disconnected from drawer',
-        });
-      } else {
-        const errorMsg = result.error || 'Failed to disconnect from drawer';
-        setErrorMessage(errorMsg);
-        toast({
-          title: 'Disconnection Error',
-          description: errorMsg,
-          variant: 'destructive',
-        });
-      }
-    } catch (error) {
-      console.error('Error disconnecting drawer:', error);
-      const errorMsg = error.message || 'An unexpected error occurred';
-      setErrorMessage(errorMsg);
-      toast({
-        title: 'Error',
-        description: 'Failed to disconnect from drawer',
-        variant: 'destructive',
-      });
-    } finally {
-      setIsLoading(false);
-    }
+  const handleConfirmDeleteDrawer = (drawer: CashDrawer) => {
+    setSelectedDrawer(drawer);
+    setShowDeleteConfirm(true);
   };
 
   const handleDeleteDrawer = async () => {
-    if (!formData.id) return;
+    if (!selectedDrawer) return;
     
     try {
       setIsLoading(true);
-      setErrorMessage(null);
+      const response = await hardwareService.deleteCashDrawer(selectedDrawer.id);
       
-      const result = await hardwareService.deleteCashDrawer(formData.id);
-      
-      if (result.success) {
+      if (response.success) {
         toast({
-          title: 'Success',
-          description: `Drawer "${formData.name}" deleted successfully`,
+          title: "Deleted",
+          description: `Cash drawer ${selectedDrawer.name} deleted successfully`,
         });
-        
-        // Reset form and selection
-        handleNewDrawer();
-        
-        // Refresh drawer list
+        setShowDeleteConfirm(false);
         await loadDrawers();
       } else {
-        const errorMsg = result.error || 'Failed to delete drawer';
-        setErrorMessage(errorMsg);
+        setErrorMessage(response.error || 'Failed to delete cash drawer');
         toast({
-          title: 'Error',
-          description: errorMsg,
-          variant: 'destructive',
+          variant: "destructive",
+          title: "Deletion Failed",
+          description: response.error || "Failed to delete cash drawer",
         });
       }
+      setIsLoading(false);
     } catch (error) {
       console.error('Error deleting drawer:', error);
-      const errorMsg = error.message || 'An unexpected error occurred';
-      setErrorMessage(errorMsg);
-      toast({
-        title: 'Error',
-        description: 'Failed to delete drawer',
-        variant: 'destructive',
-      });
-    } finally {
       setIsLoading(false);
+      setErrorMessage(error.message || 'Failed to delete cash drawer');
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "An error occurred while deleting cash drawer",
+      });
     }
   };
 
   return (
-    <div className="space-y-4">
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex justify-between items-center">
-            <span>Network Cash Drawers</span>
-            <div className="flex space-x-2">
-              <Button variant="outline" size="sm" onClick={loadDrawers}>
-                <RefreshCw className="h-4 w-4 mr-2" />
-                Refresh
-              </Button>
-              <Button variant="outline" size="sm" onClick={handleNewDrawer}>
-                <Plus className="h-4 w-4 mr-2" />
-                New Drawer
-              </Button>
-            </div>
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="list">Drawer List</TabsTrigger>
-              <TabsTrigger value="config">Configuration</TabsTrigger>
-            </TabsList>
+    <Card className="w-full">
+      <CardHeader>
+        <CardTitle className="flex justify-between items-center">
+          <span>Cash Drawer Management</span>
+          <Button variant="outline" size="sm" onClick={loadDrawers} disabled={isLoading}>
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Refresh
+          </Button>
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="list">Cash Drawers</TabsTrigger>
+            <TabsTrigger value="add">{formData.id ? 'Edit' : 'Add'} Cash Drawer</TabsTrigger>
+          </TabsList>
+          
+          <TabsContent value="list" className="space-y-4">
+            <Button onClick={handleAddDrawer} className="mb-4">
+              <Plus className="h-4 w-4 mr-2" />
+              Add New Cash Drawer
+            </Button>
             
-            <TabsContent value="list" className="pt-4">
-              <div className="flex justify-between mb-4">
-                <h3 className="text-lg font-medium">Available Drawers</h3>
-                <Button onClick={handleNewDrawer} size="sm">
-                  <Plus className="h-4 w-4 mr-2" />
-                  New Drawer
-                </Button>
+            {isLoading ? (
+              <div className="flex justify-center py-4">Loading...</div>
+            ) : drawers.length === 0 ? (
+              <div className="text-center py-4">No cash drawers found. Create one to get started.</div>
+            ) : (
+              <div className="space-y-4">
+                {drawers.map((drawer) => (
+                  <Card key={drawer.id} className="p-4">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <h3 className="text-lg font-semibold">{drawer.name}</h3>
+                        <p className="text-sm text-gray-500">Connection: {drawer.connectionType}</p>
+                        {drawer.connectionType === 'NETWORK' && (
+                          <p className="text-sm text-gray-500">Network: {drawer.ipAddress}:{drawer.port}</p>
+                        )}
+                        {drawer.connectionType === 'SERIAL' && (
+                          <p className="text-sm text-gray-500">Serial: {drawer.serialPath}</p>
+                        )}
+                        {drawer.connectionType === 'PRINTER' && drawer.printer && (
+                          <p className="text-sm text-gray-500">Printer: {drawer.printer.name}</p>
+                        )}
+                      </div>
+                      <div className="flex space-x-2">
+                        <Button variant="outline" size="sm" onClick={() => handleEditDrawer(drawer)}>
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => handleConfirmDeleteDrawer(drawer)}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="flex mt-4 space-x-2">
+                      <Button variant="secondary" size="sm" onClick={() => handleConnectDrawer(drawer)} disabled={isLoading}>
+                        Connect
+                      </Button>
+                      <Button size="sm" onClick={() => handleOpenDrawer(drawer)} disabled={isLoading}>
+                        Open Drawer
+                      </Button>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            )}
+            
+            {errorMessage && (
+              <div className="text-red-500 mt-2">{errorMessage}</div>
+            )}
+          </TabsContent>
+          
+          <TabsContent value="add">
+            <div className="space-y-4">
+              <div className="grid w-full items-center gap-2">
+                <Label htmlFor="name">Name</Label>
+                <Input 
+                  id="name" 
+                  value={formData.name} 
+                  onChange={handleFormChange('name')} 
+                  placeholder="Main Register" 
+                />
               </div>
               
-              {isLoading && drawers.length === 0 ? (
-                <div className="flex flex-col items-center justify-center p-8">
-                  <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent mb-4"></div>
-                  <p className="text-muted-foreground">Loading drawers...</p>
-                </div>
-              ) : drawers.length === 0 ? (
-                <div className="text-center p-8 border rounded-md">
-                  <p className="text-muted-foreground mb-4">No drawers configured yet</p>
-                  <Button onClick={handleNewDrawer} variant="outline" size="sm">
-                    <Plus className="h-4 w-4 mr-2" />
-                    Add Your First Drawer
-                  </Button>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {drawers.map(drawer => (
-                    <Card 
-                      key={drawer.id} 
-                      className={`cursor-pointer ${selectedDrawer?.id === drawer.id ? 'border-primary' : ''}`}
-                      onClick={() => handleSelectDrawer(drawer)}
-                    >
-                      <CardHeader className="p-4 pb-2">
-                        <CardTitle className="text-base flex justify-between items-center">
-                          <span>{drawer.name}</span>
-                          <Button 
-                            variant="ghost" 
-                            size="icon"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleSelectDrawer(drawer);
-                              setActiveTab("config");
-                            }}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="p-4 pt-0">
-                        <div className="text-sm text-muted-foreground">
-                          {drawer.connectionType === 'NETWORK' ? (
-                            <p>Network: {drawer.ipAddress}:{drawer.port}</p>
-                          ) : (
-                            <p>Serial: {drawer.serialPath || 'Not specified'}</p>
-                          )}
-                        </div>
-                        <div className="mt-2 flex justify-end">
-                          <Button 
-                            size="sm" 
-                            variant="secondary"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleConnect(drawer);
-                            }}
-                          >
-                            Connect
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
+              <div className="grid w-full items-center gap-2">
+                <Label htmlFor="connectionType">Connection Type</Label>
+                <Select value={formData.connectionType} onValueChange={handleSelectChange('connectionType')}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select connection type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="NETWORK">Network</SelectItem>
+                    <SelectItem value="SERIAL">Serial</SelectItem>
+                    <SelectItem value="PRINTER">Printer</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              {formData.connectionType === 'NETWORK' && (
+                <>
+                  <div className="grid w-full items-center gap-2">
+                    <Label htmlFor="ipAddress">IP Address</Label>
+                    <Input 
+                      id="ipAddress" 
+                      value={formData.ipAddress} 
+                      onChange={handleFormChange('ipAddress')} 
+                      placeholder="192.168.1.100" 
+                    />
+                  </div>
+                  
+                  <div className="grid w-full items-center gap-2">
+                    <Label htmlFor="port">Port</Label>
+                    <Input 
+                      id="port" 
+                      value={formData.port} 
+                      onChange={handleFormChange('port')} 
+                      placeholder="9100" 
+                      type="number"
+                    />
+                  </div>
+                </>
               )}
               
-              {selectedDrawer && (
-                <div className="flex flex-col space-y-2 mt-4 pt-4 border-t">
-                  <div className="font-medium">Selected: {selectedDrawer.name}</div>
-                  <div className="flex flex-col space-y-2">
-                    {!isConnected ? (
-                      <Button 
-                        onClick={() => selectedDrawer && handleConnect(selectedDrawer)} 
-                        disabled={!selectedDrawer || isLoading}
-                      >
-                        {isLoading ? (
-                          <>
-                            <div className="h-4 w-4 mr-2 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
-                            Connecting...
-                          </>
-                        ) : (
-                          <>Connect</>
-                        )}
-                      </Button>
-                    ) : (
-                      <>
-                        <Button 
-                          onClick={handleOpenDrawer} 
-                          disabled={isLoading}
-                        >
-                          Open Drawer
-                        </Button>
-                        <Button 
-                          onClick={handleDisconnectDrawer} 
-                          variant="outline"
-                          disabled={isLoading}
-                        >
-                          Disconnect
-                        </Button>
-                      </>
-                    )}
-                    {isLoading && (
-                      <div className="flex items-center space-x-2 text-sm text-muted-foreground">
-                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
-                        <span>Processing...</span>
-                      </div>
-                    )}
-                    {errorMessage && (
-                      <div className="mt-2 p-3 bg-red-50 border border-red-200 rounded-md">
-                        <h4 className="text-sm font-medium text-red-800">Error Details:</h4>
-                        <p className="text-sm text-red-700 whitespace-pre-wrap break-words">{errorMessage}</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </TabsContent>
-            
-            <TabsContent value="config" className="space-y-4">
-              <div className="grid gap-4">
-                <div className="flex justify-between items-center">
-                  <h3 className="text-lg font-medium">
-                    {formData.id ? `Edit Drawer: ${formData.name}` : 'New Drawer'}
-                  </h3>
-                  <div className="flex space-x-2">
-                    {formData.id && (
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        onClick={handleNewDrawer}
-                      >
-                        <Plus className="h-4 w-4 mr-2" />
-                        New Drawer
-                      </Button>
-                    )}
-                  </div>
-                </div>
-                
-                <div className="grid gap-2">
-                  <Label htmlFor="name">Drawer Name</Label>
+              {formData.connectionType === 'SERIAL' && (
+                <div className="grid w-full items-center gap-2">
+                  <Label htmlFor="serialPath">Serial Path</Label>
                   <Input 
-                    id="name" 
-                    name="name" 
-                    value={formData.name} 
-                    onChange={handleInputChange} 
-                    placeholder="Main Register"
+                    id="serialPath" 
+                    value={formData.serialPath} 
+                    onChange={handleFormChange('serialPath')} 
+                    placeholder="/dev/tty.usbserial" 
                   />
                 </div>
-                
-                <div className="grid gap-2">
-                  <Label htmlFor="connectionType">Connection Type</Label>
-                  <Select 
-                    value={formData.connectionType} 
-                    onValueChange={(value) => handleSelectChange('connectionType', value)}
-                  >
+              )}
+
+              {formData.connectionType === 'PRINTER' && (
+                <div className="grid w-full items-center gap-2">
+                  <Label htmlFor="printerId">Printer</Label>
+                  <Select value={formData.printerId} onValueChange={handleSelectChange('printerId')}>
                     <SelectTrigger>
-                      <SelectValue placeholder="Select connection type" />
+                      <SelectValue placeholder="Select a printer" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="NETWORK">Network (IP)</SelectItem>
-                      <SelectItem value="SERIAL">Serial</SelectItem>
-                      <SelectItem value="USB">USB</SelectItem>
+                      {printers.length === 0 ? (
+                        <SelectItem value="no-printers" disabled>No printers available</SelectItem>
+                      ) : (
+                        printers.map(printer => (
+                          <SelectItem key={printer.id} value={printer.id}>
+                            {printer.name} ({printer.connectionType})
+                          </SelectItem>
+                        ))
+                      )}
                     </SelectContent>
                   </Select>
                 </div>
-                
-                {formData.connectionType === 'NETWORK' && (
-                  <>
-                    <div className="grid gap-2">
-                      <Label htmlFor="ipAddress">IP Address</Label>
-                      <Input 
-                        id="ipAddress" 
-                        name="ipAddress" 
-                        value={formData.ipAddress} 
-                        onChange={handleInputChange} 
-                        placeholder="192.168.1.100"
-                      />
-                    </div>
-                    
-                    <div className="grid gap-2">
-                      <Label htmlFor="port">Port</Label>
-                      <Input 
-                        id="port" 
-                        name="port" 
-                        value={formData.port} 
-                        onChange={handleInputChange} 
-                        placeholder="9100"
-                        type="number"
-                      />
-                    </div>
-                  </>
-                )}
-                
-                <div className="grid gap-2">
-                  <Label htmlFor="locationId">Location ID (Optional)</Label>
-                  <Input 
-                    id="locationId" 
-                    name="locationId" 
-                    value={formData.locationId} 
-                    onChange={handleInputChange} 
-                    placeholder="Main Store"
-                  />
-                </div>
-                
-                <div className="flex justify-between mt-4">
-                  <Button 
-                    onClick={handleSaveDrawer} 
-                    disabled={isLoading}
-                  >
-                    {isLoading ? (
-                      <>
-                        <div className="h-4 w-4 mr-2 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
-                        Saving...
-                      </>
-                    ) : (
-                      <>
-                        <Save className="h-4 w-4 mr-2" />
-                        Save Drawer
-                      </>
-                    )}
-                  </Button>
-                  
-                  {formData.id && (
-                    <Button 
-                      variant="destructive"
-                      disabled={isLoading}
-                      onClick={() => setShowDeleteConfirm(true)}
-                    >
-                      <Trash2 className="h-4 w-4 mr-2" />
-                      Delete Drawer
-                    </Button>
-                  )}
-                </div>
-                
-                {/* Delete Confirmation Dialog */}
-                <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Are you absolutely sure?</DialogTitle>
-                      <DialogDescription>
-                        This will permanently delete the drawer "{formData.name}". 
-                        This action cannot be undone.
-                      </DialogDescription>
-                    </DialogHeader>
-                    <DialogFooter className="flex justify-between">
-                      <Button 
-                        variant="outline" 
-                        onClick={() => setShowDeleteConfirm(false)}
-                      >
-                        Cancel
-                      </Button>
-                      <Button 
-                        variant="destructive" 
-                        onClick={() => {
-                          setShowDeleteConfirm(false);
-                          handleDeleteDrawer();
-                        }}
-                      >
-                        Delete
-                      </Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
+              )}
+              
+              <div className="flex justify-between mt-6">
+                <Button variant="outline" onClick={() => setActiveTab("list")}>
+                  Cancel
+                </Button>
+                <Button onClick={handleSaveDrawer} disabled={isLoading}>
+                  <Save className="h-4 w-4 mr-2" />
+                  {formData.id ? 'Update' : 'Save'} Cash Drawer
+                </Button>
               </div>
-            </TabsContent>
-          </Tabs>
-        </CardContent>
-      </Card>
-    </div>
+              
+              {errorMessage && (
+                <div className="text-red-500 mt-2">{errorMessage}</div>
+              )}
+            </div>
+          </TabsContent>
+        </Tabs>
+      </CardContent>
+      
+      <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirm Deletion</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete the cash drawer "{selectedDrawer?.name}"? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDeleteConfirm(false)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleDeleteDrawer} disabled={isLoading}>
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </Card>
   );
 }

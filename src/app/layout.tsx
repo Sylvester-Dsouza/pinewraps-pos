@@ -1,20 +1,18 @@
-import type { Metadata } from "next";
-import { Inter } from "next/font/google";
 import "./globals.css";
+import { Inter } from "next/font/google";
 import { Toaster } from "@/components/ui/toaster";
+import Script from "next/script";
 import { QueryProvider } from "@/providers/query-provider";
 import { AuthProvider } from "@/providers/auth-provider";
-import Script from "next/script";
 
 // Specify runtime
 export const runtime = 'nodejs';
 
 const inter = Inter({ subsets: ["latin"] });
 
-export const metadata: Metadata = {
+export const metadata = {
   title: "Pinewraps POS",
-  description: "Point of Sale System for Pinewraps",
-  manifest: "/manifest.json",
+  description: "POS system for Pinewraps",
 };
 
 export default function RootLayout({
@@ -42,10 +40,10 @@ export default function RootLayout({
                 window.addEventListener('load', function() {
                   navigator.serviceWorker.register('/sw.js').then(
                     function(registration) {
-                      console.log('ServiceWorker registration successful');
+                      console.log('Service Worker registration successful with scope: ', registration.scope);
                     },
                     function(err) {
-                      console.log('ServiceWorker registration failed: ', err);
+                      console.log('Service Worker registration failed: ', err);
                     }
                   );
                 });

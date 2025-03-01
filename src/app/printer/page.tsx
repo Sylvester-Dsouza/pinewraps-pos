@@ -8,10 +8,11 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Plus, Edit, Trash2 } from 'lucide-react';
+import { Plus, Edit, Trash2, ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { api } from '@/lib/api';
+import { useRouter } from 'next/navigation';
 
 interface Printer {
   id: string;
@@ -24,6 +25,7 @@ interface Printer {
   serialPath?: string;
   isDefault: boolean;
   printerType: string;
+  macName?: string;
 }
 
 export default function PrinterPage() {
@@ -38,11 +40,12 @@ export default function PrinterPage() {
     printerType: 'RECEIPT',
     isDefault: false,
   });
+  const router = useRouter();
 
   const loadPrinters = async () => {
     setIsLoading(true);
     try {
-      const response = await api.get('/api/pos/printers');
+      const response = await api.get('/api/pos/printer');
       setPrinters(response.data.printers || []);
     } catch (error) {
       console.error('Error loading printers:', error);
@@ -110,11 +113,11 @@ export default function PrinterPage() {
       
       if (selectedPrinter) {
         // Update existing printer
-        response = await api.put(`/api/pos/printers/${selectedPrinter.id}`, formData);
+        response = await api.put(`/api/pos/printer/${selectedPrinter.id}`, formData);
         toast.success('Printer updated successfully');
       } else {
         // Create new printer
-        response = await api.post('/api/pos/printers', formData);
+        response = await api.post('/api/pos/printer', formData);
         toast.success('Printer created successfully');
       }
       
@@ -133,7 +136,7 @@ export default function PrinterPage() {
     
     setIsDeleting(true);
     try {
-      await api.delete(`/api/pos/printers/${selectedPrinter.id}`);
+      await api.delete(`/api/pos/printer/${selectedPrinter.id}`);
       toast.success('Printer deleted successfully');
       await loadPrinters();
       setActiveTab('list');
@@ -148,8 +151,14 @@ export default function PrinterPage() {
 
   const handleTestPrinter = async (printerId: string) => {
     try {
-      const response = await api.post('/api/pos/hardware/drawer/open-via-printer', { printerId });
+      const printer = printers.find(p => p.id === printerId);
+      if (!printer) {
+        toast.error('Printer not found');
+        return;
+      }
       
+      const response = await api.post(`/api/pos/printer/${printerId}/test`);
+        
       if (response.data.success) {
         toast.success('Cash drawer opened successfully');
       } else {
@@ -163,7 +172,16 @@ export default function PrinterPage() {
 
   return (
     <div className="container mx-auto py-6">
-      <h1 className="text-2xl font-bold mb-6">Printer Management</h1>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-bold">Printer Management</h1>
+        <Button
+          variant="outline"
+          onClick={() => router.back()}
+          className="flex items-center gap-2"
+        >
+          <ArrowLeft className="h-4 w-4" /> Back
+        </Button>
+      </div>
       
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
@@ -315,7 +333,7 @@ export default function PrinterPage() {
             <div>
               <Label htmlFor="connectionType">Connection Type</Label>
               <Select 
-                value={formData.connectionType} 
+                value={formData.connectionType || ''}
                 onValueChange={(value) => handleSelectChange('connectionType', value)}
               >
                 <SelectTrigger>

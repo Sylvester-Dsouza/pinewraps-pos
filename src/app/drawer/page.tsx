@@ -53,10 +53,6 @@ export default function DrawerPage() {
       loadCurrentSession();
       loadDrawers();
       loadSessionHistory();
-      
-      // Check if a drawer is already connected
-      const isDrawerConnected = hardwareService.isDrawerConnected();
-      setIsConnected(isDrawerConnected);
     }
   }, [loading, user, router]);
 
@@ -86,9 +82,13 @@ export default function DrawerPage() {
       const session = await drawerService.getCurrentSession();
       setCurrentSession(session);
       
-      // If there's a session with a cash drawer, select it
-      if (session?.cashDrawer) {
-        setSelectedDrawer(session.cashDrawer);
+      // If there's a session with a cash drawer, check if we can find it in the drawers list
+      if (session?.drawerId) {
+        const drawersList = await hardwareService.listCashDrawers();
+        const drawer = drawersList.find(d => d.id === session.drawerId);
+        if (drawer) {
+          setSelectedDrawer(drawer);
+        }
       }
     } catch (error) {
       console.error('Error loading current session:', error);
@@ -125,7 +125,6 @@ export default function DrawerPage() {
       // If a drawer is selected, connect to it
       if (selectedDrawer) {
         const result = await hardwareService.connectDrawer(selectedDrawer.id);
-        setIsConnected(result.success);
         
         if (result.success) {
           toast({
@@ -149,7 +148,7 @@ export default function DrawerPage() {
       if (!selectedPort) {
         toast({
           title: 'Error',
-          description: 'Please select a port',
+          description: 'Please select a port or a drawer',
           variant: 'destructive',
         });
         setIsLoading(false);
@@ -157,7 +156,6 @@ export default function DrawerPage() {
       }
 
       const result = await hardwareService.connectDrawer(selectedPort);
-      setIsConnected(result.success);
       
       if (result.success) {
         toast({
@@ -187,48 +185,15 @@ export default function DrawerPage() {
     }
   };
 
-  const handleDisconnect = async () => {
-    try {
-      setIsLoading(true);
-      setErrorMessage(null);
-      
-      const result = await hardwareService.disconnectDrawer();
-      
-      if (result.success) {
-        setIsConnected(false);
-        toast({
-          title: 'Success',
-          description: 'Disconnected from drawer',
-        });
-      } else {
-        const errorMsg = result.error || 'Failed to disconnect from drawer';
-        setErrorMessage(errorMsg);
-        toast({
-          title: 'Disconnection Error',
-          description: errorMsg,
-          variant: 'destructive',
-        });
-      }
-    } catch (err) {
-      console.error('Unexpected error during disconnection:', err);
-      const errorMsg = err.message || 'An unexpected error occurred';
-      setErrorMessage(errorMsg);
-      toast({
-        title: 'Disconnection Error',
-        description: errorMsg,
-        variant: 'destructive',
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   const handleOpenDrawer = async () => {
     try {
       setIsLoading(true);
       setErrorMessage(null);
       
-      const result = await hardwareService.openDrawer();
+      // If no drawer is selected, try to use the connected drawer
+      const drawerId = selectedDrawer?.id;
+      
+      const result = await drawerService.openDrawer(drawerId);
       
       if (result.success) {
         toast({
@@ -268,8 +233,17 @@ export default function DrawerPage() {
       return;
     }
 
+    if (!selectedDrawer) {
+      toast({
+        title: 'Error',
+        description: 'Please select a cash drawer',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     try {
-      const session = await drawerService.openSession(parseFloat(amount), selectedDrawer?.id, notes);
+      const session = await drawerService.openSession(parseFloat(amount), selectedDrawer.id);
       if (session) {
         setCurrentSession(session);
         setAmount('');
@@ -303,7 +277,7 @@ export default function DrawerPage() {
     }
 
     try {
-      const session = await drawerService.closeSession(parseFloat(amount), notes);
+      const session = await drawerService.closeSession(parseFloat(amount));
       if (session) {
         setCurrentSession(null);
         setAmount('');
@@ -339,13 +313,15 @@ export default function DrawerPage() {
     try {
       const operation = await drawerService.addCash(parseFloat(amount), notes);
       if (operation) {
-        loadCurrentSession();
         setAmount('');
         setNotes('');
         toast({
           title: 'Success',
           description: 'Cash added successfully',
         });
+        
+        // Refresh the current session
+        loadCurrentSession();
       }
     } catch (error) {
       console.error('Error adding cash:', error);
@@ -357,7 +333,7 @@ export default function DrawerPage() {
     }
   };
 
-  const handleTakeCash = async () => {
+  const handleRemoveCash = async () => {
     if (!amount) {
       toast({
         title: 'Error',
@@ -370,16 +346,18 @@ export default function DrawerPage() {
     try {
       const operation = await drawerService.removeCash(parseFloat(amount), notes);
       if (operation) {
-        loadCurrentSession();
         setAmount('');
         setNotes('');
         toast({
           title: 'Success',
           description: 'Cash removed successfully',
         });
+        
+        // Refresh the current session
+        loadCurrentSession();
       }
     } catch (error) {
-      console.error('Error taking cash:', error);
+      console.error('Error removing cash:', error);
       toast({
         title: 'Error',
         description: 'Failed to remove cash',
@@ -388,303 +366,261 @@ export default function DrawerPage() {
     }
   };
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-AE', {
-      style: 'currency',
-      currency: 'AED',
-    }).format(amount);
-  };
-
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleString();
-  };
-
-  if (loading) {
-    return <div>Loading...</div>;
-  }
-
-  return (
-    <div className="container mx-auto p-4">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">Cash Drawer Management</h1>
-        <Button variant="outline" onClick={handleBackToPos}>
-          Back to POS
-        </Button>
-      </div>
-
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid grid-cols-4 mb-4">
-          <TabsTrigger value="hardware">Hardware Control</TabsTrigger>
-          <TabsTrigger value="session">Session Management</TabsTrigger>
-          <TabsTrigger value="network">Network Drawer</TabsTrigger>
-          <TabsTrigger value="history">Session History</TabsTrigger>
-        </TabsList>
-        
-        <TabsContent value="hardware">
-          <Card>
-            <CardHeader>
-              <CardTitle>Hardware Control</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Select Port</Label>
-                  <Select value={selectedPort} onValueChange={setSelectedPort}>
+  const renderHardwareTab = () => {
+    return (
+      <div className="space-y-4">
+        <Card>
+          <CardHeader>
+            <CardTitle>Cash Drawer Setup</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-4">
+              <div>
+                <Label className="mb-2 block">Selected Drawer</Label>
+                <Select 
+                  value={selectedDrawer?.id || ''} 
+                  onValueChange={(value) => {
+                    const drawer = drawers.find(d => d.id === value) || null;
+                    setSelectedDrawer(drawer);
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a cash drawer" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {drawers.length === 0 ? (
+                      <SelectItem value="no-drawers" disabled>No drawers available</SelectItem>
+                    ) : (
+                      drawers.map(drawer => (
+                        <SelectItem key={drawer.id} value={drawer.id}>
+                          {drawer.name} ({drawer.connectionType})
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              {!selectedDrawer && (
+                <div>
+                  <Label className="mb-2 block">Serial Port (Only for direct serial connection)</Label>
+                  <Select 
+                    value={selectedPort} 
+                    onValueChange={setSelectedPort}
+                  >
                     <SelectTrigger>
                       <SelectValue placeholder="Select a port" />
                     </SelectTrigger>
                     <SelectContent>
-                      {ports && ports.map((port) => (
-                        <SelectItem key={port.path} value={port.path}>
-                          {port.path} {port.manufacturer ? `(${port.manufacturer})` : ''}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {selectedPort && ports.find(p => p.path === selectedPort) && (
-                    <div className="text-sm text-gray-500">
-                      <p>Manufacturer: {ports.find(p => p.path === selectedPort)?.manufacturer || 'N/A'}</p>
-                      <p>Serial Number: {ports.find(p => p.path === selectedPort)?.serialNumber || 'N/A'}</p>
-                    </div>
-                  )}
-                </div>
-                
-                <div className="space-y-2">
-                  <Label>Select Network Drawer</Label>
-                  <Select value={selectedDrawer?.id || 'none'} onValueChange={(value) => {
-                    if (value === 'none') {
-                      setSelectedDrawer(null);
-                      return;
-                    }
-                    const drawer = drawers.find(d => d.id === value);
-                    setSelectedDrawer(drawer || null);
-                  }}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select a network drawer" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">None</SelectItem>
-                      {drawers.filter(d => d.connectionType === 'NETWORK').map((drawer) => (
-                        <SelectItem key={drawer.id} value={drawer.id}>
-                          {drawer.name} ({drawer.ipAddress}:{drawer.port})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {selectedDrawer && (
-                    <div className="text-sm text-gray-500">
-                      <p>Connection Type: {selectedDrawer.connectionType}</p>
-                      {selectedDrawer.connectionType === 'NETWORK' && (
-                        <p>IP Address: {selectedDrawer.ipAddress}:{selectedDrawer.port}</p>
+                      {ports.length === 0 ? (
+                        <SelectItem value="no-ports" disabled>No ports available</SelectItem>
+                      ) : (
+                        ports.map(port => (
+                          <SelectItem key={port.path} value={port.path}>
+                            {port.path} {port.manufacturer ? `(${port.manufacturer})` : ''}
+                          </SelectItem>
+                        ))
                       )}
-                    </div>
-                  )}
+                    </SelectContent>
+                  </Select>
                 </div>
+              )}
+              
+              <div className="flex space-x-4">
+                <Button 
+                  onClick={handleOpenDrawer} 
+                  disabled={!selectedDrawer && !selectedPort}
+                >
+                  Open Drawer
+                </Button>
               </div>
               
-              <div className="space-x-2">
-                {!isConnected ? (
-                  <Button onClick={handleConnect} disabled={!selectedPort && !selectedDrawer}>
-                    Connect
-                  </Button>
-                ) : (
-                  <>
-                    <Button onClick={handleOpenDrawer}>
-                      Open Drawer
-                    </Button>
-                    <Button onClick={handleDisconnect} variant="destructive">
-                      Disconnect
-                    </Button>
-                  </>
-                )}
-                {isLoading && (
-                  <div className="flex items-center space-x-2 text-sm text-muted-foreground">
-                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
-                    <span>Processing...</span>
-                  </div>
-                )}
-                {errorMessage && (
-                  <div className="mt-2 p-3 bg-red-50 border border-red-200 rounded-md">
-                    <h4 className="text-sm font-medium text-red-800">Error Details:</h4>
-                    <p className="text-sm text-red-700 whitespace-pre-wrap break-words">{errorMessage}</p>
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-        
-        <TabsContent value="session">
-          <Card>
-            <CardHeader>
-              <CardTitle>Session Management</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {currentSession ? (
-                <>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <Label>Session Status</Label>
-                      <p className="mt-1">Opening Amount: {formatCurrency(currentSession.openingAmount)}</p>
-                      <p>Status: <span className="font-medium">{currentSession.status}</span></p>
-                      <p>Opened At: {formatDate(currentSession.openedAt)}</p>
-                      {currentSession.cashDrawer && (
-                        <p>Cash Drawer: <span className="font-medium">{currentSession.cashDrawer.name}</span></p>
-                      )}
-                    </div>
-                    
-                    <div className="space-y-2">
-                      <Label>Amount (AED)</Label>
-                      <Input
-                        type="number"
-                        value={amount}
-                        onChange={(e) => setAmount(e.target.value)}
-                        placeholder="Enter amount in AED"
-                        step="0.01"
-                        min="0"
-                      />
-                      <Label>Notes</Label>
-                      <Input
-                        type="text"
-                        value={notes}
-                        onChange={(e) => setNotes(e.target.value)}
-                        placeholder="Enter notes (e.g., reason for adding/removing cash)"
-                      />
-                      <div className="flex space-x-2 mt-2">
-                        <Button onClick={handleAddCash}>Add Cash</Button>
-                        <Button onClick={handleTakeCash}>Remove Cash</Button>
-                        <Button onClick={handleCloseSession} variant="destructive">
-                          Close Session
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  {currentSession.operations && currentSession.operations.length > 0 && (
-                    <div className="mt-4">
-                      <h3 className="text-lg font-medium mb-2">Operations</h3>
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Type</TableHead>
-                            <TableHead>Amount</TableHead>
-                            <TableHead>Notes</TableHead>
-                            <TableHead>Time</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {currentSession.operations.map((op) => (
-                            <TableRow key={op.id}>
-                              <TableCell>{op.type}</TableCell>
-                              <TableCell>{formatCurrency(op.amount)}</TableCell>
-                              <TableCell>{op.notes || '-'}</TableCell>
-                              <TableCell>{formatDate(op.createdAt)}</TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  )}
-                </>
-              ) : (
-                <>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Opening Amount (AED)</Label>
-                      <Input
-                        type="number"
-                        value={amount}
-                        onChange={(e) => setAmount(e.target.value)}
-                        placeholder="Enter opening amount in AED"
-                        step="0.01"
-                        min="0"
-                      />
-                    </div>
-                    
-                    <div className="space-y-2">
-                      <Label>Notes</Label>
-                      <Input
-                        type="text"
-                        value={notes}
-                        onChange={(e) => setNotes(e.target.value)}
-                        placeholder="Enter notes"
-                      />
-                    </div>
-                    
-                    <div className="space-y-2">
-                      <Label>Select Cash Drawer (Optional)</Label>
-                      <Select value={selectedDrawer?.id || 'none'} onValueChange={(value) => {
-                        if (value === 'none') {
-                          setSelectedDrawer(null);
-                          return;
-                        }
-                        const drawer = drawers.find(d => d.id === value);
-                        setSelectedDrawer(drawer || null);
-                      }}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select a cash drawer" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">None</SelectItem>
-                          {drawers.map((drawer) => (
-                            <SelectItem key={drawer.id} value={drawer.id}>
-                              {drawer.name} ({drawer.connectionType})
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  
-                  <Button onClick={handleOpenSession} className="mt-2">Open Session</Button>
-                </>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-        
-        <TabsContent value="network">
-          <NetworkDrawerManager />
-        </TabsContent>
-        
-        <TabsContent value="history">
-          <Card>
-            <CardHeader>
-              <CardTitle>Session History</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {sessionHistory.length === 0 ? (
-                <div className="text-center p-4 text-gray-500">
-                  No session history available.
+              {errorMessage && (
+                <div className="bg-red-50 border border-red-200 p-4 rounded-md">
+                  <h3 className="text-red-800 font-semibold">Error</h3>
+                  <p className="text-red-700">{errorMessage}</p>
                 </div>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Opened At</TableHead>
-                      <TableHead>Closed At</TableHead>
-                      <TableHead>Opening Amount</TableHead>
-                      <TableHead>Closing Amount</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Cash Drawer</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {sessionHistory.map((session) => (
-                      <TableRow key={session.id}>
-                        <TableCell>{formatDate(session.openedAt)}</TableCell>
-                        <TableCell>{session.closedAt ? formatDate(session.closedAt) : '-'}</TableCell>
-                        <TableCell>{formatCurrency(session.openingAmount)}</TableCell>
-                        <TableCell>{session.closingAmount ? formatCurrency(session.closingAmount) : '-'}</TableCell>
-                        <TableCell>{session.status}</TableCell>
-                        <TableCell>{session.cashDrawer ? session.cashDrawer.name : '-'}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <NetworkDrawerManager />
+      </div>
+    );
+  };
+
+  const renderCashManagementTab = () => {
+    return (
+      <div className="space-y-4">
+        <Card>
+          <CardHeader>
+            <CardTitle>Current Session</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {currentSession ? (
+              <div className="space-y-4">
+                <div>
+                  <p><strong>Status:</strong> {currentSession.status}</p>
+                  <p><strong>Opening Amount:</strong> ${currentSession.openAmount != null ? currentSession.openAmount.toFixed(2) : '0.00'}</p>
+                  {currentSession.operations && (
+                    <p><strong>Operations:</strong> {currentSession.operations.length}</p>
+                  )}
+                  <p><strong>Created At:</strong> {new Date(currentSession.createdAt).toLocaleString()}</p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="amount">Amount</Label>
+                  <Input 
+                    id="amount" 
+                    type="number" 
+                    step="0.01" 
+                    min="0" 
+                    value={amount} 
+                    onChange={(e) => setAmount(e.target.value)} 
+                    placeholder="0.00" 
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="notes">Notes (Optional)</Label>
+                  <Input 
+                    id="notes" 
+                    value={notes} 
+                    onChange={(e) => setNotes(e.target.value)} 
+                    placeholder="Enter notes here" 
+                  />
+                </div>
+
+                <div className="flex space-x-4">
+                  <Button onClick={handleAddCash}>Add Cash</Button>
+                  <Button onClick={handleRemoveCash} variant="outline">Remove Cash</Button>
+                  <Button onClick={handleCloseSession} variant="destructive">Close Session</Button>
+                </div>
+              </div>
+            ) : drawers.length > 0 ? (
+              <div className="space-y-4">
+                <p>No active session. Open a new session:</p>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="drawer">Select Drawer</Label>
+                  <Select 
+                    value={selectedDrawer?.id || ''} 
+                    onValueChange={(value) => {
+                      const drawer = drawers.find(d => d.id === value) || null;
+                      setSelectedDrawer(drawer);
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a cash drawer" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {drawers.map(drawer => (
+                        <SelectItem key={drawer.id} value={drawer.id}>
+                          {drawer.name} ({drawer.connectionType})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="amount">Opening Amount</Label>
+                  <Input 
+                    id="amount" 
+                    type="number" 
+                    step="0.01" 
+                    min="0" 
+                    value={amount} 
+                    onChange={(e) => setAmount(e.target.value)} 
+                    placeholder="0.00" 
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="notes">Notes (Optional)</Label>
+                  <Input 
+                    id="notes" 
+                    value={notes} 
+                    onChange={(e) => setNotes(e.target.value)} 
+                    placeholder="Enter notes here" 
+                  />
+                </div>
+
+                <Button onClick={handleOpenSession}>Open Session</Button>
+              </div>
+            ) : (
+              <div>
+                <p>No drawers available. Please add a cash drawer first.</p>
+                <Button 
+                  onClick={() => setActiveTab('hardware')} 
+                  className="mt-4"
+                >
+                  Configure Drawers
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Session History</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {sessionHistory.length === 0 ? (
+              <p>No session history available.</p>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Opening</TableHead>
+                    <TableHead>Closing</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {sessionHistory.map((session) => (
+                    <TableRow key={session.id}>
+                      <TableCell>{new Date(session.createdAt).toLocaleDateString()}</TableCell>
+                      <TableCell>{session.status}</TableCell>
+                      <TableCell>${session.openAmount != null ? session.openAmount.toFixed(2) : '0.00'}</TableCell>
+                      <TableCell>
+                        {session.closeAmount != null
+                          ? `$${session.closeAmount.toFixed(2)}` 
+                          : '-'}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    );
+  };
+
+  return (
+    <div className="container mx-auto py-8">
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold">Cash Drawer Management</h1>
+        <Button variant="outline" onClick={handleBackToPos}>Back to POS</Button>
+      </div>
+      
+      <Tabs defaultValue={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="hardware">Hardware Setup</TabsTrigger>
+          <TabsTrigger value="management">Cash Management</TabsTrigger>
+        </TabsList>
+        
+        <TabsContent value="hardware" className="mt-4">
+          {renderHardwareTab()}
+        </TabsContent>
+        
+        <TabsContent value="management" className="mt-4">
+          {renderCashManagementTab()}
         </TabsContent>
       </Tabs>
     </div>

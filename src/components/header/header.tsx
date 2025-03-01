@@ -87,6 +87,16 @@ export default function Header() {
                 Kitchen Display
               </Link>
               <Link
+                href="/printer"
+                className={`text-sm font-medium ${
+                  pathname === "/printer"
+                    ? "text-primary"
+                    : "text-muted-foreground hover:text-primary"
+                }`}
+              >
+                Printer
+              </Link>
+              <Link
                 href="/design"
                 className={`text-sm font-medium ${
                   pathname === "/design"

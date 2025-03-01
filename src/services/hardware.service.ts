@@ -9,13 +9,28 @@ export interface Port {
   productId?: string;
 }
 
+export interface Printer {
+  id: string;
+  name: string;
+  connectionType: 'USB' | 'NETWORK' | 'BLUETOOTH';
+  ipAddress?: string;
+  port?: number;
+  vendorId?: string;
+  productId?: string;
+  serialPath?: string;
+  isDefault: boolean;
+  printerType: 'RECEIPT' | 'KITCHEN' | 'LABEL';
+}
+
 export interface CashDrawer {
   id: string;
   name: string;
   ipAddress?: string;
   port?: number;
-  connectionType: 'SERIAL' | 'NETWORK' | 'USB';
+  connectionType: 'SERIAL' | 'NETWORK' | 'PRINTER';
   serialPath?: string;
+  printerId?: string;
+  printer?: Printer;
   isActive: boolean;
   locationId?: string;
   createdAt: string;
@@ -41,9 +56,21 @@ export class HardwareService {
       console.log('Fetching ports...');
       const response = await api.get('/api/pos/drawer/hardware/ports');
       console.log('Ports response:', response.data);
-      return response.data.ports || [];
+      return response.data || [];
     } catch (error) {
       console.error('Error listing ports:', error);
+      return [];
+    }
+  }
+
+  async listPrinters(): Promise<Printer[]> {
+    try {
+      console.log('Fetching printers...');
+      const response = await api.get('/api/pos/printer');
+      console.log('Printers response:', response.data.printers);
+      return response.data.printers || [];
+    } catch (error) {
+      console.error('Error listing printers:', error);
       return [];
     }
   }
@@ -68,6 +95,18 @@ export class HardwareService {
       return response.data;
     } catch (error) {
       console.error('Error saving cash drawer:', error);
+      throw error;
+    }
+  }
+
+  async updateCashDrawer(id: string, drawer: Partial<CashDrawer>): Promise<CashDrawer> {
+    try {
+      console.log('Updating cash drawer:', drawer);
+      const response = await api.put(`/api/pos/drawer/drawers/${id}`, drawer);
+      console.log('Update drawer response:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('Error updating cash drawer:', error);
       throw error;
     }
   }
@@ -112,7 +151,7 @@ export class HardwareService {
         payload = { drawerId: portPathOrDrawerId };
         this.connectedDrawerId = portPathOrDrawerId;
       } else {
-        payload = { portPath: portPathOrDrawerId };
+        payload = { serialPath: portPathOrDrawerId };
       }
       
       console.log('Connect payload:', payload);
@@ -144,12 +183,18 @@ export class HardwareService {
     }
   }
 
-  async openDrawer(): Promise<{ success: boolean; error?: string }> {
+  async openDrawer(drawerId?: string): Promise<{ success: boolean; error?: string }> {
     try {
       console.log('Opening drawer...');
-      const payload = this.connectedDrawerId ? { drawerId: this.connectedDrawerId } : {};
-      const response = await api.post('/api/pos/drawer/hardware/drawer/open', payload);
-      console.log('Open response:', response.data);
+      // Use the provided drawerId or fall back to the connected drawer id
+      const payload = { drawerId: drawerId || this.connectedDrawerId };
+      
+      if (!payload.drawerId) {
+        return { success: false, error: 'No drawer connected or specified' };
+      }
+      
+      const response = await api.post('/api/pos/drawer/open', payload);
+      console.log('Open drawer response:', response.data);
       return { 
         success: response.data.success,
         error: response.data.error || undefined
@@ -159,96 +204,37 @@ export class HardwareService {
       let errorMessage = 'Unknown error occurred';
       
       if (error.response) {
-        errorMessage = error.response.data.error || `Server error: ${error.response.status}`;
-      } else if (error.request) {
-        errorMessage = 'No response from server. Check your network connection.';
-      } else {
-        errorMessage = error.message || 'Error setting up request';
+        errorMessage = error.response.data?.error || `Server error: ${error.response.status}`;
+      } else if (error.message) {
+        errorMessage = error.message;
       }
       
       return { success: false, error: errorMessage };
     }
   }
 
-  async disconnectDrawer(): Promise<{ success: boolean; error?: string }> {
+  async testPrinter(printerId: string): Promise<{ success: boolean; error?: string }> {
     try {
-      console.log('Disconnecting drawer...');
-      const payload = this.connectedDrawerId ? { drawerId: this.connectedDrawerId } : {};
-      const response = await api.post('/api/pos/drawer/hardware/drawer/disconnect', payload);
-      this.isConnected = false;
-      this.connectedDrawerId = undefined;
+      console.log('Testing printer:', printerId);
+      const response = await api.post(`/api/pos/printer/${printerId}/test`);
+      console.log('Test printer response:', response.data);
       return { 
-        success: true,
-        error: undefined
+        success: response.data.success,
+        error: response.data.error || undefined
       };
     } catch (error) {
-      console.error('Error disconnecting drawer:', error);
+      console.error('Error testing printer:', error);
       let errorMessage = 'Unknown error occurred';
       
       if (error.response) {
-        errorMessage = error.response.data.error || `Server error: ${error.response.status}`;
-      } else if (error.request) {
-        errorMessage = 'No response from server. Check your network connection.';
-      } else {
-        errorMessage = error.message || 'Error setting up request';
+        errorMessage = error.response.data?.error || `Server error: ${error.response.status}`;
+      } else if (error.message) {
+        errorMessage = error.message;
       }
       
       return { success: false, error: errorMessage };
     }
   }
-
-  async openCashDrawer(): Promise<{ success: boolean; error?: string }> {
-    try {
-      console.log('Opening cash drawer...');
-      
-      // If we have a connected drawer, use that
-      if (this.connectedDrawerId) {
-        const response = await api.post('/api/pos/drawer/hardware/drawer/open', {
-          drawerId: this.connectedDrawerId
-        });
-        return response.data;
-      }
-      
-      // Otherwise, try to find a default drawer
-      const drawers = await this.listCashDrawers();
-      if (drawers.length > 0) {
-        // Use the first drawer in the list
-        const response = await api.post('/api/pos/drawer/hardware/drawer/open', {
-          drawerId: drawers[0].id
-        });
-        return response.data;
-      }
-      
-      // Try to find a default printer
-      try {
-        const printersResponse = await api.get('/api/pos/printers');
-        const printers = printersResponse.data.printers || [];
-        
-        // Find default printer or first receipt printer
-        const defaultPrinter = printers.find((p: any) => p.isDefault) || 
-                              printers.find((p: any) => p.printerType === 'RECEIPT');
-        
-        if (defaultPrinter) {
-          const response = await api.post('/api/pos/drawer/hardware/drawer/open-via-printer', {
-            printerId: defaultPrinter.id
-          });
-          return response.data;
-        }
-      } catch (error) {
-        console.error('Error finding default printer:', error);
-      }
-      
-      return { success: false, error: 'No cash drawer or printer configured' };
-    } catch (error) {
-      console.error('Error opening cash drawer:', error);
-      return { 
-        success: false, 
-        error: error.response?.data?.error || 'Failed to open cash drawer' 
-      };
-    }
-  }
-
-  isDrawerConnected(): boolean {
-    return this.isConnected;
-  }
 }
+
+export const hardwareService = HardwareService.getInstance();

@@ -1,28 +1,45 @@
 import { api } from '@/lib/axios';
-import { CashDrawer } from './hardware.service';
 
+// Drawer Service Types
 export interface DrawerOperation {
   id: string;
-  type: 'ADD' | 'REMOVE';
   amount: number;
+  type: 'ADD' | 'REMOVE';
   notes?: string;
+  sessionId: string;
+  userId: string;
   createdAt: string;
   updatedAt: string;
 }
 
 export interface DrawerSession {
   id: string;
+  openAmount: number;
+  closeAmount?: number;
   status: 'OPEN' | 'CLOSED';
-  openingAmount: number;
-  closingAmount?: number;
-  openedAt: string;
-  closedAt?: string;
+  userId: string;
+  drawerId: string;
   operations?: DrawerOperation[];
-  cashDrawerId?: string;
-  cashDrawer?: CashDrawer;
+  createdAt: string;
+  updatedAt: string;
+  closedAt?: string;
 }
 
-class DrawerService {
+export interface CashDrawer {
+  id: string;
+  name: string;
+  ipAddress?: string;
+  port?: number;
+  connectionType: 'SERIAL' | 'NETWORK' | 'PRINTER';
+  serialPath?: string;
+  printerId?: string;
+  isActive: boolean;
+  locationId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export class DrawerService {
   private static instance: DrawerService;
 
   private constructor() {}
@@ -44,14 +61,30 @@ class DrawerService {
     }
   }
 
-  async openSession(openingAmount: number, cashDrawerId?: string, notes?: string): Promise<DrawerSession | null> {
+  async openDrawer(drawerId?: string): Promise<{ success: boolean; error?: string }> {
     try {
-      const payload = {
-        openingAmount,
-        cashDrawerId,
-        notes
+      const response = await api.post('/api/pos/drawer/open', { drawerId });
+      return { 
+        success: true,
+        error: undefined
       };
-      const response = await api.post('/api/pos/drawer/session/open', payload);
+    } catch (error) {
+      console.error('Error opening drawer:', error);
+      let errorMessage = 'Unknown error occurred';
+      
+      if (error.response) {
+        errorMessage = error.response.data?.error || `Server error: ${error.response.status}`;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      return { success: false, error: errorMessage };
+    }
+  }
+
+  async openSession(openAmount: number, drawerId: string): Promise<DrawerSession | null> {
+    try {
+      const response = await api.post('/api/pos/drawer/session/open', { openAmount, drawerId });
       return response.data;
     } catch (error) {
       console.error('Error opening session:', error);
@@ -59,9 +92,9 @@ class DrawerService {
     }
   }
 
-  async closeSession(closingAmount: number, notes?: string): Promise<DrawerSession | null> {
+  async closeSession(closeAmount: number): Promise<DrawerSession | null> {
     try {
-      const response = await api.post('/api/pos/drawer/session/close', { closingAmount, notes });
+      const response = await api.post('/api/pos/drawer/session/close', { closeAmount });
       return response.data;
     } catch (error) {
       console.error('Error closing session:', error);
