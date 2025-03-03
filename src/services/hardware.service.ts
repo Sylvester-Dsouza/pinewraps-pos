@@ -183,33 +183,34 @@ export class HardwareService {
     }
   }
 
-  async openDrawer(drawerId?: string): Promise<{ success: boolean; error?: string }> {
+  async openCashDrawer(drawerId: string): Promise<{ success: boolean; details?: string; error?: string }> {
     try {
-      console.log('Opening drawer...');
-      // Use the provided drawerId or fall back to the connected drawer id
-      const payload = { drawerId: drawerId || this.connectedDrawerId };
-      
-      if (!payload.drawerId) {
-        return { success: false, error: 'No drawer connected or specified' };
-      }
-      
-      const response = await api.post('/api/pos/drawer/open', payload);
+      console.log('Opening cash drawer:', drawerId);
+      const response = await api.post('/api/pos/drawer/open', { drawerId });
       console.log('Open drawer response:', response.data);
       return { 
-        success: response.data.success,
-        error: response.data.error || undefined
+        success: response.data.success || false,
+        message: response.data.message,
+        drawerDetails: response.data.drawerDetails
       };
     } catch (error) {
-      console.error('Error opening drawer:', error);
-      let errorMessage = 'Unknown error occurred';
+      console.error('Error opening cash drawer:', error);
       
-      if (error.response) {
-        errorMessage = error.response.data?.error || `Server error: ${error.response.status}`;
+      let errorMessage = 'Unknown error occurred';
+      let details = undefined;
+      
+      if (error.response && error.response.data) {
+        errorMessage = error.response.data.error || 'Server error';
+        details = error.response.data.details || undefined;
       } else if (error.message) {
         errorMessage = error.message;
       }
       
-      return { success: false, error: errorMessage };
+      return {
+        success: false,
+        error: errorMessage,
+        details: details
+      };
     }
   }
 
@@ -233,6 +234,18 @@ export class HardwareService {
       }
       
       return { success: false, error: errorMessage };
+    }
+  }
+
+  async scanForNetworkPrinters(): Promise<Printer[]> {
+    try {
+      console.log('Scanning for network printers...');
+      const response = await api.get('/api/pos/printer/scan');
+      console.log('Network printers scan response:', response.data.printers);
+      return response.data.printers || [];
+    } catch (error) {
+      console.error('Error scanning for network printers:', error);
+      return [];
     }
   }
 }

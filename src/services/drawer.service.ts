@@ -39,6 +39,26 @@ export interface CashDrawer {
   updatedAt: string;
 }
 
+export interface DrawerLog {
+  id: string;
+  userId: string;
+  drawerId?: string;
+  action: string;
+  timestamp: string;
+  success: boolean;
+  error?: string;
+  ipAddress?: string;
+  deviceInfo?: string;
+  createdAt: string;
+  updatedAt: string;
+  user?: {
+    firstName: string;
+    lastName: string;
+    email: string;
+    name: string;
+  };
+}
+
 export class DrawerService {
   private static instance: DrawerService;
 
@@ -139,6 +159,21 @@ export class DrawerService {
     } catch (error) {
       console.error('Error getting drawers:', error);
       return [];
+    }
+  }
+
+  async getDrawerLogs(drawerId?: string, limit = 100, offset = 0): Promise<{ logs: DrawerLog[], totalCount: number }> {
+    try {
+      let url = `/api/pos/drawer/logs?limit=${limit}&offset=${offset}`;
+      if (drawerId) {
+        url += `&drawerId=${drawerId}`;
+      }
+      
+      const response = await api.get(url);
+      return response.data;
+    } catch (error) {
+      console.error('Error getting drawer logs:', error);
+      return { logs: [], totalCount: 0 };
     }
   }
 }

@@ -57,6 +57,32 @@ export default function PrinterPage() {
 
   useEffect(() => {
     loadPrinters();
+    
+    // Check for query params to pre-fill the form
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const connectionType = params.get('connectionType');
+      const name = params.get('name');
+      const ipAddress = params.get('ipAddress');
+      const port = params.get('port');
+      
+      // If we have query params, update form data and switch to config tab
+      if (connectionType || name || ipAddress || port) {
+        const newFormData: Partial<Printer> = {
+          ...formData,
+          connectionType: connectionType || formData.connectionType,
+          name: name || formData.name,
+          ipAddress: ipAddress || formData.ipAddress,
+          port: port ? parseInt(port) : formData.port,
+        };
+        
+        setFormData(newFormData);
+        setActiveTab('config');
+        
+        // Clear the query params from the URL to avoid reapplying them on refresh
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+    }
   }, []);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
