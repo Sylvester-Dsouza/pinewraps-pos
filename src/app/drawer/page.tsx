@@ -1,56 +1,63 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { useToast } from '@/components/ui/use-toast';
-import { HardwareService, Port, CashDrawer } from '@/services/hardware.service';
-import { drawerService, DrawerSession, DrawerOperation, DrawerLog } from '@/services/drawer.service';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/use-auth';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { NetworkDrawerManager } from './network-drawer';
-import { 
-  Table, 
-  TableBody, 
-  TableCaption, 
-  TableCell, 
-  TableHead, 
-  TableHeader, 
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useToast } from "@/components/ui/use-toast";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
   TableRow 
 } from "@/components/ui/table";
-import { hardwareService } from '@/services/hardware.service';
+import { HardwareService, Port, CashDrawer, Printer } from '@/services/hardware.service';
+import { drawerService, DrawerSession, DrawerOperation, DrawerLog } from '@/services/drawer.service';
+import { RefreshCcw, Search, PlusCircle } from 'react-feather';
 
-const hardwareService = HardwareService.getInstance();
+// Create hardwareService instance properly
+const hardwareServiceInstance = HardwareService.getInstance();
 
 export default function DrawerPage() {
   const { toast } = useToast();
   const router = useRouter();
   const { user: authUser, loading: authLoading } = useAuth();
-  
-  const [isLoading, setIsLoading] = useState(false);
-  const [isDrawerOpening, setIsDrawerOpening] = useState(false);
   const [user, setUser] = useState<any>(null);
-  const [selectedDrawer, setSelectedDrawer] = useState<any>(null);
-  const [drawers, setDrawers] = useState<any[]>([]);
-  const [ports, setPorts] = useState<any[]>([]);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [drawerLogs, setDrawerLogs] = useState<any[]>([]);
+
   const [activeTab, setActiveTab] = useState<string>('hardware');
-  const [printerTab, setPrinterTab] = useState<string>('usb');
-  const [usbPrinters, setUsbPrinters] = useState<any[]>([]);
-  const [networkPrinters, setNetworkPrinters] = useState<any[]>([]);
-  const [scanningPrinters, setScanningPrinters] = useState(false);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isDrawerOpening, setIsDrawerOpening] = useState<boolean>(false);
+  const [scanningPrinters, setScanningPrinters] = useState<boolean>(false);
+  
+  const [ports, setPorts] = useState<Port[]>([]);
+  const [drawers, setDrawers] = useState<CashDrawer[]>([]);
+  const [selectedDrawer, setSelectedDrawer] = useState<CashDrawer | null>(null);
+  const [usbPrinters, setUsbPrinters] = useState<Printer[]>([]);
+  const [networkPrinters, setNetworkPrinters] = useState<Printer[]>([]);
+  const [selectedPort, setSelectedPort] = useState<string>("");
+  const [currentSession, setCurrentSession] = useState<DrawerSession | null>(null);
+  const [sessionHistory, setSessionHistory] = useState<DrawerSession[]>([]);
+  const [drawerLogs, setDrawerLogs] = useState<DrawerLog[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
   const [amount, setAmount] = useState('');
   const [notes, setNotes] = useState('');
-  const [currentSession, setCurrentSession] = useState<DrawerSession | null>(null);
-  const [sessionHistory, setSessionHistory] = useState<DrawerSession[]>([]);
-  
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [printerTab, setPrinterTab] = useState<string>('usb');
+
   useEffect(() => {
     if (!authLoading && !authUser) {
       router.push('/login');
@@ -66,10 +73,29 @@ export default function DrawerPage() {
     }
   }, [authLoading, authUser, router]);
 
+  useEffect(() => {
+    // This will reload printers when navigating back from the printer page
+    const handleFocus = () => {
+      console.log('Window focused - reloading printers');
+      loadPrinters();
+    };
+
+    // Add event listener for window focus
+    window.addEventListener('focus', handleFocus);
+    
+    // Immediate load on component mount
+    loadPrinters();
+    
+    // Cleanup the event listener when component unmounts
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, []);
+
   const loadPorts = async () => {
     try {
       setIsLoading(true);
-      const portsList = await hardwareService.listPorts();
+      const portsList = await hardwareServiceInstance.listPorts();
       console.log('Available ports:', portsList);
       setPorts(portsList);
       
@@ -94,7 +120,7 @@ export default function DrawerPage() {
       
       // If there's a session with a cash drawer, check if we can find it in the drawers list
       if (session?.drawerId) {
-        const drawersList = await hardwareService.listCashDrawers();
+        const drawersList = await hardwareServiceInstance.listCashDrawers();
         const drawer = drawersList.find(d => d.id === session.drawerId);
         if (drawer) {
           setSelectedDrawer(drawer);
@@ -107,7 +133,7 @@ export default function DrawerPage() {
 
   const loadDrawers = async () => {
     try {
-      const drawersList = await hardwareService.listCashDrawers();
+      const drawersList = await hardwareServiceInstance.listCashDrawers();
       setDrawers(drawersList);
     } catch (error) {
       console.error('Error loading drawers:', error);
@@ -159,7 +185,7 @@ export default function DrawerPage() {
       
       // If a drawer is selected, connect to it
       if (selectedDrawer) {
-        const result = await hardwareService.connectDrawer(selectedDrawer.id);
+        const result = await hardwareServiceInstance.connectDrawer(selectedDrawer.id);
         
         if (result.success) {
           toast({
@@ -190,7 +216,7 @@ export default function DrawerPage() {
         return;
       }
 
-      const result = await hardwareService.connectDrawer(selectedPort);
+      const result = await hardwareServiceInstance.connectDrawer(selectedPort);
       
       if (result.success) {
         toast({
@@ -220,6 +246,45 @@ export default function DrawerPage() {
     }
   };
 
+  const handleConnectUsbDrawer = async () => {
+    if (!selectedPort) {
+      toast({
+        title: "Error",
+        description: "Please select a port to connect",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      const result = await hardwareServiceInstance.connectDrawer(selectedPort);
+      
+      if (result.success) {
+        toast({
+          title: "Success",
+          description: "Connected to drawer on port " + selectedPort,
+        });
+        loadDrawers();
+      } else {
+        toast({
+          title: "Error",
+          description: result.error || "Failed to connect to drawer",
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      console.error('Error connecting drawer:', error);
+      toast({
+        title: "Error",
+        description: "Failed to connect to drawer",
+        variant: "destructive"
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleOpenDrawer = async () => {
     if (!selectedDrawer) {
       toast({
@@ -232,7 +297,7 @@ export default function DrawerPage() {
     
     try {
       setIsDrawerOpening(true);
-      const response = await hardwareService.openCashDrawer(selectedDrawer.id);
+      const response = await hardwareServiceInstance.openCashDrawer(selectedDrawer.id);
       
       if (response.success) {
         toast({
@@ -412,20 +477,33 @@ export default function DrawerPage() {
   const loadPrinters = async () => {
     try {
       console.log('Loading printers...');
-      const printers = await hardwareService.listPrinters();
+      const printers = await hardwareServiceInstance.listPrinters();
+      
+      // Log the received printers for debugging
+      console.log('Received printers:', printers);
+      
+      if (!printers || printers.length === 0) {
+        console.log('No printers found');
+        setUsbPrinters([]);
+        setNetworkPrinters([]);
+        return;
+      }
       
       // Separate USB and Network printers
       const usbDevices = printers.filter(p => p.connectionType === 'USB');
       const networkDevices = printers.filter(p => p.connectionType === 'NETWORK');
+      
+      console.log('USB printers:', usbDevices);
+      console.log('Network printers:', networkDevices);
       
       setUsbPrinters(usbDevices);
       setNetworkPrinters(networkDevices);
     } catch (error) {
       console.error('Error loading printers:', error);
       toast({
-        title: 'Error',
-        description: 'Failed to load printers',
-        variant: 'destructive'
+        title: "Error",
+        description: "Failed to load printers. Please try again.",
+        variant: "destructive"
       });
     }
   };
@@ -433,7 +511,7 @@ export default function DrawerPage() {
   const scanNetworkPrinters = async () => {
     try {
       setScanningPrinters(true);
-      const printers = await hardwareService.scanForNetworkPrinters();
+      const printers = await hardwareServiceInstance.scanForNetworkPrinters();
       setNetworkPrinters(printers);
       
       toast({
@@ -616,122 +694,125 @@ export default function DrawerPage() {
                 Scan for configured network printers that can be used with cash drawers.
               </p>
               
-              <div className="flex gap-2">
-                <Button 
-                  variant="outline" 
-                  onClick={scanNetworkPrinters}
-                  disabled={isLoading || scanningPrinters}
-                >
-                  {scanningPrinters ? 'Scanning...' : 'Scan for Network Printers'}
-                </Button>
-                
-                <Button 
-                  variant="secondary" 
-                  onClick={() => router.push('/printer')}
-                  disabled={isLoading}
-                >
-                  Add New Printer
-                </Button>
+              <div className="flex items-center justify-between mb-4">
+                <h4 className="text-lg font-medium">Network Printers</h4>
+                <div className="flex gap-2">
+                  <Button 
+                    variant="outline" 
+                    onClick={loadPrinters}
+                    size="sm"
+                  >
+                    <RefreshCcw className="h-4 w-4 mr-1" />
+                    Refresh List
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    onClick={scanNetworkPrinters}
+                    disabled={isLoading || scanningPrinters}
+                    size="sm"
+                  >
+                    {scanningPrinters ? (
+                      <>
+                        <svg className="mr-2 h-4 w-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Scanning...
+                      </>
+                    ) : (
+                      <>
+                        <Search className="h-4 w-4 mr-1" />
+                        Scan Network
+                      </>
+                    )}
+                  </Button>
+                  <Button 
+                    variant="secondary" 
+                    onClick={() => router.push('/printer')}
+                    size="sm"
+                  >
+                    <PlusCircle className="h-4 w-4 mr-1" />
+                    Add New Printer
+                  </Button>
+                </div>
               </div>
               
               {networkPrinters.length > 0 ? (
-                <div className="mt-4">
-                  <h3 className="text-sm font-medium mb-2">Found {networkPrinters.length} printer(s):</h3>
-                  <div className="overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Name</TableHead>
-                          <TableHead>IP Address</TableHead>
-                          <TableHead>Model</TableHead>
-                          <TableHead>Status</TableHead>
-                          <TableHead>Actions</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {networkPrinters.map((printer, index) => (
-                          <TableRow key={index}>
-                            <TableCell>{printer.name}</TableCell>
-                            <TableCell>{printer.ipAddress}:{printer.port}</TableCell>
-                            <TableCell>{printer.manufacturer} {printer.model}</TableCell>
-                            <TableCell>
-                              {printer.connected ? (
-                                <span className="inline-flex items-center rounded-full px-2 py-1 text-xs font-medium bg-green-100 text-green-800">
-                                  Connected
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center rounded-full px-2 py-1 text-xs font-medium bg-gray-100 text-gray-800">
-                                  Not Connected
-                                </span>
-                              )}
-                            </TableCell>
-                            <TableCell>
-                              <Button 
-                                variant="outline" 
-                                size="sm"
-                                onClick={() => {
-                                  // Create a drawer connected to this printer
-                                  if (printer.id) {
-                                    const drawer = {
-                                      name: `Drawer for ${printer.name}`,
-                                      connectionType: 'PRINTER' as const,
-                                      printerId: printer.id
-                                    };
-                                    
-                                    // Set it as the selected drawer
-                                    hardwareService.saveCashDrawer(drawer)
-                                      .then(newDrawer => {
-                                        setSelectedDrawer(newDrawer);
-                                        loadDrawers(); // Refresh drawer list
-                                        toast({
-                                          title: "Success",
-                                          description: `Added drawer connected to ${printer.name}`,
-                                        });
-                                      })
-                                      .catch(err => {
-                                        console.error("Error creating drawer:", err);
-                                        toast({
-                                          title: "Error",
-                                          description: "Failed to create drawer",
-                                          variant: "destructive"
-                                        });
+                <div className="border rounded-md p-4 mt-4">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-[50px]">Default</TableHead>
+                        <TableHead>Name</TableHead>
+                        <TableHead>IP Address</TableHead>
+                        <TableHead>Port</TableHead>
+                        <TableHead>Type</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {networkPrinters.map((printer) => (
+                        <TableRow key={printer.id}>
+                          <TableCell>
+                            {printer.isDefault && (
+                              <span className="inline-block w-3 h-3 bg-green-500 rounded-full" title="Default Printer" />
+                            )}
+                          </TableCell>
+                          <TableCell>{printer.name}</TableCell>
+                          <TableCell>{printer.ipAddress}</TableCell>
+                          <TableCell>{printer.port}</TableCell>
+                          <TableCell>
+                            <span className="capitalize">{printer.printerType.toLowerCase()}</span>
+                          </TableCell>
+                          <TableCell className="text-right space-x-2">
+                            <Button 
+                              variant="outline" 
+                              size="sm"
+                              onClick={() => {
+                                // Handle connecting printer to drawer logic here
+                                if (selectedDrawer) {
+                                  const updatedDrawer = {
+                                    ...selectedDrawer,
+                                    printerId: printer.id,
+                                    connectionType: 'PRINTER'
+                                  };
+                                  
+                                  hardwareServiceInstance.updateCashDrawer(selectedDrawer.id, updatedDrawer)
+                                    .then(() => {
+                                      loadDrawers();
+                                      toast({
+                                        title: "Success",
+                                        description: `Connected printer ${printer.name} to drawer`,
                                       });
-                                  }
-                                }}
-                              >
-                                Use Printer
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
+                                    })
+                                    .catch(error => {
+                                      console.error('Error connecting printer to drawer:', error);
+                                      toast({
+                                        title: "Error",
+                                        description: "Failed to connect printer to drawer",
+                                        variant: "destructive"
+                                      });
+                                    });
+                                } else {
+                                  toast({
+                                    title: "Error",
+                                    description: "Please select a drawer first",
+                                    variant: "destructive"
+                                  });
+                                }
+                              }}
+                            >
+                              Connect to Drawer
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
                 </div>
               ) : (
-                <div className="mt-4 p-6 border rounded-md text-center">
-                  {scanningPrinters ? (
-                    <div className="flex flex-col items-center">
-                      <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent mb-4"></div>
-                      <p>Scanning for network printers...</p>
-                    </div>
-                  ) : (
-                    <>
-                      <p className="text-muted-foreground mb-4">No network printers found</p>
-                      <p className="text-sm mb-2">Please make sure your printers are:</p>
-                      <ul className="text-sm list-disc list-inside mb-4 text-left">
-                        <li>Connected to the network</li>
-                        <li>Powered on</li>
-                        <li>Configured in the system</li>
-                      </ul>
-                      <Button 
-                        variant="outline" 
-                        onClick={() => router.push('/printer')}
-                      >
-                        Configure a Printer
-                      </Button>
-                    </>
-                  )}
+                <div className="border rounded-md p-6 mt-4 text-center">
+                  <p className="text-muted-foreground">No network printers found. Click "Scan Network" to search for printers or add a new printer.</p>
                 </div>
               )}
             </div>
