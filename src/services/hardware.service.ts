@@ -32,6 +32,7 @@ export interface CashDrawer {
   printerId?: string;
   printer?: Printer;
   isActive: boolean;
+  connected?: boolean;
   locationId?: string;
   createdAt: string;
   updatedAt: string;
@@ -183,15 +184,17 @@ export class HardwareService {
     }
   }
 
-  async openCashDrawer(drawerId: string): Promise<{ success: boolean; details?: string; error?: string }> {
+  async openCashDrawer(drawerId: string): Promise<{ success: boolean; details?: string; error?: string; drawerConnected?: boolean; printerId?: string; printerConnected?: boolean }> {
     try {
       console.log('Opening cash drawer:', drawerId);
       const response = await api.post('/api/pos/drawer/open', { drawerId });
       console.log('Open drawer response:', response.data);
       return { 
         success: response.data.success || false,
-        message: response.data.message,
-        drawerDetails: response.data.drawerDetails
+        details: response.data.details || response.data.message,
+        drawerConnected: response.data.drawerConnected,
+        printerId: response.data.printerId,
+        printerConnected: response.data.printerConnected
       };
     } catch (error) {
       console.error('Error opening cash drawer:', error);

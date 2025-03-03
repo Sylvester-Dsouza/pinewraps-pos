@@ -668,7 +668,7 @@ export default function DrawerPage() {
         
         toast({
           title: "Status Updated",
-          description: updatedSelectedDrawer.connected ? 
+          description: updatedSelectedDrawer?.connected ? 
             "Drawer is connected and active" : 
             "Drawer is currently inactive",
         });
@@ -707,7 +707,7 @@ export default function DrawerPage() {
                   
                   <div className="mt-2 flex items-center">
                     <span className="text-sm mr-2">Status:</span>
-                    {selectedDrawer.connected ? (
+                    {selectedDrawer?.connected ? (
                       <span className="px-2 py-1 rounded text-xs bg-green-100 text-green-800">Active</span>
                     ) : (
                       <span className="px-2 py-1 rounded text-xs bg-red-100 text-red-800">Inactive</span>
