@@ -133,10 +133,31 @@ export default function DrawerPage() {
 
   const loadDrawers = async () => {
     try {
+      // Store the current selected drawer ID before reloading
+      const currentDrawerId = selectedDrawer?.id;
+      
       const drawersList = await hardwareServiceInstance.listCashDrawers();
+      console.log('Loaded drawers:', drawersList);
       setDrawers(drawersList);
+      
+      // If we had a drawer selected, try to reselect it after reloading
+      if (currentDrawerId) {
+        const updatedDrawer = drawersList.find(d => d.id === currentDrawerId);
+        if (updatedDrawer) {
+          console.log('Reselecting drawer:', updatedDrawer);
+          setSelectedDrawer(updatedDrawer);
+        } else {
+          console.log('Previously selected drawer no longer exists');
+          setSelectedDrawer(null);
+        }
+      }
     } catch (error) {
       console.error('Error loading drawers:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load cash drawers",
+        variant: "destructive"
+      });
     }
   };
   
@@ -295,9 +316,22 @@ export default function DrawerPage() {
       return;
     }
     
+    // Check if this drawer is connected to a printer and has proper configuration
+    if (selectedDrawer.connectionType === 'PRINTER' && !selectedDrawer.printerId) {
+      toast({
+        title: "Error",
+        description: "This drawer is configured to use a printer but no printer is connected",
+        variant: "destructive"
+      });
+      return;
+    }
+    
     try {
       setIsDrawerOpening(true);
+      console.log('Opening drawer with ID:', selectedDrawer.id);
       const response = await hardwareServiceInstance.openCashDrawer(selectedDrawer.id);
+      
+      console.log('Open drawer response:', response);
       
       if (response.success) {
         toast({
@@ -540,40 +574,76 @@ export default function DrawerPage() {
           <CardContent>
             <div className="space-y-4">
               {selectedDrawer ? (
-                <div className="mb-4">
-                  <h3 className="text-lg font-medium">Selected Drawer: {selectedDrawer.name}</h3>
-                  <p className="text-sm text-gray-500">
-                    Connection Type: {selectedDrawer.connectionType}
+                <div className="mb-4 p-4 border rounded-md bg-slate-50">
+                  <h3 className="text-lg font-medium mb-2">Selected Drawer: {selectedDrawer.name}</h3>
+                  
+                  <div className="space-y-2 text-sm">
+                    <p>
+                      <span className="font-medium">Connection Type:</span> {selectedDrawer.connectionType}
+                    </p>
+                    
                     {selectedDrawer.connectionType === 'NETWORK' && selectedDrawer.ipAddress && (
-                      <span> - {selectedDrawer.ipAddress}:{selectedDrawer.port}</span>
+                      <p>
+                        <span className="font-medium">Network Address:</span> {selectedDrawer.ipAddress}:{selectedDrawer.port}
+                      </p>
                     )}
-                    {selectedDrawer.connectionType === 'PRINTER' && selectedDrawer.printer?.name && (
-                      <span> - Connected to {selectedDrawer.printer.name}</span>
+                    
+                    {selectedDrawer.connectionType === 'SERIAL' && selectedDrawer.serialPath && (
+                      <p>
+                        <span className="font-medium">Serial Path:</span> {selectedDrawer.serialPath}
+                      </p>
                     )}
-                  </p>
+                    
+                    {selectedDrawer.connectionType === 'PRINTER' && (
+                      <p>
+                        <span className="font-medium">Connected to Printer:</span> {
+                          selectedDrawer.printer 
+                            ? `${selectedDrawer.printer.name} (${selectedDrawer.printer.printerType})`
+                            : selectedDrawer.printerId 
+                              ? `ID: ${selectedDrawer.printerId} (details not loaded)`
+                              : 'No printer connected'
+                        }
+                      </p>
+                    )}
+                    
+                    <p>
+                      <span className="font-medium">Status:</span> {selectedDrawer.isActive ? 'Active' : 'Inactive'}
+                    </p>
+                  </div>
                 </div>
               ) : (
-                <div className="mb-4">
-                  <p>No drawer selected. Please select a drawer from the list below.</p>
+                <div className="mb-4 p-4 border rounded-md bg-slate-50">
+                  <p className="text-center text-muted-foreground">No drawer selected. Please select a drawer from the list below or create a new one by connecting to a printer.</p>
                 </div>
               )}
               
               <div className="grid gap-4">
                 <div>
                   <Label htmlFor="drawer">Cash Drawer</Label>
-                  <Select value={selectedDrawer?.id || ''} onValueChange={(value) => {
-                    const drawer = drawers.find(d => d.id === value);
-                    setSelectedDrawer(drawer || null);
-                  }}>
-                    <SelectTrigger>
+                  <Select 
+                    value={selectedDrawer?.id || ''} 
+                    onValueChange={(value) => {
+                      console.log('Selected drawer ID:', value);
+                      const drawer = drawers.find(d => d.id === value);
+                      console.log('Found drawer:', drawer);
+                      setSelectedDrawer(drawer || null);
+                    }}
+                  >
+                    <SelectTrigger className="w-full">
                       <SelectValue placeholder="Select a cash drawer" />
                     </SelectTrigger>
                     <SelectContent>
-                      {drawers.map((drawer) => (
-                        <SelectItem key={drawer.id} value={drawer.id}>
-                          {drawer.name} ({drawer.connectionType})
+                      {drawers.length > 0 ? (
+                        drawers.map((drawer) => (
+                          <SelectItem key={drawer.id} value={drawer.id}>
+                            {drawer.name} ({drawer.connectionType})
+                          </SelectItem>
+                        ))
+                      ) : (
+                        <SelectItem value="no-drawers" disabled>
+                          No cash drawers available
                         </SelectItem>
-                      ))}
+                      )}
                     </SelectContent>
                   </Select>
                 </div>
@@ -769,12 +839,12 @@ export default function DrawerPage() {
                               variant="outline" 
                               size="sm"
                               onClick={() => {
-                                // Handle connecting printer to drawer logic here
+                                // If a drawer is selected, connect the printer to it
                                 if (selectedDrawer) {
-                                  const updatedDrawer = {
+                                  const updatedDrawer: Partial<CashDrawer> = {
                                     ...selectedDrawer,
                                     printerId: printer.id,
-                                    connectionType: 'PRINTER'
+                                    connectionType: 'PRINTER' as const
                                   };
                                   
                                   hardwareServiceInstance.updateCashDrawer(selectedDrawer.id, updatedDrawer)
@@ -794,15 +864,36 @@ export default function DrawerPage() {
                                       });
                                     });
                                 } else {
-                                  toast({
-                                    title: "Error",
-                                    description: "Please select a drawer first",
-                                    variant: "destructive"
-                                  });
+                                  // No drawer selected, create a new one connected to this printer
+                                  const newDrawer: Partial<CashDrawer> = {
+                                    name: `Drawer for ${printer.name}`,
+                                    connectionType: 'PRINTER' as const,
+                                    printerId: printer.id,
+                                    isActive: true
+                                  };
+                                  
+                                  hardwareServiceInstance.saveCashDrawer(newDrawer)
+                                    .then(createdDrawer => {
+                                      loadDrawers();
+                                      // Select the newly created drawer
+                                      setSelectedDrawer(createdDrawer);
+                                      toast({
+                                        title: "Success",
+                                        description: `Created new drawer connected to ${printer.name}`,
+                                      });
+                                    })
+                                    .catch(error => {
+                                      console.error('Error creating drawer:', error);
+                                      toast({
+                                        title: "Error",
+                                        description: "Failed to create drawer",
+                                        variant: "destructive"
+                                      });
+                                    });
                                 }
                               }}
                             >
-                              Connect to Drawer
+                              {selectedDrawer ? 'Connect to Drawer' : 'Create Drawer'}
                             </Button>
                           </TableCell>
                         </TableRow>
