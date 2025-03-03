@@ -237,6 +237,18 @@ export class HardwareService {
     }
   }
 
+  async testPrinterDrawer(printerId: string): Promise<any> {
+    try {
+      const response = await api.post('/api/pos/printer/test-printer-drawer', {
+        printerId
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error testing printer drawer:', error);
+      throw error;
+    }
+  }
+
   async scanForNetworkPrinters(): Promise<Printer[]> {
     try {
       console.log('Scanning for network printers...');

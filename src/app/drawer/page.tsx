@@ -57,6 +57,8 @@ export default function DrawerPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [printerTab, setPrinterTab] = useState<string>('usb');
+  const [isTestingConnection, setIsTestingConnection] = useState(false);
+  const [testResults, setTestResults] = useState(null);
 
   useEffect(() => {
     if (!authLoading && !authUser) {
@@ -329,6 +331,8 @@ export default function DrawerPage() {
     try {
       setIsDrawerOpening(true);
       console.log('Opening drawer with ID:', selectedDrawer.id);
+      console.log('Drawer details:', JSON.stringify(selectedDrawer));
+      
       const response = await hardwareServiceInstance.openCashDrawer(selectedDrawer.id);
       
       console.log('Open drawer response:', response);
@@ -338,11 +342,34 @@ export default function DrawerPage() {
           title: "Success",
           description: "Cash drawer opened successfully",
         });
+        
+        // Refresh the drawer list to update status
+        const updatedDrawers = await hardwareServiceInstance.listCashDrawers();
+        setDrawers(updatedDrawers);
+        
+        // Update the selected drawer with the new connection status
+        const updatedSelectedDrawer = updatedDrawers.find(d => d.id === selectedDrawer.id);
+        if (updatedSelectedDrawer) {
+          setSelectedDrawer(updatedSelectedDrawer);
+        }
       } else {
-        // Show error notification with details if available
+        // Show detailed error notification with troubleshooting hints
+        let errorMessage = response.details || "Failed to open cash drawer";
+        let troubleshootingTip = "";
+        
+        if (selectedDrawer.connectionType === 'PRINTER') {
+          troubleshootingTip = `
+          Try these steps:
+          1. Make sure the printer is powered on
+          2. Check that the printer is connected to the network
+          3. Verify the IP address (${selectedDrawer.printer?.ipAddress || 'not set'})
+          4. Ensure the cash drawer is properly connected to the printer
+          `;
+        }
+        
         toast({
           title: "Error",
-          description: response.details || "Failed to open cash drawer",
+          description: errorMessage + (troubleshootingTip ? "\n\n" + troubleshootingTip : ""),
           variant: "destructive"
         });
       }
@@ -353,6 +380,7 @@ export default function DrawerPage() {
       let errorMessage = "Failed to open cash drawer";
       if (error.response && error.response.data) {
         errorMessage = error.response.data.details || error.response.data.error || errorMessage;
+        console.log('Error response data:', error.response.data);
       }
       
       toast({
@@ -564,6 +592,99 @@ export default function DrawerPage() {
     }
   };
 
+  const handleTestDrawerConnection = async () => {
+    if (!selectedDrawer) {
+      toast({
+        title: "Error",
+        description: "No drawer selected",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    if (selectedDrawer.connectionType !== 'PRINTER' || !selectedDrawer.printerId) {
+      toast({
+        title: "Error",
+        description: "This test is only for printer-connected drawers",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    try {
+      setIsTestingConnection(true);
+      setTestResults(null);
+      
+      const results = await hardwareServiceInstance.testPrinterDrawer(selectedDrawer.printerId);
+      console.log('Test results:', results);
+      
+      setTestResults(results);
+      
+      if (results.success) {
+        toast({
+          title: "Success",
+          description: "Successfully connected to printer and opened drawer",
+        });
+      } else {
+        toast({
+          title: "Test Failed",
+          description: results.message,
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      console.error('Error testing drawer connection:', error);
+      toast({
+        title: "Error",
+        description: "Failed to run connection test",
+        variant: "destructive"
+      });
+    } finally {
+      setIsTestingConnection(false);
+    }
+  };
+
+  const handleRefreshConnection = async () => {
+    if (!selectedDrawer) {
+      toast({
+        title: "Error",
+        description: "No drawer selected",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    try {
+      setIsLoading(true);
+      
+      // Refresh the drawer list to get latest status
+      const updatedDrawers = await hardwareServiceInstance.listCashDrawers();
+      setDrawers(updatedDrawers);
+      
+      // Update the selected drawer with the new connection status
+      const updatedSelectedDrawer = updatedDrawers.find(d => d.id === selectedDrawer.id);
+      if (updatedSelectedDrawer) {
+        setSelectedDrawer(updatedSelectedDrawer);
+        
+        toast({
+          title: "Status Updated",
+          description: updatedSelectedDrawer.connected ? 
+            "Drawer is connected and active" : 
+            "Drawer is currently inactive",
+        });
+      }
+    } catch (error) {
+      console.error('Error refreshing drawer status:', error);
+      toast({
+        title: "Error",
+        description: "Failed to refresh drawer status",
+        variant: "destructive"
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const renderHardwareTab = () => {
     return (
       <div className="space-y-4">
@@ -574,41 +695,23 @@ export default function DrawerPage() {
           <CardContent>
             <div className="space-y-4">
               {selectedDrawer ? (
-                <div className="mb-4 p-4 border rounded-md bg-slate-50">
-                  <h3 className="text-lg font-medium mb-2">Selected Drawer: {selectedDrawer.name}</h3>
+                <div className="p-4">
+                  <h3 className="font-semibold">Selected Drawer: {selectedDrawer.name}</h3>
+                  <p className="text-sm text-gray-500 mt-1">Connection Type: {selectedDrawer.connectionType}</p>
                   
-                  <div className="space-y-2 text-sm">
-                    <p>
-                      <span className="font-medium">Connection Type:</span> {selectedDrawer.connectionType}
-                    </p>
-                    
-                    {selectedDrawer.connectionType === 'NETWORK' && selectedDrawer.ipAddress && (
-                      <p>
-                        <span className="font-medium">Network Address:</span> {selectedDrawer.ipAddress}:{selectedDrawer.port}
-                      </p>
+                  {selectedDrawer.connectionType === 'PRINTER' && selectedDrawer.printer && (
+                    <div className="mt-1 text-sm">
+                      <p>Connected to Printer: {selectedDrawer.printer.name} ({selectedDrawer.printer.printerType})</p>
+                    </div>
+                  )}
+                  
+                  <div className="mt-2 flex items-center">
+                    <span className="text-sm mr-2">Status:</span>
+                    {selectedDrawer.connected ? (
+                      <span className="px-2 py-1 rounded text-xs bg-green-100 text-green-800">Active</span>
+                    ) : (
+                      <span className="px-2 py-1 rounded text-xs bg-red-100 text-red-800">Inactive</span>
                     )}
-                    
-                    {selectedDrawer.connectionType === 'SERIAL' && selectedDrawer.serialPath && (
-                      <p>
-                        <span className="font-medium">Serial Path:</span> {selectedDrawer.serialPath}
-                      </p>
-                    )}
-                    
-                    {selectedDrawer.connectionType === 'PRINTER' && (
-                      <p>
-                        <span className="font-medium">Connected to Printer:</span> {
-                          selectedDrawer.printer 
-                            ? `${selectedDrawer.printer.name} (${selectedDrawer.printer.printerType})`
-                            : selectedDrawer.printerId 
-                              ? `ID: ${selectedDrawer.printerId} (details not loaded)`
-                              : 'No printer connected'
-                        }
-                      </p>
-                    )}
-                    
-                    <p>
-                      <span className="font-medium">Status:</span> {selectedDrawer.isActive ? 'Active' : 'Inactive'}
-                    </p>
                   </div>
                 </div>
               ) : (
@@ -675,12 +778,89 @@ export default function DrawerPage() {
                       'Open Drawer'
                     )}
                   </Button>
+                  
+                  <Button 
+                    variant="outline"
+                    disabled={!selectedDrawer || isLoading}
+                    onClick={handleRefreshConnection}
+                  >
+                    {isLoading ? (
+                      <>
+                        <svg className="mr-2 h-4 w-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Updating...
+                      </>
+                    ) : (
+                      <>
+                        <svg className="mr-1 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        Refresh Status
+                      </>
+                    )}
+                  </Button>
+                  
+                  {selectedDrawer?.connectionType === 'PRINTER' && selectedDrawer?.printerId && (
+                    <Button 
+                      variant="outline"
+                      disabled={isTestingConnection}
+                      onClick={handleTestDrawerConnection}
+                    >
+                      {isTestingConnection ? (
+                        <>
+                          <svg className="mr-2 h-4 w-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                          Testing...
+                        </>
+                      ) : (
+                        'Test Connection'
+                      )}
+                    </Button>
+                  )}
                 </div>
                 
                 {errorMessage && (
                   <div className="p-3 bg-red-50 border border-red-200 rounded text-red-600 text-sm">
                     <p className="font-medium">Connection Error</p>
                     <p>{errorMessage}</p>
+                  </div>
+                )}
+                
+                {testResults && (
+                  <div className="mt-4 p-4 border rounded-md bg-slate-50 text-sm">
+                    <h4 className="font-medium mb-2">Test Results</h4>
+                    <div className="space-y-2">
+                      <p>
+                        <span className="font-medium">Connection:</span>{' '}
+                        <span className={testResults.results.connectionTest.success ? "text-green-600" : "text-red-600"}>
+                          {testResults.results.connectionTest.message}
+                        </span>
+                      </p>
+                      
+                      {testResults.results.connectionTest.success && (
+                        <>
+                          <p>
+                            <span className="font-medium">Standard Command:</span>{' '}
+                            <span className={testResults.results.standardDrawerCommand.success ? "text-green-600" : "text-red-600"}>
+                              {testResults.results.standardDrawerCommand.message}
+                            </span>
+                          </p>
+                          
+                          {!testResults.results.standardDrawerCommand.success && (
+                            <p>
+                              <span className="font-medium">Alternative Commands:</span>{' '}
+                              <span className={testResults.results.alternativeCommands.success ? "text-green-600" : "text-red-600"}>
+                                {testResults.results.alternativeCommands.message}
+                              </span>
+                            </p>
+                          )}
+                        </>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
