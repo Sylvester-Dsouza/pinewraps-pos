@@ -5,7 +5,7 @@ import { Dialog, Transition } from "@headlessui/react";
 import { X, Minus, Plus } from "lucide-react";
 import { Product } from "@/services/api";
 import { toast } from "react-hot-toast";
-import ImageUpload from "./custom-images/image-upload";
+import { CustomImage } from "@/types/cart";
 
 interface ProductDetailsModalProps {
   product: Product;
@@ -21,11 +21,7 @@ interface ProductDetailsModalProps {
       priceAdjustment: number;
     }>;
     notes?: string;
-    designImages?: Array<{
-      file?: File;
-      url?: string;
-      comment: string;
-    }>;
+    customImages?: CustomImage[];
     totalPrice: number;
   }) => void;
 }
@@ -65,23 +61,20 @@ export default function ProductDetailsModal({
   const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(null);
   const [customPrice, setCustomPrice] = useState<number | null>(null);
   const [notes, setNotes] = useState("");
-  const [designImages, setCustomImages] = useState<Array<{
-    file?: File;
-    url?: string;
-    comment: string;
-  }>>([]);
+  const [customImages, setCustomImages] = useState<CustomImage[]>([]);
 
   // Reset state when product changes
   useEffect(() => {
-    if (isOpen) {
-      setQuantity(1);
-      setSelectedOptions([]);
-      setSelectedVariant(null);
-      setCustomPrice(null);
-      setNotes("");
-      setCustomImages([]);
-    }
-  }, [isOpen, product]);
+    setQuantity(1);
+    setSelectedOptions([]);
+    setSelectedVariant(null);
+    setCustomPrice(null);
+    setNotes("");
+    setCustomImages([]);
+    
+    console.log('Product details:', product);
+    console.log('Product allowCustomImages:', product.allowCustomImages);
+  }, [product]);
 
   // Find matching variant when options change
   useEffect(() => {
@@ -111,8 +104,9 @@ export default function ProductDetailsModal({
     }
   }, [selectedOptions, product]);
 
-  // Check if product is in Sets category
-  const isSetProduct = product.category?.name === 'Sets';
+  // Check if product is in Sets category - this would ideally be determined by a category check
+  // Since we don't have access to category name directly, we'll use a flag or check product options
+  const isSetProduct = false; // Set this based on product characteristics or remove special handling if not needed
 
   // Calculate total price based on quantity, custom price, and selected variant
   const calculateTotalPrice = () => {
@@ -219,7 +213,7 @@ export default function ProductDetailsModal({
       quantity,
       selectedVariations: variations,
       notes,
-      designImages,
+      customImages: [], // Always pass an empty array for custom images
       totalPrice: calculateTotalPrice(),
     });
 
@@ -297,45 +291,16 @@ export default function ProductDetailsModal({
                     )}
 
                     {/* Notes */}
-                    <div className="mt-4">
-                      <label
-                        htmlFor="notes"
-                        className="block text-sm font-medium text-gray-700"
-                      >
-                        Notes
-                      </label>
+                    <div className="mt-6">
+                      <h3 className="text-lg font-medium text-gray-900 mb-2">Notes</h3>
                       <textarea
-                        id="notes"
-                        name="notes"
+                        className="w-full border border-gray-300 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-black"
                         rows={3}
-                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                        placeholder="Add any special instructions or notes for this item..."
                         value={notes}
                         onChange={(e) => setNotes(e.target.value)}
-                        placeholder="Add any special instructions..."
                       />
                     </div>
-
-                    {/* Design Images - Only show for products that require design and allow design images */}
-                    {product.requiresDesign && product.allowCustomImages && (
-                      <div className="mt-6">
-                        <div className="flex items-center justify-between mb-2">
-                          <label className="block text-lg font-medium text-gray-900">
-                            Design Images
-                          </label>
-                          <span className="text-sm text-gray-500">
-                            Upload reference images for your custom design
-                          </span>
-                        </div>
-                        <ImageUpload 
-                          onChange={(images) => setCustomImages(images)}
-                        />
-                        {designImages.length > 0 && (
-                          <div className="mt-2 text-sm text-gray-500">
-                            {designImages.length} image{designImages.length !== 1 ? 's' : ''} added
-                          </div>
-                        )}
-                      </div>
-                    )}
 
                     {/* Product Options */}
                     {product.options?.sort((a, b) => a.position - b.position).map((option) => (

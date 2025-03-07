@@ -2,12 +2,16 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
-import { LogOut, Settings, User, Maximize2, Minimize2, Plus, Calculator, DollarSign } from "lucide-react";
+import { LogOut, Settings, User, Maximize2, Minimize2, Plus, Calculator, DollarSign, ListOrdered } from "lucide-react";
 import { useAuth } from "@/providers/auth-provider";
 import { useState, useEffect } from "react";
 import CalculatorModal from "../pos/calculator-modal";
 
-export default function Header() {
+interface HeaderProps {
+  title?: string;
+}
+
+export default function Header({ title }: HeaderProps) {
   const pathname = usePathname();
   const router = useRouter();
   const { user, signOut } = useAuth();
@@ -43,7 +47,7 @@ export default function Header() {
         <div className="flex items-center justify-between h-14">
           {/* Logo and Navigation */}
           <div className="flex items-center gap-8">
-            <div className="text-xl font-bold">Pinewraps POS</div>
+            <div className="text-xl font-bold">{title || "Pinewraps POS"}</div>
             <nav className="hidden md:flex items-center gap-6">
               <Link
                 href="/pos"
@@ -54,6 +58,17 @@ export default function Header() {
                 }`}
               >
                 Point of Sale
+              </Link>
+              <Link
+                href="/pos/queued-orders"
+                className={`text-sm font-medium flex items-center gap-1 ${
+                  pathname === "/pos/queued-orders"
+                    ? "text-primary"
+                    : "text-muted-foreground hover:text-primary"
+                }`}
+              >
+                <ListOrdered className="w-4 h-4" />
+                Queued Orders
               </Link>
               <Link
                 href="/drawer"

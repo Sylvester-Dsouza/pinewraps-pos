@@ -184,17 +184,19 @@ export class HardwareService {
     }
   }
 
-  async openCashDrawer(drawerId: string): Promise<{ success: boolean; details?: string; error?: string; drawerConnected?: boolean; printerId?: string; printerConnected?: boolean }> {
+  async openCashDrawer(drawerId: string): Promise<{ success: boolean; error?: string; details?: any }> {
     try {
       console.log('Opening cash drawer:', drawerId);
-      const response = await api.post('/api/pos/drawer/open', { drawerId });
+      
+      const response = await api.post('/api/pos/drawer/open', {
+        drawerId
+      });
+      
       console.log('Open drawer response:', response.data);
-      return { 
-        success: response.data.success || false,
-        details: response.data.details || response.data.message,
-        drawerConnected: response.data.drawerConnected,
-        printerId: response.data.printerId,
-        printerConnected: response.data.printerConnected
+      
+      return {
+        success: response.data.success,
+        details: response.data
       };
     } catch (error) {
       console.error('Error opening cash drawer:', error);
@@ -213,6 +215,41 @@ export class HardwareService {
         success: false,
         error: errorMessage,
         details: details
+      };
+    }
+  }
+
+  async printReceiptAndOpenDrawer(drawerId: string): Promise<{ success: boolean; error?: string; details?: any }> {
+    try {
+      console.log('Printing receipt and opening cash drawer:', drawerId);
+      
+      const response = await api.post('/api/pos/drawer/print-and-open', {
+        drawerId
+      });
+      
+      console.log('Print and open drawer response:', response.data);
+      
+      return {
+        success: response.data.success,
+        details: response.data
+      };
+    } catch (error) {
+      console.error('Error printing receipt and opening cash drawer:', error);
+      let errorMessage = 'Unknown error occurred';
+      
+      if (error.response) {
+        console.error('Error response data:', error.response.data);
+        errorMessage = error.response.data.error || error.response.data.details || `Server error: ${error.response.status}`;
+      } else if (error.request) {
+        errorMessage = 'No response from server. Check your network connection.';
+      } else {
+        errorMessage = error.message || 'Error setting up request';
+      }
+      
+      return { 
+        success: false, 
+        error: errorMessage,
+        details: error.response?.data
       };
     }
   }

@@ -1,50 +1,23 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '@/providers/auth-provider';
-import { useRouter } from 'next/navigation';
-import { useSearchParams } from 'next/navigation';
-import { Search, X, Minus, Plus } from 'lucide-react';
-import { apiMethods, type Product, type Category, CustomImage, type APIResponse } from '@/services/api';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { apiMethods, type Product, type Category, type APIResponse, type PosQueuedOrder } from '@/services/api';
 import toast from 'react-hot-toast';
 import ProductDetailsModal from '@/components/pos/product-details-modal';
 import CheckoutModal from '@/components/pos/checkout-modal';
+import QueueOrderModal from '@/components/pos/queue-order-modal';
 import Header from '@/components/header/header';
 import { useQuery } from '@tanstack/react-query';
 import Image from 'next/image';
 import { nanoid } from 'nanoid';
+import { CartItem, CustomImage } from '@/types/cart';
 
-interface CartItem {
-  id: string;
-  product: {
-    id: string;
-    name: string;
-    basePrice: number;
-    status: string;
-    images: any[];
-    allowCustomPrice?: boolean;
-    requiresDesign?: boolean;
-    requiresKitchen?: boolean;
-    allowCustomImages?: boolean;
-  };
-  quantity: number;
-  selectedVariations: Array<{
-    id: string;
-    type: string;
-    value: string;
-    priceAdjustment: number;
-  }>;
-  totalPrice: number;
-  notes?: string;
-  customImages?: Array<{
-    file?: File;
-    url?: string;
-    comment: string;
-  }>;
-}
+import { Search, X, Minus, Plus, ListOrdered } from 'lucide-react';
 
 export default function POSPage() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, refreshToken } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [, setIsFullscreen] = useState(false);
@@ -55,46 +28,195 @@ export default function POSPage() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [isCheckoutModalOpen, setIsCheckoutModalOpen] = useState(false);
+  const [isQueueModalOpen, setIsQueueModalOpen] = useState(false);
+  const [queuedOrders, setQueuedOrders] = useState<PosQueuedOrder[]>([]);
+  const checkoutDetailsRef = useRef<any>(null);
+  const [checkoutDetails, setCheckoutDetails] = useState<any>(null);
 
-  // Check for openCheckoutModal flag
+  // Load cart items from localStorage on mount (for queued orders)
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const shouldOpenCheckout = localStorage.getItem('openCheckoutModal');
-      if (shouldOpenCheckout === 'true') {
-        setIsCheckoutModalOpen(true);
-        localStorage.removeItem('openCheckoutModal');
-      }
-    }
-  }, []);
-
-  // Load cart from localStorage on mount
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const savedCart = localStorage.getItem('pos-cart');
-      if (savedCart) {
+      // Check if we need to open the checkout modal (from queued orders)
+      const openCheckoutModal = localStorage.getItem('openCheckoutModal');
+      
+      // Load cart items
+      const savedCartItems = localStorage.getItem('cartItems');
+      if (savedCartItems) {
         try {
-          const parsedCart = JSON.parse(savedCart);
-          setCart(parsedCart);
+          const parsedCartItems = JSON.parse(savedCartItems);
+          console.log('Loading cart items from localStorage:', parsedCartItems);
+          
+          if (Array.isArray(parsedCartItems)) {
+            // Ensure all required fields are present
+            const validatedCartItems = parsedCartItems.map(item => {
+              // Log each item for debugging
+              console.log('Processing cart item:', JSON.stringify(item, null, 2));
+              
+              // Check if product exists
+              if (!item.product) {
+                console.error('Cart item missing product:', item);
+                return null;
+              }
+              
+              // Process selected variations - ensure they have proper structure
+              let selectedVariations = [];
+              if (item.selectedVariations && Array.isArray(item.selectedVariations)) {
+                selectedVariations = item.selectedVariations.map((v: any) => ({
+                  id: v.id || nanoid(),
+                  type: v.type || 'Option',
+                  value: v.value || '',
+                  price: parseFloat(String(v.price)) || 0
+                }));
+              } else if (item.product.variations && Array.isArray(item.product.variations)) {
+                // If selectedVariations is missing but product.variations exists, use that
+                selectedVariations = item.product.variations.map((v: any) => ({
+                  id: v.id || nanoid(),
+                  type: v.type || 'Option',
+                  value: v.value || '',
+                  price: parseFloat(String(v.price)) || 0
+                }));
+              }
+              
+              // Process custom images - ensure they have proper structure
+              let customImages = [];
+              if (item.customImages && Array.isArray(item.customImages)) {
+                customImages = item.customImages.map((img: any) => ({
+                  id: img.id || nanoid(),
+                  url: img.url || '',
+                  previewUrl: img.previewUrl || '',
+                  comment: img.comment || ''
+                }));
+              }
+              
+              // Create a properly formatted cart item
+              return {
+                id: item.id || nanoid(),
+                product: {
+                  id: item.product?.id || '',
+                  name: item.product?.name || 'Unknown Product',
+                  basePrice: parseFloat(String(item.product?.basePrice)) || 0,
+                  requiresKitchen: item.product?.requiresKitchen || item.product?.metadata?.requiresKitchen || false,
+                  requiresDesign: item.product?.requiresDesign || item.product?.metadata?.requiresDesign || false,
+                  allowCustomImages: item.product?.allowCustomImages || false,
+                  status: item.product?.status || 'ACTIVE',
+                  images: Array.isArray(item.product?.images) ? item.product.images : [],
+                  allowCustomPrice: item.product?.allowCustomPrice || false,
+                  categoryId: item.product?.categoryId || '',
+                  description: item.product?.description || '',
+                  sku: item.product?.sku || '',
+                  barcode: item.product?.barcode || '',
+                  variants: Array.isArray(item.product?.variants) ? item.product.variants : []
+                },
+                quantity: parseInt(String(item.quantity)) || 1,
+                selectedVariations,
+                notes: item.notes || '',
+                customImages,
+                totalPrice: parseFloat(String(item.totalPrice)) || 0,
+                metadata: item.metadata || {}
+              };
+            }).filter(item => item !== null);
+            
+            console.log('Setting cart with validated items:', JSON.stringify(validatedCartItems, null, 2));
+            setCart(validatedCartItems);
+            
+            // Calculate cart total for display
+            const total = validatedCartItems.reduce((sum, item) => sum + item.totalPrice, 0);
+            console.log(`Loaded ${validatedCartItems.length} items with total: ${total}`);
+          } else {
+            console.error('Invalid cart items format:', parsedCartItems);
+          }
         } catch (error) {
-          console.error('Error parsing cart:', error);
-          toast.error('Error loading cart');
+          console.error('Error parsing cart items from localStorage:', error);
         }
+        
+        // Clean up localStorage
+        localStorage.removeItem('cartItems');
       }
-    }
-  }, []);
-
-  // Initialize cart from localStorage
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const savedCart = localStorage.getItem('cart');
-      if (savedCart) {
+      
+      // Load checkout details
+      const savedCheckoutDetails = localStorage.getItem('checkoutDetails');
+      if (savedCheckoutDetails) {
         try {
-          const parsedCart = JSON.parse(savedCart);
-          setCart(parsedCart);
-          localStorage.removeItem('cart'); // Clear the reorder cart after loading
+          const parsedCheckoutDetails = JSON.parse(savedCheckoutDetails);
+          console.log('Loading checkout details from localStorage:', parsedCheckoutDetails);
+          
+          // Validate and ensure all required fields are present
+          const validatedCheckoutDetails = {
+            customerDetails: {
+              name: parsedCheckoutDetails.customerDetails?.name || '',
+              email: parsedCheckoutDetails.customerDetails?.email || '',
+              phone: parsedCheckoutDetails.customerDetails?.phone || '',
+            },
+            deliveryMethod: parsedCheckoutDetails.deliveryMethod || 'PICKUP',
+            deliveryDetails: {
+              date: parsedCheckoutDetails.deliveryDetails?.date || '',
+              timeSlot: parsedCheckoutDetails.deliveryDetails?.timeSlot || '',
+              instructions: parsedCheckoutDetails.deliveryDetails?.instructions || '',
+              streetAddress: parsedCheckoutDetails.deliveryDetails?.streetAddress || '',
+              apartment: parsedCheckoutDetails.deliveryDetails?.apartment || '',
+              emirate: parsedCheckoutDetails.deliveryDetails?.emirate || '',
+              city: parsedCheckoutDetails.deliveryDetails?.city || '',
+              charge: parseFloat(String(parsedCheckoutDetails.deliveryDetails?.charge)) || 0,
+            },
+            pickupDetails: {
+              date: parsedCheckoutDetails.pickupDetails?.date || '',
+              timeSlot: parsedCheckoutDetails.pickupDetails?.timeSlot || '',
+            },
+            giftDetails: {
+              isGift: parsedCheckoutDetails.giftDetails?.isGift || false,
+              recipientName: parsedCheckoutDetails.giftDetails?.recipientName || '',
+              recipientPhone: parsedCheckoutDetails.giftDetails?.recipientPhone || '',
+              message: parsedCheckoutDetails.giftDetails?.message || '',
+              note: parsedCheckoutDetails.giftDetails?.note || '',
+              cashAmount: parseFloat(String(parsedCheckoutDetails.giftDetails?.cashAmount)) || 0,
+              includeCash: parsedCheckoutDetails.giftDetails?.includeCash || false,
+            },
+            paymentMethod: parsedCheckoutDetails.paymentMethod || 'CASH',
+            paymentReference: parsedCheckoutDetails.paymentReference || '',
+            orderSummary: parsedCheckoutDetails.orderSummary ? {
+              totalItems: parseInt(String(parsedCheckoutDetails.orderSummary.totalItems)) || 0,
+              products: Array.isArray(parsedCheckoutDetails.orderSummary.products) 
+                ? parsedCheckoutDetails.orderSummary.products.map((p: any) => ({
+                    id: p.id || '',
+                    productId: p.productId || '',
+                    productName: p.productName || 'Unknown Product',
+                    quantity: parseInt(String(p.quantity)) || 1,
+                    price: parseFloat(String(p.price)) || 0,
+                    unitPrice: parseFloat(String(p.unitPrice)) || 0,
+                    sku: p.sku || '',
+                    requiresKitchen: p.requiresKitchen || false,
+                    requiresDesign: p.requiresDesign || false,
+                    hasVariations: p.hasVariations || false,
+                    hasCustomImages: p.hasCustomImages || false
+                  }))
+                : [],
+              totalAmount: parseFloat(String(parsedCheckoutDetails.orderSummary.totalAmount)) || 0
+            } : {
+              totalItems: 0,
+              products: [],
+              totalAmount: 0
+            }
+          };
+          
+          console.log('Validated checkout details:', validatedCheckoutDetails);
+          setCheckoutDetails(validatedCheckoutDetails);
+          
+          // Clean up localStorage
+          localStorage.removeItem('checkoutDetails');
         } catch (error) {
-          console.error('Error parsing cart:', error);
+          console.error('Error parsing checkout details from localStorage:', error);
         }
+      } else {
+        console.warn('No checkout details found in localStorage');
+      }
+      
+      // Open the checkout modal after a short delay to ensure state is updated
+      if (openCheckoutModal === 'true') {
+        setTimeout(() => {
+          setIsCheckoutModalOpen(true);
+          // Clear the flag
+          localStorage.removeItem('openCheckoutModal');
+        }, 500);
       }
     }
   }, []);
@@ -147,12 +269,12 @@ export default function POSPage() {
       try {
         const response = await apiMethods.products.getCategories();
         if (!response.success) {
-          throw new Error(response.message ?? 'Failed to fetch categories');
+          throw new Error('Failed to fetch categories');
         }
         return response;
       } catch (error) {
         console.error('Error fetching categories:', error);
-        throw error;
+        throw error instanceof Error ? error : new Error('Failed to fetch categories');
       }
     },
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes
@@ -232,46 +354,8 @@ export default function POSPage() {
   };
 
   // Handle adding product to cart from product details modal
-  const handleAddToOrder = (orderItem: {
-    product: Product;
-    quantity: number;
-    selectedVariations: Array<{
-      id: string;
-      type: string;
-      value: string;
-      priceAdjustment: number;
-    }>;
-    notes?: string;
-    customImages?: Array<{
-      file?: File;
-      url?: string;
-      comment: string;
-    }>;
-    totalPrice: number;
-  }) => {
-    const cartItem: CartItem = {
-      id: nanoid(),
-      product: {
-        id: orderItem.product.id,
-        name: orderItem.product.name,
-        basePrice: orderItem.product.basePrice,
-        status: orderItem.product.status,
-        images: orderItem.product.images || [],
-        allowCustomPrice: orderItem.product.allowCustomPrice,
-        requiresDesign: orderItem.product.requiresDesign,
-        requiresKitchen: orderItem.product.requiresKitchen,
-        allowCustomImages: orderItem.product.allowCustomImages
-      },
-      quantity: orderItem.quantity,
-      selectedVariations: orderItem.selectedVariations,
-      totalPrice: orderItem.totalPrice,
-      notes: orderItem.notes,
-      customImages: orderItem.customImages
-    };
-
-    setCart(prevCart => [...prevCart, cartItem]);
-    setSelectedProduct(null); // Close the modal
-    toast.success('Added to cart');
+  const handleAddToOrder = ({ product, quantity, selectedVariations, notes, customImages, totalPrice }: any) => {
+    handleAddToCart(product, quantity, selectedVariations, null, notes, customImages);
   };
 
   // Handle quick add to cart (without opening modal)
@@ -306,27 +390,32 @@ export default function POSPage() {
   };
 
   // Handle adding product to cart
-  const handleAddToCart = (product: Product, quantity: number = 1, variations: any[] = [], notes: string = '') => {
+  const handleAddToCart = (product: Product, quantity: number, selectedVariations: any[], customPrice: number | null, notes: string, customImages: CustomImage[]) => {
+    // Calculate total price
+    let totalPrice = customPrice !== null ? customPrice : product.basePrice;
+    
+    // Add variation price adjustments
+    if (selectedVariations.length > 0) {
+      totalPrice += selectedVariations.reduce((sum, variation) => sum + (variation.priceAdjustment || 0), 0);
+    }
+    
+    // Multiply by quantity
+    totalPrice *= quantity;
+    
+    // Create cart item
     const cartItem: CartItem = {
       id: nanoid(),
       product: {
-        id: product.id,
-        name: product.name,
-        basePrice: product.basePrice,
-        status: product.status,
-        images: product.images,
-        allowCustomPrice: product.allowCustomPrice,
-        requiresDesign: product.requiresDesign,
-        requiresKitchen: product.requiresKitchen,
-        allowCustomImages: product.allowCustomImages
+        ...product,
+        allowCustomImages: true, // Always enable custom images for all products
       },
       quantity,
-      selectedVariations: variations,
-      totalPrice: calculateTotalPrice(product.basePrice, quantity, variations),
+      selectedVariations,
+      totalPrice,
       notes,
-      customImages: []
+      customImages
     };
-
+    
     setCart(prevCart => [...prevCart, cartItem]);
     toast.success('Added to cart');
   };
@@ -358,7 +447,10 @@ export default function POSPage() {
   };
 
   // Calculate cart total including variations
-  const cartTotal = cart.reduce((total, item) => total + item.totalPrice, 0);
+  const cartTotal = useMemo(() => {
+    console.log('Calculating cart total with cart items:', cart);
+    return cart.reduce((total, item) => total + (item.totalPrice * item.quantity), 0);
+  }, [cart]);
 
   // Update cart state when checkout modal closes
   const handleCheckoutComplete = () => {
@@ -376,6 +468,202 @@ export default function POSPage() {
     localStorage.removeItem('pos-cart');
   };
 
+  // Fetch queued orders count
+  const { data: queuedOrdersData, refetch: refetchQueuedOrders } = useQuery({
+    queryKey: ['queuedOrdersCount'],
+    queryFn: async () => {
+      try {
+        const response = await apiMethods.pos.getQueuedOrders();
+        if (!response.success) {
+          throw new Error(response.message || 'Failed to fetch queued orders');
+        }
+        return response.data;
+      } catch (error) {
+        console.error('Error fetching queued orders:', error);
+        return [];
+      }
+    },
+    staleTime: 30 * 1000, // Cache for 30 seconds
+    refetchInterval: 30 * 1000, // Auto-refresh every 30 seconds
+  });
+
+  useEffect(() => {
+    if (queuedOrdersData) {
+      setQueuedOrders(queuedOrdersData);
+      console.log('Updated queued orders count:', queuedOrdersData.length);
+    }
+  }, [queuedOrdersData]);
+
+  useEffect(() => {
+    // Refresh queued orders when the component mounts
+    refetchQueuedOrders();
+    
+    // Set up an interval to refresh queued orders
+    const intervalId = setInterval(() => {
+      refetchQueuedOrders();
+    }, 15000); // Refresh every 15 seconds
+    
+    // Clean up the interval when the component unmounts
+    return () => clearInterval(intervalId);
+  }, [refetchQueuedOrders]);
+
+  // Function to queue the current order
+  const handleQueueOrder = async (name: string, notes: string, checkoutDetails: any) => {
+    console.log('Handling queue order with checkout details:', checkoutDetails);
+    
+    if (cart.length === 0) {
+      toast.error('Cannot queue an empty order');
+      return;
+    }
+
+    // Check if user is authenticated
+    if (!user) {
+      toast.error('You must be logged in to queue an order');
+      router.push('/login');
+      return;
+    }
+
+    // Create a copy of the cart with additional metadata
+    const cartWithMetadata = cart.map(item => {
+      // Format each item to ensure it has all required fields
+      return {
+        id: item.id || nanoid(),
+        productId: item.product.id,
+        productName: item.product.name,
+        unitPrice: item.product.basePrice,
+        quantity: item.quantity,
+        totalPrice: item.totalPrice,
+        notes: item.notes || '',
+        selectedVariations: item.selectedVariations || [],
+        customImages: item.customImages || [],
+        images: item.product.images || [],
+        allowCustomPrice: item.product.allowCustomPrice || false,
+        allowCustomImages: item.product.allowCustomImages || false,
+        metadata: {
+          ...item.metadata,
+          paymentMethod: checkoutDetails.paymentMethod || 'CASH',
+          paymentReference: checkoutDetails.paymentReference || ''
+        }
+      };
+    });
+
+    // Create order summary for easier display in queued orders
+    const orderSummary = {
+      totalItems: cart.length,
+      products: cart.map(item => ({
+        productName: item.product.name,
+        quantity: item.quantity,
+        price: item.totalPrice
+      })),
+      totalAmount: cartTotal
+    };
+
+    // Extract customer details from checkoutDetails
+    const customerDetails = checkoutDetails.customerDetails || {};
+    const customerName = customerDetails.name || '';
+    const customerEmail = customerDetails.email || '';
+    const customerPhone = customerDetails.phone || '';
+
+    console.log('Queuing order with cart items:', cartWithMetadata);
+    console.log('Queuing order with checkout details:', checkoutDetails);
+    console.log('Queuing order with order summary:', orderSummary);
+    console.log('Customer details:', { customerName, customerEmail, customerPhone });
+
+    try {
+      const response = await apiMethods.pos.queueOrder({
+        items: cartWithMetadata,
+        name,
+        notes,
+        totalAmount: cartTotal,
+        customer: checkoutDetails.customerDetails,
+        customerName,
+        customerEmail,
+        customerPhone,
+        deliveryMethod: checkoutDetails.deliveryMethod,
+        deliveryDetails: checkoutDetails.deliveryDetails,
+        pickupDetails: checkoutDetails.pickupDetails,
+        giftDetails: checkoutDetails.giftDetails,
+        orderSummary: orderSummary
+      });
+
+      if (response.success) {
+        toast.success('Order queued successfully');
+        setCart([]);
+        // Force refetch queued orders to update the count immediately
+        await refetchQueuedOrders();
+      } else {
+        toast.error(response.message || 'Failed to queue order');
+      }
+    } catch (error: any) {
+      console.error('Error queuing order:', error);
+      
+      // Handle authentication errors
+      if (error.response?.status === 401) {
+        toast.error('Your session has expired. Please log in again.');
+        // Attempt to refresh token
+        const newToken = await refreshToken();
+        if (!newToken) {
+          router.push('/login');
+        } else {
+          // Retry the operation with new token
+          toast.error('Please try queuing the order again');
+        }
+      } else {
+        toast.error(error.response?.data?.message || 'Failed to queue order');
+      }
+    }
+  };
+
+  // Log checkout details whenever they change
+  useEffect(() => {
+    if (checkoutDetails) {
+      console.log('Checkout details updated in POS page:', checkoutDetails);
+    }
+  }, [checkoutDetails]);
+
+  // Save checkout details to localStorage
+  const onSaveCheckoutDetails = (details: any) => {
+    console.log('Saving checkout details to localStorage:', details);
+    try {
+      // Store in localStorage
+      localStorage.setItem('checkoutDetails', JSON.stringify(details));
+      
+      // Use a ref to compare if the details have actually changed
+      // before updating state to prevent infinite loops
+      const prevDetails = checkoutDetailsRef.current;
+      
+      // Only update state if the details have actually changed in a meaningful way
+      // Perform a more selective comparison that ignores fields that might change frequently
+      const shouldUpdate = !prevDetails || 
+        // Compare customer details
+        prevDetails.customerDetails?.name !== details.customerDetails?.name ||
+        prevDetails.customerDetails?.email !== details.customerDetails?.email ||
+        prevDetails.customerDetails?.phone !== details.customerDetails?.phone ||
+        // Compare delivery method
+        prevDetails.deliveryMethod !== details.deliveryMethod ||
+        // Compare payment details
+        prevDetails.paymentMethod !== details.paymentMethod ||
+        prevDetails.paymentReference !== details.paymentReference ||
+        // Compare gift details
+        prevDetails.giftDetails?.isGift !== details.giftDetails?.isGift ||
+        prevDetails.giftDetails?.recipientName !== details.giftDetails?.recipientName ||
+        // Compare delivery details (only important fields)
+        prevDetails.deliveryDetails?.streetAddress !== details.deliveryDetails?.streetAddress ||
+        prevDetails.deliveryDetails?.emirate !== details.deliveryDetails?.emirate ||
+        prevDetails.deliveryDetails?.city !== details.deliveryDetails?.city;
+      
+      if (shouldUpdate) {
+        console.log('Updating checkout details state with new values');
+        checkoutDetailsRef.current = details;
+        setCheckoutDetails(details);
+      } else {
+        console.log('Skipping checkout details state update - no meaningful changes');
+      }
+    } catch (error) {
+      console.error('Error saving checkout details to localStorage:', error);
+    }
+  };
+
   // If still loading or no user, show loading state
   if (authLoading || !user) {
     return (
@@ -387,7 +675,7 @@ export default function POSPage() {
 
   return (
     <div className="min-h-screen bg-white text-black">
-      <Header />
+      <Header title="Point of Sale" />
       
       <div className="flex h-[calc(100vh-3.5rem)]">
         {/* Left side - Products */}
@@ -628,6 +916,24 @@ export default function POSPage() {
               <span className="font-medium">Total</span>
               <span className="font-medium">{`AED ${cartTotal.toFixed(2)}`}</span>
             </div>
+            
+            <div className="grid grid-cols-2 gap-2 mb-3">
+              <button
+                disabled={cart.length === 0}
+                onClick={() => setIsQueueModalOpen(true)}
+                className="py-2 bg-gray-200 text-gray-800 rounded-lg disabled:opacity-50 hover:bg-gray-300 transition-colors"
+              >
+                Queue Order
+              </button>
+              <button
+                onClick={() => router.push('/pos/queued-orders')}
+                className="py-2 flex items-center justify-center bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition-colors"
+              >
+                <ListOrdered className="h-4 w-4 mr-1" />
+                <span>Queued Orders ({queuedOrders.length})</span>
+              </button>
+            </div>
+            
             <button
               disabled={cart.length === 0}
               onClick={() => setIsCheckoutModalOpen(true)}
@@ -651,11 +957,35 @@ export default function POSPage() {
 
       <CheckoutModal
         isOpen={isCheckoutModalOpen}
-        onClose={() => setIsCheckoutModalOpen(false)}
+        onClose={() => {
+          setIsCheckoutModalOpen(false);
+          setCheckoutDetails(null);
+          localStorage.removeItem('pos-checkout-details');
+        }}
         cart={cart}
         setCart={setCart}
         cartTotal={cartTotal}
         onCheckoutComplete={handleCheckoutComplete}
+        onQueueOrder={(details) => {
+          setCheckoutDetails(details);
+          setIsCheckoutModalOpen(false);
+          setIsQueueModalOpen(true);
+        }}
+        onSaveCheckoutDetails={onSaveCheckoutDetails}
+        customerDetails={checkoutDetails?.customerDetails}
+        deliveryMethod={checkoutDetails?.deliveryMethod}
+        deliveryDetails={checkoutDetails?.deliveryDetails}
+        pickupDetails={checkoutDetails?.pickupDetails}
+        giftDetails={checkoutDetails?.giftDetails}
+        paymentMethod={checkoutDetails?.paymentMethod}
+        paymentReference={checkoutDetails?.paymentReference}
+      />
+      
+      <QueueOrderModal
+        isOpen={isQueueModalOpen}
+        onClose={() => setIsQueueModalOpen(false)}
+        onQueueOrder={handleQueueOrder}
+        checkoutDetails={checkoutDetails}
       />
     </div>
   );

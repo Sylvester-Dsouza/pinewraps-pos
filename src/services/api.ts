@@ -4,6 +4,7 @@ import axios from 'axios';
 import { getAuth, signInWithEmailAndPassword } from 'firebase/auth';
 import Cookies from 'js-cookie';
 import { nanoid } from 'nanoid';
+import { CartItem, CustomImage } from '@/types/cart';
 
 const baseURL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
@@ -53,14 +54,14 @@ api.interceptors.response.use(
             sameSite: 'strict'
           });
           
-          // Retry the original request with new token
+          // Retry the request with new token
           const originalRequest = error.config;
           originalRequest.headers['Authorization'] = `Bearer ${token}`;
           
           // Update token in body for verify endpoint
           if (originalRequest.url?.includes('/api/auth/verify') && originalRequest.method === 'post') {
             originalRequest.data = {
-              ...originalRequest.data,
+              ...JSON.parse(originalRequest.data || '{}'),
               token: token
             };
           }
@@ -69,8 +70,16 @@ api.interceptors.response.use(
         } catch (refreshError) {
           console.error('Token refresh failed:', refreshError);
           // If refresh fails, redirect to login
+          if (typeof window !== 'undefined') {
+            Cookies.remove('firebase-token');
+            window.location.href = '/login';
+          }
+        }
+      } else {
+        // No user, redirect to login
+        if (typeof window !== 'undefined') {
+          Cookies.remove('firebase-token');
           window.location.href = '/login';
-          return Promise.reject(refreshError);
         }
       }
     }
@@ -179,17 +188,35 @@ export interface ProductImage {
   isPrimary: boolean;
 }
 
-export interface CustomImage {
-  file?: File;
-  url?: string;
-  previewUrl?: string;
-  comment: string;
-}
+export type OrderCustomImage = CustomImage;
 
-export interface OrderCustomImage {
-  url: string;
-  comment?: string;
-}
+export type PosQueuedOrder = {
+  id: string;
+  name: string | null;
+  items: CartItem[];
+  customer: any | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+  createdById: string;
+  totalAmount: number;
+  customerName?: string;
+  customerPhone?: string;
+  customerEmail?: string;
+  deliveryMethod?: 'PICKUP' | 'DELIVERY';
+  deliveryDetails?: any;
+  pickupDetails?: any;
+  giftDetails?: any;
+  addressDetails?: any;
+  orderSummary?: {
+    products: Array<{
+      productName: string;
+      quantity: number;
+      price: number;
+    }>;
+    total: number;
+  };
+};
 
 export interface Product {
   id: string;
@@ -242,14 +269,24 @@ export type POSOrderStatus =
   | "COMPLETED";
 
 export interface POSOrderItemData {
+  id: string;
   productId: string;
   productName: string;
   unitPrice: number;
-  totalPrice?: number;
-  quantity?: number;
-  variations?: Record<string, any>;
+  quantity: number;
+  totalPrice: number;
+  images?: string[];
+  allowCustomPrice?: boolean;
+  allowCustomImages?: boolean;
+  selectedVariations?: Array<{
+    id: string;
+    type: string;
+    value: string;
+    price: number;
+  }>;
   notes?: string;
   customImages?: OrderCustomImage[];
+  metadata?: any;
 }
 
 export interface POSOrderData {
@@ -259,8 +296,6 @@ export interface POSOrderData {
   customerPhone?: string;
   customerEmail?: string;
   paymentReference?: string;
-  requiresKitchen?: boolean;
-  requiresDesign?: boolean;
   status?: POSOrderStatus;
   expectedReadyTime?: Date;
   deliveryMethod: 'PICKUP' | 'DELIVERY';
@@ -308,7 +343,20 @@ export const apiMethods = {
     getProduct: (id: string) =>
       api.get<APIResponse<Product>>(`/api/products/public/${id}`),
     getProductBySlug: (slug: string) =>
-      api.get<APIResponse<Product>>(`/api/products/public/${slug}`)
+      api.get<APIResponse<Product>>(`/api/products/public/${slug}`),
+    getProductsByIds: async (ids: string[]) => {
+      try {
+        const response = await api.post<APIResponse<Product[]>>('/api/products/public/batch', { ids });
+        return response.data;
+      } catch (error: any) {
+        console.error('Error fetching products by IDs:', error);
+        return {
+          success: false,
+          message: error.message || 'Failed to fetch products',
+          data: []
+        };
+      }
+    }
   },
   orders: {
     createOrder: (orderData: {
@@ -375,6 +423,69 @@ export const apiMethods = {
         console.error('Error fetching products:', error);
         throw error;
       }
+    },
+    
+    // Queue order related endpoints
+    queueOrder(orderData: { 
+      items: any[]; 
+      name?: string; 
+      customer?: any; 
+      customerName?: string;
+      customerEmail?: string;
+      customerPhone?: string;
+      notes?: string; 
+      totalAmount: number;
+      deliveryMethod?: 'PICKUP' | 'DELIVERY';
+      deliveryDetails?: {
+        date: string;
+        timeSlot: string;
+        instructions: string;
+        streetAddress: string;
+        apartment: string;
+        emirate: string;
+        city: string;
+        charge: number;
+      };
+      pickupDetails?: {
+        date: string;
+        timeSlot: string;
+      };
+      giftDetails?: {
+        isGift: boolean;
+        recipientName: string;
+        recipientPhone: string;
+        message: string;
+        note: string;
+        cashAmount: number;
+        includeCash: boolean;
+      };
+      orderSummary?: {
+        totalItems: number;
+        products: {
+          productName: string;
+          quantity: number;
+          price: number;
+        }[];
+        totalAmount: number;
+      };
+    }): Promise<APIResponse<any>> {
+      return api.post('/api/pos/queue', orderData)
+        .then(response => response.data);
+    },
+    
+    getQueuedOrders(): Promise<APIResponse<any[]>> {
+      return api.get('/api/pos/queue')
+        .then(response => response.data);
+    },
+    
+    getQueuedOrderById(id: string): Promise<APIResponse<any>> {
+      return api.get(`/api/pos/queue/${id}`)
+        .then(response => response.data);
+    },
+    
+    deleteQueuedOrder(id: string): Promise<APIResponse<any>> {
+      return api.delete(`/api/pos/queue/${id}`)
+        .then(response => response.data);
     },
     
     // Upload custom images

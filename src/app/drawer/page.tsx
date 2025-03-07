@@ -201,192 +201,126 @@ export default function DrawerPage() {
     router.push('/pos');
   };
 
-  const handleConnect = async () => {
+  const handleConnectDrawer = async (drawer: CashDrawer) => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    
     try {
-      setIsLoading(true);
-      setErrorMessage(null);
-      
-      // If a drawer is selected, connect to it
-      if (selectedDrawer) {
-        const result = await hardwareServiceInstance.connectDrawer(selectedDrawer.id);
-        
-        if (result.success) {
-          toast({
-            title: 'Success',
-            description: `Connected to ${selectedDrawer.name}`,
-          });
-        } else {
-          const errorMsg = result.error || `Failed to connect to ${selectedDrawer.name}`;
-          setErrorMessage(errorMsg);
-          toast({
-            title: 'Connection Error',
-            description: errorMsg,
-            variant: 'destructive',
-          });
-        }
+      // For our simplified approach, we only support printer-connected drawers
+      if (drawer.connectionType !== 'PRINTER') {
+        toast({
+          variant: "destructive",
+          title: "Unsupported Drawer Type",
+          description: "Only printer-connected drawers are supported",
+        });
         setIsLoading(false);
         return;
       }
       
-      // Otherwise connect to the selected port
-      if (!selectedPort) {
-        toast({
-          title: 'Error',
-          description: 'Please select a port or a drawer',
-          variant: 'destructive',
-        });
-        setIsLoading(false);
-        return;
-      }
-
-      const result = await hardwareServiceInstance.connectDrawer(selectedPort);
-      
-      if (result.success) {
-        toast({
-          title: 'Success',
-          description: 'Connected to drawer',
-        });
-      } else {
-        const errorMsg = result.error || 'Failed to connect to drawer';
-        setErrorMessage(errorMsg);
-        toast({
-          title: 'Connection Error',
-          description: errorMsg,
-          variant: 'destructive',
-        });
-      }
-    } catch (err) {
-      console.error('Unexpected error during connection:', err);
-      const errorMsg = err.message || 'An unexpected error occurred';
-      setErrorMessage(errorMsg);
-      toast({
-        title: 'Connection Error',
-        description: errorMsg,
-        variant: 'destructive',
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleConnectUsbDrawer = async () => {
-    if (!selectedPort) {
-      toast({
-        title: "Error",
-        description: "Please select a port to connect",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    try {
-      setIsLoading(true);
-      const result = await hardwareServiceInstance.connectDrawer(selectedPort);
+      const result = await hardwareServiceInstance.openCashDrawer(drawer.id);
       
       if (result.success) {
         toast({
           title: "Success",
-          description: "Connected to drawer on port " + selectedPort,
+          description: `Cash drawer ${drawer.name} opened successfully`,
         });
-        loadDrawers();
       } else {
         toast({
-          title: "Error",
+          variant: "destructive",
+          title: "Connection Failed",
           description: result.error || "Failed to connect to drawer",
-          variant: "destructive"
         });
       }
     } catch (error) {
       console.error('Error connecting drawer:', error);
       toast({
+        variant: "destructive",
         title: "Error",
-        description: "Failed to connect to drawer",
-        variant: "destructive"
+        description: error.message || "An unexpected error occurred",
       });
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleOpenDrawer = async () => {
-    if (!selectedDrawer) {
-      toast({
-        title: "Error",
-        description: "No drawer selected",
-        variant: "destructive"
-      });
-      return;
-    }
-    
-    // Check if this drawer is connected to a printer and has proper configuration
-    if (selectedDrawer.connectionType === 'PRINTER' && !selectedDrawer.printerId) {
-      toast({
-        title: "Error",
-        description: "This drawer is configured to use a printer but no printer is connected",
-        variant: "destructive"
-      });
-      return;
-    }
+  const handleOpenDrawer = async (drawer: CashDrawer) => {
+    setIsDrawerOpening(true);
+    setErrorMessage(null);
     
     try {
-      setIsDrawerOpening(true);
-      console.log('Opening drawer with ID:', selectedDrawer.id);
-      console.log('Drawer details:', JSON.stringify(selectedDrawer));
+      // For our simplified approach, we only support printer-connected drawers
+      if (drawer.connectionType !== 'PRINTER') {
+        toast({
+          variant: "destructive",
+          title: "Unsupported Drawer Type",
+          description: "Only printer-connected drawers are supported",
+        });
+        setIsDrawerOpening(false);
+        return;
+      }
       
-      const response = await hardwareServiceInstance.openCashDrawer(selectedDrawer.id);
+      const result = await hardwareServiceInstance.openCashDrawer(drawer.id);
       
-      console.log('Open drawer response:', response);
-      
-      if (response.success) {
+      if (result.success) {
         toast({
           title: "Success",
-          description: "Cash drawer opened successfully",
+          description: `Cash drawer ${drawer.name} opened successfully`,
         });
-        
-        // Refresh the drawer list to update status
-        const updatedDrawers = await hardwareServiceInstance.listCashDrawers();
-        setDrawers(updatedDrawers);
-        
-        // Update the selected drawer with the new connection status
-        const updatedSelectedDrawer = updatedDrawers.find(d => d.id === selectedDrawer.id);
-        if (updatedSelectedDrawer) {
-          setSelectedDrawer(updatedSelectedDrawer);
-        }
       } else {
-        // Show detailed error notification with troubleshooting hints
-        let errorMessage = response.details || "Failed to open cash drawer";
-        let troubleshootingTip = "";
-        
-        if (selectedDrawer.connectionType === 'PRINTER') {
-          troubleshootingTip = `
-          Try these steps:
-          1. Make sure the printer is powered on
-          2. Check that the printer is connected to the network
-          3. Verify the IP address (${selectedDrawer.printer?.ipAddress || 'not set'})
-          4. Ensure the cash drawer is properly connected to the printer
-          `;
-        }
-        
         toast({
-          title: "Error",
-          description: errorMessage + (troubleshootingTip ? "\n\n" + troubleshootingTip : ""),
-          variant: "destructive"
+          variant: "destructive",
+          title: "Failed to Open Drawer",
+          description: result.error || "Failed to open drawer",
         });
       }
     } catch (error) {
-      console.error("Error opening cash drawer:", error);
-      
-      // Get detailed error message if available
-      let errorMessage = "Failed to open cash drawer";
-      if (error.response && error.response.data) {
-        errorMessage = error.response.data.details || error.response.data.error || errorMessage;
-        console.log('Error response data:', error.response.data);
+      console.error('Error opening drawer:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "An unexpected error occurred",
+      });
+    } finally {
+      setIsDrawerOpening(false);
+    }
+  };
+
+  const handlePrintReceiptAndOpenDrawer = async (drawer: CashDrawer) => {
+    setIsDrawerOpening(true);
+    setErrorMessage(null);
+    
+    try {
+      // For our simplified approach, we only support printer-connected drawers
+      if (drawer.connectionType !== 'PRINTER') {
+        toast({
+          variant: "destructive",
+          title: "Unsupported Drawer Type",
+          description: "Only printer-connected drawers are supported",
+        });
+        setIsDrawerOpening(false);
+        return;
       }
       
+      const result = await hardwareServiceInstance.printReceiptAndOpenDrawer(drawer.id);
+      
+      if (result.success) {
+        toast({
+          title: "Success",
+          description: `Receipt printed and cash drawer ${drawer.name} opened successfully`,
+        });
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Failed to Print Receipt and Open Drawer",
+          description: result.error || "Failed to print receipt and open drawer",
+        });
+      }
+    } catch (error) {
+      console.error('Error printing receipt and opening drawer:', error);
       toast({
+        variant: "destructive",
         title: "Error",
-        description: errorMessage,
-        variant: "destructive"
+        description: error.message || "An unexpected error occurred",
       });
     } finally {
       setIsDrawerOpening(false);
@@ -690,7 +624,7 @@ export default function DrawerPage() {
       <div className="space-y-4">
         <Card>
           <CardHeader>
-            <CardTitle>Cash Drawer Connection</CardTitle>
+            <CardTitle>Connected Drawers</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
@@ -753,7 +687,7 @@ export default function DrawerPage() {
                 
                 <div className="flex items-center space-x-2">
                   <Button 
-                    onClick={handleConnect} 
+                    onClick={() => handleConnectDrawer(selectedDrawer)} 
                     disabled={isLoading || !selectedDrawer}
                     className="w-full md:w-auto"
                   >
@@ -761,7 +695,7 @@ export default function DrawerPage() {
                   </Button>
                   
                   <Button 
-                    onClick={handleOpenDrawer} 
+                    onClick={() => handleOpenDrawer(selectedDrawer)} 
                     disabled={isLoading || isDrawerOpening || !selectedDrawer}
                     variant="secondary"
                     className="w-full md:w-auto"
@@ -776,6 +710,25 @@ export default function DrawerPage() {
                       </>
                     ) : (
                       'Open Drawer'
+                    )}
+                  </Button>
+                  
+                  <Button 
+                    onClick={() => handlePrintReceiptAndOpenDrawer(selectedDrawer)} 
+                    disabled={isLoading || isDrawerOpening || !selectedDrawer}
+                    variant="default"
+                    className="w-full md:w-auto"
+                  >
+                    {isDrawerOpening ? (
+                      <>
+                        <svg className="mr-2 h-4 w-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Processing...
+                      </>
+                    ) : (
+                      'Print & Open'
                     )}
                   </Button>
                   

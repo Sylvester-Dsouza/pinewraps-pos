@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { X, Upload } from 'lucide-react';
 import Image from 'next/image';
-import { CustomImage } from '@/services/api';
+import { CustomImage } from '@/types/cart';
 
 interface ImageUploadProps {
   onChange: (images: CustomImage[]) => void;
@@ -17,6 +17,7 @@ export default function ImageUpload({ onChange, value }: ImageUploadProps) {
   // Update images when value prop changes
   useEffect(() => {
     if (value) {
+      console.log('ImageUpload received value:', value);
       setImages(value);
     }
   }, [value]);
@@ -24,17 +25,29 @@ export default function ImageUpload({ onChange, value }: ImageUploadProps) {
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || []);
     
+    if (files.length === 0) return;
+    
+    console.log(`Selected ${files.length} new files for upload`);
+    
     // Create preview URLs for new images
     const newImages = files.map(file => ({
+      id: Math.random().toString(36).substring(2, 15),
       file,
       previewUrl: URL.createObjectURL(file),
+      url: '',
       comment: ''
     }));
 
     // Update state and notify parent in a single update
     const updatedImages = [...images, ...newImages];
+    console.log('Updated images array:', updatedImages);
     setImages(updatedImages);
     onChange(updatedImages);
+    
+    // Reset the file input to allow selecting the same file again
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
   };
 
   const handleRemoveImage = (index: number) => {
@@ -76,7 +89,7 @@ export default function ImageUpload({ onChange, value }: ImageUploadProps) {
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-4">
         {images.map((image, index) => (
-          <div key={index} className="relative">
+          <div key={image.id} className="relative">
             <div className="aspect-square relative rounded-lg overflow-hidden bg-gray-100">
               <Image
                 src={image.previewUrl || image.url || ''}
@@ -106,12 +119,15 @@ export default function ImageUpload({ onChange, value }: ImageUploadProps) {
       <button
         type="button"
         onClick={() => fileInputRef.current?.click()}
-        className="w-full py-3 px-4 border-2 border-dashed border-gray-300 rounded-lg hover:border-gray-400 focus:outline-none focus:border-gray-400 transition-colors"
+        className="w-full py-4 px-4 border-2 border-dashed border-gray-300 rounded-lg hover:border-gray-400 hover:bg-gray-100 focus:outline-none focus:border-blue-400 transition-colors"
       >
         <div className="flex flex-col items-center">
-          <Upload className="h-6 w-6 text-gray-400" />
-          <span className="mt-2 text-sm font-medium text-gray-600">
-            Click to upload design images
+          <Upload className="h-8 w-8 text-blue-500" />
+          <span className="mt-2 text-sm font-medium text-gray-700">
+            Click to upload images
+          </span>
+          <span className="mt-1 text-xs text-gray-500">
+            JPG, PNG, or GIF files accepted
           </span>
         </div>
       </button>

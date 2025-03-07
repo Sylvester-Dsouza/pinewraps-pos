@@ -121,31 +121,42 @@ export function NetworkDrawerManager() {
     try {
       setIsLoading(true);
       setErrorMessage(null);
-      const response = await hardwareService.openDrawer(drawer.id);
       
-      if (response.success) {
+      // For our simplified approach, we only support printer-connected drawers
+      if (drawer.connectionType !== 'PRINTER') {
+        toast({
+          variant: "destructive",
+          title: "Unsupported Drawer Type",
+          description: "Only printer-connected drawers are supported",
+        });
+        setIsLoading(false);
+        return;
+      }
+      
+      const result = await hardwareService.openCashDrawer(drawer.id);
+      
+      if (result.success) {
         toast({
           title: "Success",
           description: `Cash drawer ${drawer.name} opened successfully`,
         });
       } else {
-        setErrorMessage(response.error || 'Failed to open cash drawer');
         toast({
           variant: "destructive",
-          title: "Failed to Open",
-          description: response.error || "Failed to open cash drawer",
+          title: "Failed to Open Drawer",
+          description: result.error || "Failed to open drawer",
         });
       }
-      setIsLoading(false);
     } catch (error) {
       console.error('Error opening drawer:', error);
-      setIsLoading(false);
       setErrorMessage(error.message || 'Failed to open cash drawer');
       toast({
         variant: "destructive",
         title: "Error",
-        description: error.message || "An error occurred while opening cash drawer",
+        description: error.message || "An unexpected error occurred",
       });
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -279,23 +290,21 @@ export function NetworkDrawerManager() {
   };
 
   const handleConfirmDeleteDrawer = (drawer: CashDrawer) => {
-    setSelectedDrawer(drawer);
-    setShowDeleteConfirm(true);
+    if (confirm(`Are you sure you want to delete ${drawer.name}?`)) {
+      handleDeleteDrawer(drawer);
+    }
   };
 
-  const handleDeleteDrawer = async () => {
-    if (!selectedDrawer) return;
-    
+  const handleDeleteDrawer = async (drawer: CashDrawer) => {
     try {
       setIsLoading(true);
-      const response = await hardwareService.deleteCashDrawer(selectedDrawer.id);
+      const response = await hardwareService.deleteCashDrawer(drawer.id);
       
       if (response.success) {
         toast({
           title: "Deleted",
-          description: `Cash drawer ${selectedDrawer.name} deleted successfully`,
+          description: `Cash drawer ${drawer.name} deleted successfully`,
         });
-        setShowDeleteConfirm(false);
         await loadDrawers();
       } else {
         setErrorMessage(response.error || 'Failed to delete cash drawer');
@@ -354,12 +363,6 @@ export function NetworkDrawerManager() {
                       <div>
                         <h3 className="text-lg font-semibold">{drawer.name}</h3>
                         <p className="text-sm text-gray-500">Connection: {drawer.connectionType}</p>
-                        {drawer.connectionType === 'NETWORK' && (
-                          <p className="text-sm text-gray-500">Network: {drawer.ipAddress}:{drawer.port}</p>
-                        )}
-                        {drawer.connectionType === 'SERIAL' && (
-                          <p className="text-sm text-gray-500">Serial: {drawer.serialPath}</p>
-                        )}
                         {drawer.connectionType === 'PRINTER' && drawer.printer && (
                           <p className="text-sm text-gray-500">Printer: {drawer.printer.name}</p>
                         )}
@@ -374,9 +377,6 @@ export function NetworkDrawerManager() {
                       </div>
                     </div>
                     <div className="flex mt-4 space-x-2">
-                      <Button variant="secondary" size="sm" onClick={() => handleConnectDrawer(drawer)} disabled={isLoading}>
-                        Connect
-                      </Button>
                       <Button size="sm" onClick={() => handleOpenDrawer(drawer)} disabled={isLoading}>
                         Open Drawer
                       </Button>

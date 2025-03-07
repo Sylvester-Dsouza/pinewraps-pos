@@ -10,11 +10,7 @@ import { format, formatDistanceToNow } from "date-fns";
 import Lightbox from "yet-another-react-lightbox";
 import "yet-another-react-lightbox/styles.css";
 import Image from 'next/image';
-
-interface CustomImage {
-  url?: string;
-  comment?: string;
-}
+import { CustomImage } from '@/types/cart';
 
 interface VariationOption {
   name: string;
