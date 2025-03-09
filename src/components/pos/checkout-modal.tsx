@@ -1,16 +1,20 @@
 "use client";
 
-import { Fragment, useState, useEffect, useRef, useCallback } from "react";
+import { Fragment, useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Dialog, Transition } from "@headlessui/react";
 import { X, Minus, Plus, Trash, Search, ShoppingCart, Upload, Camera, User, MapPin, ListOrdered } from "lucide-react";
-import { toast } from "react-hot-toast";
-import { apiMethods, type POSOrderData, type POSOrderStatus } from "@/services/api";
+import { toast } from "@/lib/toast-utils";
+import { apiMethods } from "@/services/api";
+import { POSOrderData, POSOrderItemData, POSOrderStatus, POSPaymentMethod, POSPaymentStatus, DeliveryMethod } from "@/types/order";
+import { nanoid } from 'nanoid';
 import Image from "next/image";
 import ImageUpload from "./custom-images/image-upload";
 import { useAuth } from "@/providers/auth-provider";
 import debounce from 'lodash/debounce';
-import { CartItem, CustomImage } from "@/types/cart";
-import { nanoid } from 'nanoid';
+import { CartItem, CustomImage, SelectedVariation } from "@/types/cart";
+import Cookies from 'js-cookie';
+import { useRouter } from 'next/navigation';
+import crypto from 'crypto';
 
 interface CustomerAddress {
   id: string;
@@ -36,72 +40,27 @@ interface Customer {
   };
 }
 
+interface Payment {
+  id: string;
+  amount: number;
+  method: POSPaymentMethod;
+  reference?: string | null;
+  status: POSPaymentStatus;
+  metadata: {
+    source: 'POS';
+    cashAmount?: string;
+    changeAmount?: string;
+    futurePaymentMethod?: POSPaymentMethod;
+  };
+}
+
 interface CheckoutDetails {
   customerDetails: {
     name: string;
     email: string;
     phone: string;
   };
-  deliveryMethod: 'PICKUP' | 'DELIVERY';
-  deliveryDetails: {
-    date: string;
-    timeSlot: string;
-    instructions: string;
-    streetAddress: string;
-    apartment: string;
-    emirate: string;
-    city: string;
-    charge: number;
-  };
-  pickupDetails: {
-    date: string;
-    timeSlot: string;
-  };
-  giftDetails: {
-    isGift: boolean;
-    recipientName: string;
-    recipientPhone: string;
-    message: string;
-    note: string;
-    cashAmount: number;
-    includeCash: boolean;
-  };
-  paymentMethod: 'CASH' | 'CARD';
-  paymentReference: string;
-  orderSummary: {
-    totalItems: number;
-    products: {
-      id: string;
-      productId: string;
-      productName: string;
-      quantity: number;
-      price: number;
-      unitPrice: number;
-      sku: string;
-      requiresKitchen: boolean;
-      requiresDesign: boolean;
-      hasVariations: boolean;
-      hasCustomImages: boolean;
-    }[];
-    totalAmount: number;
-  };
-}
-
-interface CheckoutModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  cart: CartItem[];
-  setCart: (cart: CartItem[]) => void;
-  cartTotal: number;
-  onCheckoutComplete?: (checkoutDetails: CheckoutDetails) => void;
-  onQueueOrder?: (checkoutDetails: CheckoutDetails) => void;
-  onSaveCheckoutDetails?: (checkoutDetails: CheckoutDetails) => void;
-  customerDetails?: {
-    name: string;
-    email: string;
-    phone: string;
-  };
-  deliveryMethod?: 'PICKUP' | 'DELIVERY';
+  deliveryMethod: DeliveryMethod;
   deliveryDetails?: {
     date: string;
     timeSlot: string;
@@ -122,11 +81,105 @@ interface CheckoutModalProps {
     recipientPhone: string;
     message: string;
     note: string;
-    cashAmount: number;
+    cashAmount: string;
     includeCash: boolean;
   };
-  paymentMethod?: 'CASH' | 'CARD';
+  payments: Payment[];
+  paymentMethod: POSPaymentMethod;
+  paymentReference: string;
+  orderSummary: {
+    totalItems: number;
+    totalAmount: number;
+    products: {
+      id: string;
+      productId: string;
+      name: string;
+      quantity: number;
+      price: number;
+      unitPrice: number;
+      sku: string;
+      requiresKitchen: boolean;
+      requiresDesign: boolean;
+      hasVariations?: boolean;
+      hasCustomImages?: boolean;
+    }[];
+  };
+}
+
+interface CheckoutModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  cart: CartItem[];
+  setCart: (cart: CartItem[]) => void;
+  cartTotal: number;
+  onCheckoutComplete?: (checkoutDetails: CheckoutDetails) => void;
+  onQueueOrder?: (checkoutDetails: CheckoutDetails) => void;
+  onSaveCheckoutDetails?: (checkoutDetails: CheckoutDetails) => void;
+  customerDetails?: {
+    name: string;
+    email: string;
+    phone: string;
+  };
+  deliveryMethod?: DeliveryMethod;
+  deliveryDetails?: {
+    date: string;
+    timeSlot: string;
+    instructions: string;
+    streetAddress: string;
+    apartment: string;
+    emirate: string;
+    city: string;
+    charge: number;
+  };
+  pickupDetails?: {
+    date: string;
+    timeSlot: string;
+  };
+  giftDetails?: {
+    isGift: boolean;
+    recipientName: string;
+    recipientPhone: string;
+    message: string;
+    note: string;
+    cashAmount: string;
+    includeCash: boolean;
+  };
+  payments?: Payment[];
+  paymentMethod?: POSPaymentMethod;
   paymentReference?: string;
+  orderName?: string; 
+}
+
+interface OrderData {
+  items: (POSOrderItemData & { customImages?: CustomImage[] })[];
+  payments: Payment[];
+  customer?: Customer;
+  giftDetails?: {
+    isGift: boolean;
+    recipientName: string;
+    recipientPhone: string;
+    message: string;
+    note: string;
+    cashAmount: string;
+    includeCash: boolean;
+  };
+  orderSummary: {
+    totalItems: number;
+    totalAmount: number;
+    products: {
+      id: string;
+      productId: string;
+      name: string;
+      quantity: number;
+      price: number;
+      unitPrice: number;
+      sku: string;
+      requiresKitchen: boolean;
+      requiresDesign: boolean;
+      hasVariations?: boolean;
+      hasCustomImages?: boolean;
+    }[];
+  };
 }
 
 export default function CheckoutModal({
@@ -143,34 +196,49 @@ export default function CheckoutModal({
   deliveryDetails,
   pickupDetails,
   giftDetails,
+  payments,
   paymentMethod,
-  paymentReference
+  paymentReference,
+  orderName
 }: CheckoutModalProps) {
-  const { refreshToken } = useAuth();
+  const { user } = useAuth();
+  const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [paymentMethodState, setPaymentMethodState] = useState<'CASH' | 'CARD'>('CASH');
-  const [paymentReferenceState, setPaymentReferenceState] = useState('');
+  const [isQueuingOrder, setIsQueuingOrder] = useState(false);
   const [teamSelection, setTeamSelection] = useState<'KITCHEN' | 'DESIGN' | 'BOTH'>('KITCHEN');
-  const [deliveryMethodState, setDeliveryMethodState] = useState<'PICKUP' | 'DELIVERY'>('PICKUP');
+  const [deliveryMethodState, setDeliveryMethodState] = useState<DeliveryMethod>(
+    deliveryMethod && Object.values(DeliveryMethod).includes(deliveryMethod) 
+      ? deliveryMethod 
+      : DeliveryMethod.PICKUP
+  );
   const [customerDetailsState, setCustomerDetailsState] = useState({
-    name: "",
-    email: "",
-    phone: "",
+    name: customerDetails?.name || "",
+    email: customerDetails?.email || "",
+    phone: customerDetails?.phone || "",
   });
   const [giftDetailsState, setGiftDetailsState] = useState({
-    isGift: false,
-    recipientName: '',
-    recipientPhone: '',
-    message: '',
-    note: '',
-    cashAmount: 0,
-    includeCash: false
+    isGift: giftDetails?.isGift || false,
+    recipientName: giftDetails?.recipientName || '',
+    recipientPhone: giftDetails?.recipientPhone || '',
+    message: giftDetails?.message || '',
+    note: giftDetails?.note || '',
+    cashAmount: giftDetails?.cashAmount || '0',
+    includeCash: giftDetails?.includeCash || false
   });
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
-  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searchResults, setSearchResults] = useState<Array<{
+    id: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+    phone: string;
+    reward: {
+      points: number;
+    };
+  }>>([]);
   const [showSearchResults, setShowSearchResults] = useState(false);
-  const searchRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef(null);
   const [deliveryDetailsState, setDeliveryDetailsState] = useState({
     date: "",
     timeSlot: "",
@@ -186,24 +254,834 @@ export default function CheckoutModal({
     timeSlot: "",
   });
   const [orderItems, setOrderItems] = useState<Array<{
-    productId?: string;
-    productName: string;
+    productId: string;
+    name: string;
     quantity: number;
     unitPrice: number;
     totalPrice: number;
-    variations: any;
+    variations: Record<string, any>;
     requiresDesign: boolean;
     designDetails?: string;
     kitchenNotes?: string;
     customImages?: CustomImage[];
   }>>([]);
-  const [selectedCustomer, setSelectedCustomer] = useState<any | null>(null);
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [customerAddresses, setCustomerAddresses] = useState<CustomerAddress[]>([]);
   const [selectedAddress, setSelectedAddress] = useState<CustomerAddress | null>(null);
   const [couponCode, setCouponCode] = useState('');
   const [isValidatingCoupon, setIsValidatingCoupon] = useState(false);
   const [couponError, setCouponError] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState(null);
+  const [orderNameState, setOrderNameState] = useState(orderName || "");
+  const [orderNotes, setOrderNotes] = useState("");
+  const [isGiftState, setIsGiftState] = useState(giftDetails?.isGift || false);
+
+  // Payment state
+  const [showRemainingPaymentModal, setShowRemainingPaymentModal] = useState(false);
+  const [showSplitPaymentModal, setShowSplitPaymentModal] = useState(false);
+  const [currentPaymentMethodState, setCurrentPaymentMethodState] = useState<POSPaymentMethod>(POSPaymentMethod.CASH);
+  const [currentPaymentReferenceState, setCurrentPaymentReferenceState] = useState('');
+  const [currentPaymentAmountState, setCurrentPaymentAmountState] = useState('');
+  const [isPartialPaymentState, setIsPartialPaymentState] = useState(false);
+  const [isSplitPaymentState, setIsSplitPaymentState] = useState(false);
+  const [splitCashAmount, setSplitCashAmount] = useState('');
+  const [splitCardAmount, setSplitCardAmount] = useState('');
+  const [splitCardReference, setSplitCardReference] = useState('');
+  const [paymentsState, setPaymentsState] = useState<Payment[]>([]);
+
+  // Payment utility functions
+  const calculateTotalPaid = useCallback(() => {
+    return paymentsState.reduce((total, payment) => total + payment.amount, 0);
+  }, [paymentsState]);
+
+  const calculateRemainingAmount = useCallback(() => {
+    const totalPaid = calculateTotalPaid();
+    return Math.max(0, cartTotal - totalPaid);
+  }, [cartTotal, calculateTotalPaid]);
+
+  // Calculate final total including discounts and delivery
+  const calculateFinalTotal = useCallback(() => {
+    let total = cartTotal;
+
+    // Apply coupon discount if available
+    if (appliedCoupon) {
+      total -= appliedCoupon.discount;
+    }
+
+    // Add delivery charge if applicable
+    if (deliveryMethod === DeliveryMethod.DELIVERY && deliveryDetails?.charge) {
+      total += deliveryDetails.charge;
+    }
+
+    return Math.max(0, total); // Ensure total is not negative
+  }, [cartTotal, appliedCoupon, deliveryMethod, deliveryDetails]);
+
+  // Validate order details before proceeding
+  const validateOrderDetails = useCallback(() => {
+    // Basic cart validation
+    if (cart.length === 0) {
+      toast.error('Cart is empty');
+      return false;
+    }
+
+    // Validate delivery details
+    if (deliveryMethod === DeliveryMethod.DELIVERY) {
+      if (!deliveryDetails?.date) {
+        toast.error('Please select a delivery date');
+        return false;
+      }
+      if (!deliveryDetails?.timeSlot) {
+        toast.error('Please select a delivery time slot');
+        return false;
+      }
+      if (!deliveryDetails?.emirate) {
+        toast.error('Please select a delivery emirate');
+        return false;
+      }
+      if (!deliveryDetails?.streetAddress) {
+        toast.error('Please enter a delivery address');
+        return false;
+      }
+    }
+
+    // Validate pickup details
+    if (deliveryMethod === DeliveryMethod.PICKUP) {
+      if (!pickupDetails?.date) {
+        toast.error('Please select a pickup date');
+        return false;
+      }
+      if (!pickupDetails?.timeSlot) {
+        toast.error('Please select a pickup time slot');
+        return false;
+      }
+    }
+
+    // Validate gift details if gift option is selected
+    if (isGiftState) {
+      if (!giftDetails?.recipientName) {
+        toast.error('Please enter gift recipient name');
+        return false;
+      }
+      if (!giftDetails?.recipientPhone) {
+        toast.error('Please enter gift recipient phone');
+        return false;
+      }
+    }
+
+    return true;
+  }, [cart.length, deliveryMethod, deliveryDetails, pickupDetails, isGiftState, giftDetails]);
+
+  // Handle create order with validation
+  const handleCreateOrder = useCallback(async () => {
+    if (!validateOrderDetails()) {
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+
+      // Prepare order data with routing logic
+      const orderData = {
+        items: cart.map(item => ({
+          productId: item.product.id,
+          quantity: item.quantity,
+          variations: item.selectedVariations.map(v => ({
+            id: v.id,
+            type: v.type,
+            value: v.value,
+            priceAdjustment: v.priceAdjustment || 0
+          })),
+          notes: '',
+          totalPrice: item.price
+        })),
+        totalAmount: calculateFinalTotal(),
+        // Customer and delivery details
+        customerName: selectedCustomer ? `${selectedCustomer.firstName} ${selectedCustomer.lastName}` : '',
+        customerPhone: selectedCustomer?.phone || '',
+        customerEmail: selectedCustomer?.email || '',
+        deliveryMethod,
+        ...(deliveryMethod === 'DELIVERY' ? {
+          deliveryDate: deliveryDetails?.date,
+          deliveryTimeSlot: deliveryDetails?.timeSlot,
+          deliveryInstructions: deliveryDetails?.instructions,
+          deliveryCharge: deliveryDetails?.charge,
+          streetAddress: deliveryDetails?.streetAddress,
+          apartment: deliveryDetails?.apartment,
+          emirate: deliveryDetails?.emirate,
+          city: deliveryDetails?.city
+        } : {
+          pickupDate: pickupDetails?.date,
+          pickupTimeSlot: pickupDetails?.timeSlot
+        }),
+        // Gift details if applicable
+        ...(isGiftState ? {
+          isGift: true,
+          giftRecipientName: giftDetails?.recipientName || '',
+          giftRecipientPhone: giftDetails?.recipientPhone || '',
+          giftMessage: giftDetails?.message || '',
+          giftCashAmount: giftDetails?.cashAmount ? parseFloat(giftDetails.cashAmount) : 0
+        } : {}),
+        // Add discount details if coupon applied
+        ...(appliedCoupon ? {
+          discount: {
+            code: appliedCoupon.code,
+            type: appliedCoupon.type,
+            value: appliedCoupon.value,
+            amount: appliedCoupon.discount
+          }
+        } : {}),
+        // Order flow metadata
+        metadata: {
+          routing: {
+            // Initial queue based on category
+            initialQueue: cart.some(item => item.product.categoryId === 'sets') ? 'DESIGN_QUEUE' :
+                         cart.some(item => item.product.categoryId === 'flowers') ? 'DESIGN_QUEUE' :
+                         'KITCHEN_QUEUE',
+            status: 'QUEUED',
+            // Team assignment based on category
+            assignedTeam: cart.some(item => item.product.categoryId === 'sets' || item.product.categoryId === 'flowers') ? 'DESIGN' : 'KITCHEN',
+            // Processing flow based on category
+            processingFlow: cart.some(item => item.product.categoryId === 'sets') ? 
+              ['DESIGN_QUEUE', 'DESIGN_PROCESSING', 'DESIGN_READY', 'KITCHEN_QUEUE', 'KITCHEN_PROCESSING', 'KITCHEN_READY', 'FINAL_CHECK_QUEUE'] :
+              cart.some(item => item.product.categoryId === 'flowers') ?
+              ['DESIGN_QUEUE', 'DESIGN_PROCESSING', 'DESIGN_READY', 'FINAL_CHECK_QUEUE'] :
+              ['KITCHEN_QUEUE', 'KITCHEN_PROCESSING', 'KITCHEN_READY', 'FINAL_CHECK_QUEUE'],
+            currentStep: 0
+          },
+          // Quality control settings
+          qualityControl: {
+            requiresFinalCheck: true,
+            canReturnToKitchen: true,
+            canReturnToDesign: true,
+            finalCheckNotes: ''
+          },
+          // Item-specific requirements
+          itemRequirements: cart.map(item => ({
+            productId: item.product.id,
+            categoryId: item.product.categoryId,
+            requiresKitchen: item.product.categoryId === 'cakes' || item.product.categoryId === 'sets',
+            requiresDesign: item.product.categoryId === 'flowers' || item.product.categoryId === 'sets',
+            requiresSequentialProcessing: item.product.categoryId === 'sets',
+            processingOrder: item.product.categoryId === 'sets' ? ['DESIGN', 'KITCHEN'] :
+                           item.product.categoryId === 'flowers' ? ['DESIGN'] :
+                           ['KITCHEN']
+          }))
+        }
+      };
+
+      // Create order
+      const response = await apiMethods.orders.createOrder(orderData);
+      
+      if (response.data.success) {
+        toast.success('Order created successfully!');
+        onClose();
+        router.push('/orders');
+      } else {
+        toast.error(response.data.message || 'Failed to create order');
+      }
+    } catch (error) {
+      console.error('Error creating order:', error);
+      toast.error('Failed to create order');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [
+    apiMethods.orders,
+    appliedCoupon,
+    calculateFinalTotal,
+    cart,
+    deliveryDetails,
+    deliveryMethod,
+    giftDetails,
+    isGiftState,
+    onClose,
+    pickupDetails,
+    router,
+    selectedCustomer
+  ]);
+
+  // Payment handling functions
+  const handleAddPayment = useCallback((payment: Payment) => {
+    setPaymentsState(prev => [...prev, {
+      ...payment,
+      metadata: {
+        ...payment.metadata,
+        source: 'POS' as const,
+        futurePaymentMethod: payment.method === POSPaymentMethod.CASH ? POSPaymentMethod.CARD : POSPaymentMethod.CARD
+      }
+    }]);
+  }, []);
+
+  const handleRemovePayment = useCallback((paymentId: string) => {
+    setPaymentsState(prev => prev.filter(p => p.id !== paymentId));
+  }, []);
+
+  const handlePartialPayment = useCallback((amount: number, method: POSPaymentMethod, reference?: string) => {
+    const payment: Payment = {
+      id: nanoid(),
+      amount,
+      method: POSPaymentMethod.PARTIAL,
+      reference: method === POSPaymentMethod.CARD ? reference || null : null,
+      status: POSPaymentStatus.PARTIALLY_PAID,
+      metadata: {
+        source: 'POS' as const,
+        cashAmount: method === POSPaymentMethod.CASH ? amount.toString() : undefined,
+        changeAmount: method === POSPaymentMethod.CASH ? '0' : undefined,
+        futurePaymentMethod: POSPaymentMethod.CARD
+      }
+    };
+    handleAddPayment(payment);
+    setIsPartialPaymentState(true);
+  }, [handleAddPayment]);
+
+  const handlePaymentMethodSelect = useCallback((method: POSPaymentMethod) => {
+    // Handle special payment methods
+    if (method === POSPaymentMethod.SPLIT) {
+      setIsSplitPaymentState(true);
+      setIsPartialPaymentState(false);
+      setShowSplitPaymentModal(true);
+    } else if (method === POSPaymentMethod.PARTIAL) {
+      setIsPartialPaymentState(true);
+      setIsSplitPaymentState(false);
+    } else {
+      setCurrentPaymentMethodState(method);
+      setIsSplitPaymentState(false);
+      setIsPartialPaymentState(false);
+    }
+
+    // Reset all payment-related state
+    setPaymentsState([]);
+    setCurrentPaymentReferenceState('');
+    setCurrentPaymentAmountState('');
+    setSplitCashAmount('');
+    setSplitCardAmount('');
+    setSplitCardReference('');
+  }, []);
+
+  const handleSplitPayment = useCallback(() => {
+    const parsedCashAmount = parseFloat(splitCashAmount);
+    const parsedCardAmount = parseFloat(splitCardAmount);
+    
+    if (isNaN(parsedCashAmount) || isNaN(parsedCardAmount)) {
+      toast.error('Please enter valid amounts for both cash and card');
+      return;
+    }
+
+    const total = parsedCashAmount + parsedCardAmount;
+    if (Math.abs(total - cartTotal) > 0.01) {
+      toast.error('Total amount must equal the cart total');
+      return;
+    }
+
+    // Create cash payment
+    const cashPayment: Payment = {
+      id: nanoid(),
+      method: POSPaymentMethod.CASH,
+      amount: parsedCashAmount,
+      reference: null,
+      status: POSPaymentStatus.FULLY_PAID,
+      metadata: {
+        source: 'POS' as const,
+        cashAmount: splitCashAmount,
+        changeAmount: '0.00'
+      }
+    };
+
+    // Create card payment
+    const cardPayment: Payment = {
+      id: nanoid(),
+      method: POSPaymentMethod.CARD,
+      amount: parsedCardAmount,
+      reference: splitCardReference || null,
+      status: POSPaymentStatus.FULLY_PAID,
+      metadata: {
+        source: 'POS' as const
+      }
+    };
+
+    // Update payments state
+    setPaymentsState([cashPayment, cardPayment]);
+    setCurrentPaymentMethodState(POSPaymentMethod.SPLIT);
+    setIsSplitPaymentState(true);
+
+    // Reset split payment form
+    setSplitCashAmount('');
+    setSplitCardAmount('');
+    setSplitCardReference('');
+
+    toast.success('Split payment applied successfully');
+  }, [cartTotal, splitCashAmount, splitCardAmount, splitCardReference]);
+
+  const handlePaymentClick = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    const amount = parseFloat(currentPaymentAmountState);
+    if (!amount || isNaN(amount)) {
+      toast.error('Please enter a valid amount');
+      return;
+    }
+
+    // For card payments, ensure reference is provided
+    if (currentPaymentMethodState === POSPaymentMethod.CARD && !currentPaymentReferenceState.trim()) {
+      toast.error('Please enter a payment reference');
+      return;
+    }
+
+    const totalPaid = calculateTotalPaid();
+    const isComplete = Math.abs((totalPaid + amount) - cartTotal) < 0.01;
+
+    // Handle partial payment
+    if (!isComplete) {
+      handlePartialPayment(amount, currentPaymentMethodState, currentPaymentReferenceState);
+      setCurrentPaymentAmountState('');
+      setCurrentPaymentReferenceState('');
+      return;
+    }
+
+    // Handle full payment
+    const payment: Payment = {
+      id: nanoid(),
+      amount,
+      method: currentPaymentMethodState,
+      reference: currentPaymentMethodState === POSPaymentMethod.CARD ? currentPaymentReferenceState : null,
+      status: POSPaymentStatus.FULLY_PAID,
+      metadata: {
+        source: 'POS' as const,
+        cashAmount: currentPaymentMethodState === POSPaymentMethod.CASH ? amount.toString() : undefined,
+        changeAmount: currentPaymentMethodState === POSPaymentMethod.CASH ? '0' : undefined,
+        futurePaymentMethod: POSPaymentMethod.CARD
+      }
+    };
+
+    handleAddPayment(payment);
+
+    // Reset form
+    setCurrentPaymentAmountState('');
+    setCurrentPaymentReferenceState('');
+
+    // If payment is complete, proceed with checkout
+    if (isComplete) {
+      handleCreateOrder();
+    }
+  }, [currentPaymentAmountState, currentPaymentMethodState, currentPaymentReferenceState, cartTotal, calculateTotalPaid, handleCreateOrder, handleAddPayment, handlePartialPayment]);
+
+  // Handle queue order
+  const handleQueueOrder = useCallback(async () => {
+    if (!validateOrderDetails()) {
+      return;
+    }
+
+    try {
+      setIsQueuingOrder(true);
+
+      // Map cart items to queued order items
+      const mappedItems = cart.map(item => ({
+        productId: item.product.id,
+        productName: item.product.name,
+        unitPrice: item.unitPrice,
+        quantity: item.quantity,
+        totalPrice: item.price,
+        selectedVariations: item.selectedVariations.map(v => ({
+          id: v.id,
+          type: v.type,
+          value: v.value,
+          price: v.priceAdjustment
+        })),
+        notes: '',
+        customImages: item.customImages || [],
+        requiresKitchen: item.product.categoryId === 'cakes' || item.product.categoryId === 'sets',
+        requiresDesign: item.product.categoryId === 'flowers' || item.product.categoryId === 'sets',
+        hasVariations: item.selectedVariations && item.selectedVariations.length > 0,
+        hasCustomImages: item.customImages && item.customImages.length > 0,
+        sku: item.product.sku,
+        categoryId: item.product.categoryId,
+        barcode: item.product.barcode
+      }));
+
+      // Base order data that's always required
+      const baseOrderData = {
+        totalAmount: calculateFinalTotal(),
+        subtotal: cartTotal,
+        items: mappedItems,
+        name: orderName || undefined,
+        notes: '',
+        // Customer information
+        customerName: selectedCustomer ? `${selectedCustomer.firstName} ${selectedCustomer.lastName}` : undefined,
+        customerEmail: selectedCustomer?.email,
+        customerPhone: selectedCustomer?.phone,
+        // Delivery method
+        deliveryMethod,
+        // Add discount details if coupon applied
+        ...(appliedCoupon ? {
+          discount: {
+            code: appliedCoupon.code,
+            type: appliedCoupon.type,
+            value: appliedCoupon.value,
+            amount: appliedCoupon.discount
+          }
+        } : {}),
+        // Metadata for order flow
+        metadata: {
+          routing: {
+            // Initial queue based on category
+            initialQueue: cart.some(item => item.product.categoryId === 'sets') ? 'DESIGN_QUEUE' :
+                         cart.some(item => item.product.categoryId === 'flowers') ? 'DESIGN_QUEUE' :
+                         'KITCHEN_QUEUE',
+            status: 'QUEUED',
+            // Team assignment based on category
+            assignedTeam: cart.some(item => item.product.categoryId === 'sets' || item.product.categoryId === 'flowers') ? 'DESIGN' : 'KITCHEN',
+            // Processing flow based on category
+            processingFlow: cart.some(item => item.product.categoryId === 'sets') ? 
+              ['DESIGN_QUEUE', 'DESIGN_PROCESSING', 'DESIGN_READY', 'KITCHEN_QUEUE', 'KITCHEN_PROCESSING', 'KITCHEN_READY', 'FINAL_CHECK_QUEUE'] :
+              cart.some(item => item.product.categoryId === 'flowers') ?
+              ['DESIGN_QUEUE', 'DESIGN_PROCESSING', 'DESIGN_READY', 'FINAL_CHECK_QUEUE'] :
+              ['KITCHEN_QUEUE', 'KITCHEN_PROCESSING', 'KITCHEN_READY', 'FINAL_CHECK_QUEUE'],
+            currentStep: 0,
+            // Quality control settings
+            qualityControl: {
+              requiresFinalCheck: true,
+              canReturnToKitchen: true,
+              canReturnToDesign: true,
+              finalCheckNotes: ''
+            },
+            // Item-specific requirements
+            itemRequirements: cart.map(item => ({
+              productId: item.product.id,
+              categoryId: item.product.categoryId,
+              requiresKitchen: item.product.categoryId === 'cakes' || item.product.categoryId === 'sets',
+              requiresDesign: item.product.categoryId === 'flowers' || item.product.categoryId === 'sets',
+              requiresSequentialProcessing: item.product.categoryId === 'sets',
+              processingOrder: item.product.categoryId === 'sets' ? ['DESIGN', 'KITCHEN'] :
+                             item.product.categoryId === 'flowers' ? ['DESIGN'] :
+                             ['KITCHEN']
+            }))
+          }
+        }
+      };
+
+      // Add delivery-specific fields
+      if (deliveryMethod === DeliveryMethod.DELIVERY && deliveryDetails) {
+        Object.assign(baseOrderData, {
+          deliveryDate: deliveryDetails.date,
+          deliveryTimeSlot: deliveryDetails.timeSlot,
+          deliveryInstructions: deliveryDetails.instructions,
+          deliveryCharge: deliveryDetails.charge,
+          streetAddress: deliveryDetails.streetAddress,
+          apartment: deliveryDetails.apartment,
+          emirate: deliveryDetails.emirate,
+          city: deliveryDetails.city
+        });
+      } else if (deliveryMethod === DeliveryMethod.PICKUP && pickupDetails) {
+        Object.assign(baseOrderData, {
+          pickupDate: pickupDetails.date,
+          pickupTimeSlot: pickupDetails.timeSlot
+        });
+      }
+
+      // Add gift details if applicable
+      if (isGiftState && giftDetails) {
+        Object.assign(baseOrderData, {
+          isGift: true,
+          giftRecipientName: giftDetails.recipientName,
+          giftRecipientPhone: giftDetails.recipientPhone,
+          giftMessage: giftDetails.message,
+          giftCashAmount: giftDetails.cashAmount ? parseFloat(giftDetails.cashAmount) : undefined
+        });
+      }
+
+      // Queue the order
+      const response = await apiMethods.pos.queueOrder(baseOrderData);
+
+      if (response.data.success) {
+        toast.success('Order queued successfully!');
+        onClose();
+        router.push('/queued-orders');
+      } else {
+        toast.error(response.data.message || 'Failed to queue order');
+      }
+    } catch (error) {
+      console.error('Error queueing order:', error);
+      toast.error('Failed to queue order');
+    } finally {
+      setIsQueuingOrder(false);
+    }
+  }, [
+    apiMethods.pos,
+    appliedCoupon,
+    calculateFinalTotal,
+    cart,
+    deliveryDetails,
+    deliveryMethod,
+    giftDetails,
+    isGiftState,
+    onClose,
+    orderName,
+    pickupDetails,
+    router,
+    selectedCustomer,
+    validateOrderDetails
+  ]);
+
+  // Process cart items
+  const processCartItems = (items: CartItem[]) => {
+    return items.map(item => {
+      // Ensure variations are in the correct format
+      const selectedVariations = Array.isArray(item.selectedVariations) 
+        ? item.selectedVariations.map(v => {
+            if (typeof v === 'object' && v !== null) {
+              return {
+                id: v.id || '',
+                type: v.type,
+                value: v.value,
+                price: Number(v.price) || 0
+              };
+            }
+            return {
+              id: '',
+              type: '',
+              value: '',
+              price: 0
+            };
+          })
+        : [];
+
+      return {
+        id: nanoid(),
+        productId: item.product?.id || '',
+        productName: item.product?.name || '',
+        quantity: item.quantity,
+        totalPrice: item.totalPrice,
+        unitPrice: item.product?.basePrice || 0,
+        selectedVariations,
+        customImages: Array.isArray(item.customImages) ? item.customImages : [],
+        notes: item.notes || '',
+        requiresKitchen: item.product?.requiresKitchen || item.product.categoryId === 'cakes' || item.product.categoryId === 'sets',
+        requiresDesign: item.product?.requiresDesign || item.product.categoryId === 'flowers' || item.product.categoryId === 'sets',
+        hasVariations: selectedVariations.length > 0,
+        hasCustomImages: Array.isArray(item.customImages) && item.customImages.length > 0,
+        sku: item.product?.sku || '',
+        categoryId: item.product?.categoryId,
+        barcode: item.product?.barcode,
+        allowCustomImages: item.product?.allowCustomImages || false,
+        allowCustomPrice: item.product?.allowCustomPrice || false
+      };
+    });
+  };
+
+  // Get the payment method for API
+  const getApiPaymentMethod = () => {
+    // If split payment is active, always return SPLIT
+    if (isSplitPaymentState) {
+      return POSPaymentMethod.SPLIT;
+    }
+    // Otherwise use the current payment method
+    return currentPaymentMethodState;
+  };
+
+  // Get formatted checkout details for saving
+  const getCheckoutDetails = (): CheckoutDetails => {
+    const sanitizedCustomerDetails = sanitizeCustomerDetails();
+    const payments = getOrderPayments();
+    const currentPayment = payments[0] || {
+      method: POSPaymentMethod.CASH,
+      reference: ''
+    };
+
+    return {
+      customerDetails: sanitizedCustomerDetails,
+      deliveryMethod: deliveryMethod,
+      deliveryDetails: deliveryMethod === DeliveryMethod.DELIVERY ? {
+        date: deliveryDetailsState?.date,
+        timeSlot: deliveryDetailsState?.timeSlot,
+        instructions: deliveryDetailsState?.instructions,
+        streetAddress: deliveryDetailsState?.streetAddress,
+        apartment: deliveryDetailsState?.apartment,
+        emirate: deliveryDetailsState?.emirate,
+        city: deliveryDetailsState?.city,
+        charge: deliveryDetailsState?.charge
+      } : undefined,
+      pickupDetails: deliveryMethod === DeliveryMethod.PICKUP ? {
+        date: pickupDetailsState?.date,
+        timeSlot: pickupDetailsState?.timeSlot
+      } : undefined,
+      giftDetails: {
+        isGift: giftDetailsState.isGift,
+        recipientName: giftDetailsState.recipientName,
+        recipientPhone: giftDetailsState.recipientPhone,
+        message: giftDetailsState.message,
+        note: giftDetailsState.note || '',
+        cashAmount: giftDetailsState.cashAmount || '0',
+        includeCash: giftDetailsState.includeCash || false
+      },
+      payments,
+      paymentMethod: currentPayment.method,
+      paymentReference: currentPayment.reference || '',
+      orderSummary: {
+        totalItems: cart.length,
+        totalAmount: cartTotal,
+        products: cart.map(item => ({
+          id: item.id,
+          productId: item.product.id,
+          name: item.product.name,
+          quantity: item.quantity,
+          price: item.product.basePrice * item.quantity,
+          unitPrice: item.product.basePrice,
+          sku: item.product.sku || '',
+          requiresKitchen: item.product.requiresKitchen || item.product.categoryId === 'cakes' || item.product.categoryId === 'sets',
+          requiresDesign: item.product.requiresDesign || item.product.categoryId === 'flowers' || item.product.categoryId === 'sets',
+          hasVariations: item.selectedVariations && item.selectedVariations.length > 0,
+          hasCustomImages: item.customImages && item.customImages.length > 0
+        }))
+      }
+    };
+  };
+
+  // Determine initial status based on product requirements and category
+  const determineInitialStatus = () => {
+    const hasSetItems = cart.some(item => item.product.categoryId === 'sets');
+    const hasFlowerItems = cart.some(item => item.product.categoryId === 'flowers');
+    const hasCakeItems = cart.some(item => item.product.categoryId === 'cakes');
+    
+    // Follow the order flow logic:
+    // - Products from Cake category -> Kitchen Queue
+    // - Products from Flower category -> Design Queue
+    // - Products from Sets category -> Design Queue first, then will be moved to Kitchen Queue
+    if (hasSetItems) {
+      // Sets always go to Design Queue first, then will be moved to Kitchen Queue
+      return POSOrderStatus.DESIGN_QUEUE;
+    } else if (hasFlowerItems) {
+      // Flowers go directly to Design Queue
+      return POSOrderStatus.DESIGN_QUEUE;
+    } else if (hasCakeItems) {
+      // Cakes go directly to Kitchen Queue
+      return POSOrderStatus.KITCHEN_QUEUE;
+    }
+    
+    // Default to PENDING if no special routing needed
+    return POSOrderStatus.PENDING;
+  };
+
+  // Calculate processing requirements based on cart items
+  const calculateProcessingRequirements = () => {
+    return {
+      requiresKitchen: cart.some(item => 
+        item.product.requiresKitchen || 
+        item.product.categoryId === 'cakes' || 
+        item.product.categoryId === 'sets'
+      ),
+      requiresDesign: cart.some(item => 
+        item.product.requiresDesign || 
+        item.product.categoryId === 'flowers' || 
+        item.product.categoryId === 'sets'
+      ),
+      requiresSequentialProcessing: cart.some(item => 
+        item.product.categoryId === 'sets'
+      )
+    };
+  };
+
+  // Prepare order data for API
+  const prepareOrderData = (): POSOrderData => {
+    const { customerDetails, deliveryDetails, pickupDetails, giftDetails } = getCheckoutDetails();
+
+    // Calculate processing requirements based on cart items
+    const { requiresKitchen, requiresDesign, requiresSequentialProcessing } = calculateProcessingRequirements();
+
+    // Convert gift cash amount to string with proper formatting
+    const giftCashAmountStr = giftDetails?.cashAmount || '0.00';
+
+    // Map items with proper type conversions
+    const mappedItems = cart.map(item => ({
+      id: item.id,
+      productId: item.product.id,
+      productName: item.product.name,
+      unitPrice: item.product.basePrice,
+      quantity: item.quantity,
+      totalPrice: item.product.basePrice * item.quantity,
+      variations: item.selectedVariations?.reduce((acc, variation) => ({
+        ...acc,
+        [variation.type]: variation.value
+      }), {}),
+      selectedVariations: item.selectedVariations.map(variation => ({
+        type: variation.type,
+        value: variation.value,
+        price: variation.priceAdjustment || 0
+      })),
+      notes: item.notes || '',
+      customImages: item.customImages?.map(img => ({
+        id: img.id || crypto.randomUUID(),
+        url: img.url,
+        comment: img.comment || '',
+        previewUrl: img.previewUrl || '',
+        createdAt: img.createdAt || new Date().toISOString()
+      })),
+      requiresKitchen: item.product.requiresKitchen || item.product.categoryId === 'cakes' || item.product.categoryId === 'sets',
+      requiresDesign: item.product.requiresDesign || item.product.categoryId === 'flowers' || item.product.categoryId === 'sets',
+      requiresSequentialProcessing: item.product.categoryId === 'sets',
+      requiresFinalCheck: true,
+      sku: item.product.sku || '',
+      categoryId: item.product.categoryId,
+      barcode: item.product.barcode,
+      allowCustomImages: item.product.allowCustomImages || false,
+      allowCustomPrice: item.product.allowCustomPrice || false
+    }));
+
+    // Base order data that's always required
+    const baseOrderData: POSOrderData = {
+      totalAmount: calculateFinalTotal(),
+      subtotal: cartTotal,
+      payments: paymentsState.map(p => ({
+        ...p,
+        metadata: {
+          ...p.metadata,
+          source: 'POS' as const
+        }
+      })),
+      paymentMethod: currentPaymentMethodState,
+      paymentReference: currentPaymentReferenceState || '',
+      requiresKitchen,
+      requiresDesign,
+      requiresSequentialProcessing,
+      requiresFinalCheck: true,
+      customerName: customerDetails.name,
+      customerEmail: customerDetails.email,
+      customerPhone: customerDetails.phone,
+      items: mappedItems,
+      deliveryMethod,
+      // Initialize optional fields with undefined
+      deliveryDate: undefined,
+      deliveryTimeSlot: undefined,
+      deliveryInstructions: undefined,
+      deliveryCharge: undefined,
+      streetAddress: undefined,
+      apartment: undefined,
+      emirate: undefined,
+      city: undefined,
+      pickupDate: undefined,
+      pickupTimeSlot: undefined,
+      isGift: giftDetails.isGift,
+      giftRecipientName: giftDetails.isGift ? giftDetails.recipientName : undefined,
+      giftRecipientPhone: giftDetails.isGift ? giftDetails.recipientPhone : undefined,
+      giftMessage: giftDetails.isGift ? giftDetails.message : undefined,
+      giftCashAmount: giftDetails.isGift ? giftCashAmountStr : undefined
+    };
+
+    // Add delivery-specific fields
+    if (deliveryMethod === DeliveryMethod.DELIVERY && deliveryDetails) {
+      baseOrderData.deliveryDate = deliveryDetails.date;
+      baseOrderData.deliveryTimeSlot = deliveryDetails.timeSlot;
+      baseOrderData.deliveryInstructions = deliveryDetails.instructions;
+      baseOrderData.deliveryCharge = parseFloat(deliveryDetails.charge.toString());
+      baseOrderData.streetAddress = deliveryDetails.streetAddress;
+      baseOrderData.apartment = deliveryDetails.apartment;
+      baseOrderData.emirate = deliveryDetails.emirate;
+      baseOrderData.city = deliveryDetails.city;
+    } else if (deliveryMethod === DeliveryMethod.PICKUP && pickupDetails) {
+      baseOrderData.pickupDate = pickupDetails.date;
+      baseOrderData.pickupTimeSlot = pickupDetails.timeSlot;
+    }
+
+    return baseOrderData;
+  };
 
   // Debug cart items function (moved outside useEffect)
   const debugCartItems = () => {
@@ -217,8 +1095,8 @@ export default function CheckoutModal({
       console.log(`Cart item ${index}:`, JSON.stringify(item, null, 2));
       
       // Check for missing or invalid product
-      if (!item.product) {
-        console.error(`Cart item ${index} is missing product:`, item);
+      if (!item || !item.product) {
+        console.error(`Invalid cart item at index ${index}:`, item);
       } else {
         console.log(`Product details for item ${index}:`, JSON.stringify(item.product, null, 2));
       }
@@ -278,12 +1156,24 @@ export default function CheckoutModal({
     }
   }, [cart]);
 
+  // Initialize customer details from props when the modal opens
+  useEffect(() => {
+    if (isOpen && customerDetails) {
+      console.log('Initializing customer details from props:', customerDetails);
+      setCustomerDetailsState({
+        name: customerDetails.name || "",
+        email: customerDetails.email || "",
+        phone: customerDetails.phone || "",
+      });
+    }
+  }, [isOpen, customerDetails]);
+
   // Save checkout details whenever they change
   useEffect(() => {
     if (isOpen && onSaveCheckoutDetails) {
       // Use a debounce mechanism to prevent too frequent updates
       const timeoutId = setTimeout(() => {
-        const details = getFormattedCheckoutDetails();
+        const details = getCheckoutDetails();
         onSaveCheckoutDetails(details);
       }, 500); // 500ms debounce
       
@@ -292,19 +1182,18 @@ export default function CheckoutModal({
   }, [
     isOpen, 
     customerDetailsState, 
-    deliveryMethodState, 
-    // We're still watching these states, but the debounce will prevent rapid updates
+    deliveryMethod, 
     deliveryDetailsState, 
     pickupDetailsState, 
     giftDetailsState, 
-    paymentMethodState, 
-    paymentReferenceState,
+    currentPaymentMethodState, 
+    currentPaymentReferenceState, 
     onSaveCheckoutDetails
   ]);
 
   // Close search results when clicking outside
   useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
+    function handleClickOutside(event) {
       if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
         setShowSearchResults(false);
       }
@@ -315,24 +1204,44 @@ export default function CheckoutModal({
 
   // Search for customers by name or phone
   const searchCustomers = async (query: string) => {
-    if (query.length < 3) {
+    if (!query.trim()) {
       setSearchResults([]);
-      setShowSearchResults(false);
       setIsSearching(false);
+      setShowSearchResults(false);
       return;
     }
 
     try {
       const response = await apiMethods.pos.searchCustomers(query);
-      if (response.success && response.data) {
-        setSearchResults(response.data);
+      if (response.data) {
+        // Sort results: exact matches first, then partial matches
+        const sortedResults = response.data.sort((a, b) => {
+          const aName = `${a.firstName} ${a.lastName}`.toLowerCase();
+          const bName = `${b.firstName} ${b.lastName}`.toLowerCase();
+          const queryLower = query.toLowerCase();
+          
+          // Exact matches first
+          if (aName === queryLower && bName !== queryLower) return -1;
+          if (bName === queryLower && aName !== queryLower) return 1;
+          
+          // Then starts with
+          if (aName.startsWith(queryLower) && !bName.startsWith(queryLower)) return -1;
+          if (bName.startsWith(queryLower) && !aName.startsWith(queryLower)) return 1;
+          
+          // Then alphabetical
+          return aName.localeCompare(bName);
+        });
+        
+        setSearchResults(sortedResults);
         setShowSearchResults(true);
       } else {
         setSearchResults([]);
+        setShowSearchResults(false);
       }
     } catch (error) {
       console.error('Error searching customers:', error);
       setSearchResults([]);
+      setShowSearchResults(false);
     } finally {
       setIsSearching(false);
     }
@@ -342,22 +1251,24 @@ export default function CheckoutModal({
   const debouncedSearch = useCallback(
     debounce((query: string) => {
       searchCustomers(query);
-    }, 500),
+    }, 300), // Reduced debounce time for faster response
     []
   );
 
   // Handle customer selection
-  const handleCustomerSelect = async (customer: any) => {
+  const handleCustomerSelect = useCallback(async (customer: Customer) => {
     setCustomerDetailsState({
       name: `${customer.firstName} ${customer.lastName}`.trim(),
-      email: customer.email || "",
-      phone: customer.phone || "",
+      email: customer.email,
+      phone: customer.phone
     });
-    setSelectedCustomer(customer);
+    setSelectedCustomer({
+      ...customer,
+      addresses: customer.addresses || [] // Ensure addresses is always an array
+    });
     setShowSearchResults(false);
     setSearchResults([]);
 
-    // Fetch customer addresses if needed
     try {
       const addressResponse = await apiMethods.pos.getCustomerAddresses(customer.id);
       if (addressResponse.success) {
@@ -368,7 +1279,7 @@ export default function CheckoutModal({
         setSelectedCustomer(prev => prev ? { ...prev, addresses } : null);
         
         // If delivery method is selected, auto-select default address
-        if (deliveryMethodState === 'DELIVERY' && addresses.length > 0) {
+        if (deliveryMethod === DeliveryMethod.DELIVERY && addresses.length > 0) {
           const defaultAddress = addresses.find(addr => addr.isDefault) || addresses[0];
           setSelectedAddress(defaultAddress);
           setDeliveryDetailsState(prev => ({
@@ -383,7 +1294,7 @@ export default function CheckoutModal({
     } catch (error) {
       console.error('Error fetching customer addresses:', error);
     }
-  };
+  }, [deliveryMethod]);
 
   // Handle address selection
   const handleAddressSelect = (address: CustomerAddress) => {
@@ -398,11 +1309,11 @@ export default function CheckoutModal({
   };
 
   // Update delivery method
-  const handleDeliveryMethodChange = (method: 'PICKUP' | 'DELIVERY') => {
+  const handleDeliveryMethodChange = (method: DeliveryMethod) => {
     setDeliveryMethodState(method);
     
     // If switching to delivery and customer has addresses, auto-select default
-    if (method === 'DELIVERY' && selectedCustomer?.addresses?.length > 0) {
+    if (method === DeliveryMethod.DELIVERY && selectedCustomer?.addresses?.length > 0) {
       const defaultAddress = selectedCustomer.addresses.find(addr => addr.isDefault) || selectedCustomer.addresses[0];
       setSelectedAddress(defaultAddress);
       setDeliveryDetailsState(prev => ({
@@ -419,13 +1330,15 @@ export default function CheckoutModal({
   const handleCustomerNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setCustomerDetailsState(prev => ({ ...prev, name: value }));
+    setSearchQuery(value);
+    setIsSearching(true);
     
-    if (value.length >= 3) {
-      setIsSearching(true);
+    // Trigger search if value is not empty
+    if (value.trim()) {
       debouncedSearch(value);
     } else {
-      setSearchResults([]);
       setShowSearchResults(false);
+      setSearchResults([]);
     }
   };
 
@@ -489,7 +1402,7 @@ export default function CheckoutModal({
       if (appliedCoupon.type === 'PERCENTAGE') {
         const discountAmount = (baseTotal * appliedCoupon.value) / 100;
         baseTotal -= discountAmount;
-      } else if (appliedCoupon.type === 'FIXED') {
+      } else if (appliedCoupon.type === 'FIXED_AMOUNT') {
         baseTotal -= appliedCoupon.value;
       }
     }
@@ -497,7 +1410,7 @@ export default function CheckoutModal({
     let total = baseTotal;
     
     // Add delivery charge if applicable
-    if (deliveryMethodState === 'DELIVERY' && deliveryDetailsState.emirate) {
+    if (deliveryMethod === DeliveryMethod.DELIVERY && deliveryDetailsState.emirate) {
       const deliveryCharge = deliveryDetailsState.charge !== undefined ? 
         deliveryDetailsState.charge : 
         calculateDeliveryCharge(deliveryDetailsState.emirate);
@@ -505,38 +1418,21 @@ export default function CheckoutModal({
       total += deliveryCharge;
     }
     
-    return total;
+    return Math.max(0, total); // Ensure total is not negative
   };
 
   // Calculate coupon discount for display
-  const calculateCouponDiscount = () => {
+  const calculateCouponDiscount = useMemo(() => {
     if (!appliedCoupon) return 0;
     
-    const baseAmount = cartTotal;
-    if (isNaN(baseAmount)) {
-      console.error('Invalid cart total for coupon:', cartTotal);
-      return 0;
+    if (appliedCoupon.type === 'PERCENTAGE') {
+      return (cartTotal * appliedCoupon.value) / 100;
+    } else if (appliedCoupon.type === 'FIXED_AMOUNT') {
+      return appliedCoupon.value;
     }
     
-    const couponValue = appliedCoupon.value;
-    if (isNaN(couponValue)) {
-      console.error('Invalid coupon value:', appliedCoupon.value);
-      return 0;
-    }
-    
-    const discount = appliedCoupon.type === 'PERCENTAGE'
-      ? (baseAmount * couponValue) / 100
-      : couponValue;
-      
-    console.log('Coupon Discount Calculation:', {
-      baseAmount,
-      couponValue,
-      type: appliedCoupon.type,
-      calculatedDiscount: discount
-    });
-    
-    return Math.min(discount, baseAmount);
-  };
+    return 0;
+  }, [appliedCoupon, cartTotal]);
 
   // Update emirate and recalculate total
   const handleEmirateChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -544,7 +1440,7 @@ export default function CheckoutModal({
     const defaultCharge = calculateDeliveryCharge(selectedEmirate);
     
     setDeliveryDetailsState(prevState => ({
-      ...prevState,
+      ...prevState, 
       emirate: selectedEmirate,
       // Reset time slot when emirate changes
       timeSlot: "",
@@ -565,33 +1461,51 @@ export default function CheckoutModal({
       const response = await apiMethods.pos.validateCoupon(couponCode, cartTotal);
       console.log('Coupon Response:', response);
       
-      if (!response.success) {
-        setCouponError(response.message || 'Invalid coupon code');
+      if (!response.data || !response.data.code) {
+        setCouponError('Invalid coupon code');
         setAppliedCoupon(null);
         return;
       }
       
       // Parse numeric values and validate
       const parsedValue = parseFloat(String(response.data.value));
-      const parsedDiscount = parseFloat(String(response.data.discount));
-      
-      if (isNaN(parsedValue)) {
-        console.error('Invalid coupon value:', response.data.value);
+      if (isNaN(parsedValue) || parsedValue <= 0) {
         setCouponError('Invalid coupon value');
         setAppliedCoupon(null);
         return;
       }
 
-      // Create coupon data with validated numbers
-      const couponData = {
-        ...response.data,
+      // Check minimum order amount if specified
+      if (response.data.minOrderAmount && cartTotal < response.data.minOrderAmount) {
+        setCouponError(`Minimum order amount required: AED ${response.data.minOrderAmount}`);
+        setAppliedCoupon(null);
+        return;
+      }
+
+      // Calculate discount based on coupon type
+      let discount = 0;
+      if (response.data.type === 'PERCENTAGE') {
+        discount = (cartTotal * parsedValue) / 100;
+        // Apply max discount if specified
+        if (response.data.maxDiscount && discount > response.data.maxDiscount) {
+          discount = response.data.maxDiscount;
+        }
+      } else { // FIXED_AMOUNT
+        discount = parsedValue;
+      }
+
+      // Set the applied coupon with calculated discount
+      setAppliedCoupon({
+        code: response.data.code,
+        type: response.data.type,
         value: parsedValue,
-        discount: parsedDiscount || 0
-      };
-      
-      console.log('Parsed Coupon Data:', couponData);
-      setAppliedCoupon(couponData);
-      
+        description: response.data.description || '',
+        minOrderAmount: response.data.minOrderAmount,
+        maxDiscount: response.data.maxDiscount,
+        discount: discount
+      });
+
+      toast.success('Coupon applied successfully!');
     } catch (error) {
       console.error('Error validating coupon:', error);
       setCouponError('Failed to validate coupon');
@@ -622,551 +1536,111 @@ export default function CheckoutModal({
       };
 
       const response = await apiMethods.pos.createOrUpdateCustomer(customerData);
-      return response.success;
+      return response.data.success;
     } catch (error) {
       console.error('Error creating/updating customer:', error);
       return false;
     }
   };
 
-  const handleCheckout = async () => {
-    try {
-      // Validate pickup/delivery details first
-      if (deliveryMethodState === 'DELIVERY') {
-        if (!deliveryDetailsState.emirate || !deliveryDetailsState.streetAddress) {
-          toast.error('Please fill in all delivery details');
-          return;
-        }
-      } else if (deliveryMethodState === 'PICKUP') {
-        if (!pickupDetailsState.date || !pickupDetailsState.timeSlot) {
-          toast.error('Please select both pickup date and time');
-          return;
-        }
+  // Get order payments
+  const getOrderPayments = (): Payment[] => {
+    return paymentsState.map(payment => ({
+      ...payment,
+      metadata: {
+        ...payment.metadata,
+        source: 'POS' as const
       }
-
-      // Create or update customer if we have customer details
-      if (customerDetailsState.name && customerDetailsState.phone) {
-        if (!await handleCreateCustomer()) {
-          // Continue with order creation even if customer update fails
-        }
-      }
-
-      setIsSubmitting(true);
-
-      // Format cart items for order
-      const orderItems = cart.map(item => {
-        // Process custom images to ensure they're properly formatted
-        const processedCustomImages = Array.isArray(item.customImages) 
-          ? item.customImages.map(img => ({
-              id: img.id || nanoid(),
-              url: img.url || '',
-              previewUrl: img.previewUrl || '',
-              comment: img.comment || ''
-            }))
-          : [];
-          
-        console.log(`Processing custom images for item ${item.id}:`, processedCustomImages);
-        
-        return {
-          id: item.id,
-          productId: item.product.id,
-          productName: item.product.name,
-          unitPrice: item.product.basePrice,
-          quantity: item.quantity,
-          totalPrice: item.totalPrice,
-          selectedVariations: item.selectedVariations.map(variation => ({
-            id: variation.id,
-            type: variation.type,
-            value: variation.value,
-            price: variation.priceAdjustment // Map priceAdjustment to price
-          })),
-          notes: item.notes || '',
-          customImages: processedCustomImages,
-          metadata: {
-            ...(item.metadata || {}),
-            allowCustomImages: item.product.allowCustomImages || false
-          }
-        };
-      });
-
-      const total = calculateTotal();
-      const baseTotal = cartTotal;
-      
-      // Calculate coupon discount
-      let couponDiscount = 0;
-      if (appliedCoupon) {
-        const couponValue = appliedCoupon.value;
-        couponDiscount = appliedCoupon.type === 'PERCENTAGE'
-          ? (baseTotal * couponValue) / 100
-          : couponValue;
-      }
-
-      // Prepare order data
-      const orderData: POSOrderData = {
-        items: orderItems,
-        totalAmount: total,
-        paidAmount: paymentMethodState === 'CASH' ? total : total,
-        changeAmount: paymentMethodState === 'CASH' ? 0 : 0,
-        paymentMethod: paymentMethodState,
-        customerName: customerDetailsState.name || undefined,
-        customerPhone: customerDetailsState.phone || undefined,
-        customerEmail: customerDetailsState.email || undefined,
-        deliveryMethod: deliveryMethodState,
-        ...(deliveryMethodState === 'DELIVERY' ? {
-          deliveryCharge: deliveryDetailsState.charge !== undefined ? 
-            deliveryDetailsState.charge : 
-            calculateDeliveryCharge(deliveryDetailsState.emirate),
-          streetAddress: deliveryDetailsState.streetAddress,
-          apartment: deliveryDetailsState.apartment,
-          emirate: deliveryDetailsState.emirate,
-          city: deliveryDetailsState.city || 'Dubai',
-          date: deliveryDetailsState.date,
-          timeSlot: deliveryDetailsState.timeSlot,
-          instructions: deliveryDetailsState.instructions || ''
-        } : {}),
-        ...(deliveryMethodState === 'PICKUP' ? {
-          pickupDate: pickupDetailsState.date,
-          pickupTimeSlot: pickupDetailsState.timeSlot
-        } : {}),
-        // Add coupon information if present
-        ...(appliedCoupon ? {
-          couponCode: appliedCoupon.code,
-          couponDiscount
-        } : {})
-      };
-
-      // Create the order
-      const response = await apiMethods.pos.createOrder(orderData);
-
-      if (response.data.success) {
-        // If it's a cash payment, open the drawer and record the transaction
-        if (paymentMethodState === 'CASH') {
-          try {
-            const orderId = response.data.data.id;
-            const orderNumber = response.data.data.orderNumber;
-            
-            await apiMethods.pos.openDrawer(
-              String(total),
-              `Payment for order #${orderNumber}`
-            );
-          } catch (error) {
-            console.error('Error opening cash drawer:', error);
-            // Continue even if drawer fails to open
-          }
-        }
-
-        toast.success('Order created successfully!');
-        setCart([]);
-        if (onCheckoutComplete) {
-          onCheckoutComplete(getFormattedCheckoutDetails());
-        }
-        onClose();
-        resetCheckoutState();
-      } else {
-        toast.error(response.data.message || 'Failed to create order');
-      }
-    } catch (error: any) {
-      console.error('Error creating order:', error);
-      // Log the response data if available
-      if (error.response?.data) {
-        console.error('Server error details:', error.response.data);
-      }
-      toast.error(error.response?.data?.message || 'Failed to create order');
-    }
+    }));
   };
 
-  // Reset all checkout state
-  const resetCheckoutState = useCallback(() => {
-    setPaymentMethodState('CASH');
-    setPaymentReferenceState('');
-    setTeamSelection('KITCHEN');
-    setDeliveryMethodState('PICKUP');
-    setCustomerDetailsState({
-      name: "",
-      email: "",
-      phone: "",
-    });
-    setGiftDetailsState({
-      isGift: false,
-      recipientName: '',
-      recipientPhone: '',
-      message: '',
-      note: '',
-      cashAmount: 0,
-      includeCash: false
-    });
-    setSearchQuery('');
-    setIsSearching(false);
-    setSearchResults([]);
-    setShowSearchResults(false);
-    setDeliveryDetailsState({
-      date: "",
-      timeSlot: "",
-      instructions: "",
-      streetAddress: "",
-      apartment: "",
-      emirate: "",
-      city: "",
-      charge: 0,
-    });
-    setPickupDetailsState({
-      date: "",
-      timeSlot: "",
-    });
-    setOrderItems([]);
-    setSelectedCustomer(null);
-    setCustomerAddresses([]);
-    setSelectedAddress(null);
-    setCouponCode('');
-    setIsValidatingCoupon(false);
-    setCouponError('');
-    setAppliedCoupon(null);
-  }, []);
-
-  // Reset state when modal is closed
-  useEffect(() => {
-    if (!isOpen) {
-      resetCheckoutState();
-    }
-  }, [isOpen, resetCheckoutState]);
-
-  // Initialize state from props when the modal opens
-  useEffect(() => {
-    if (isOpen) {
-      console.log('Checkout modal opened with props:', {
-        customerDetails,
-        deliveryMethod,
-        deliveryDetails,
-        pickupDetails,
-        giftDetails,
-        paymentMethod,
-        paymentReference,
-        cart: Array.isArray(cart) ? `${cart.length} items` : 'No cart items'
-      });
-
-      // Initialize customer details
-      if (customerDetails) {
-        console.log('Initializing customer details:', customerDetails);
-        setCustomerDetailsState({
-          name: customerDetails.name || '',
-          email: customerDetails.email || '',
-          phone: customerDetails.phone || ''
-        });
-      }
-
-      // Initialize delivery method
-      if (deliveryMethod) {
-        console.log('Initializing delivery method:', deliveryMethod);
-        setDeliveryMethodState(deliveryMethod);
-      }
-
-      // Initialize delivery details
-      if (deliveryDetails) {
-        console.log('Initializing delivery details:', deliveryDetails);
-        setDeliveryDetailsState({
-          date: deliveryDetails.date || '',
-          timeSlot: deliveryDetails.timeSlot || '',
-          instructions: deliveryDetails.instructions || '',
-          streetAddress: deliveryDetails.streetAddress || '',
-          apartment: deliveryDetails.apartment || '',
-          emirate: deliveryDetails.emirate || '',
-          city: deliveryDetails.city || '',
-          charge: deliveryDetails.charge || 0
-        });
-      }
-
-      // Initialize pickup details
-      if (pickupDetails) {
-        console.log('Initializing pickup details:', pickupDetails);
-        setPickupDetailsState({
-          date: pickupDetails.date || '',
-          timeSlot: pickupDetails.timeSlot || ''
-        });
-      }
-
-      // Initialize gift details
-      if (giftDetails) {
-        console.log('Initializing gift details:', giftDetails);
-        setGiftDetailsState({
-          isGift: giftDetails.isGift || false,
-          recipientName: giftDetails.recipientName || '',
-          recipientPhone: giftDetails.recipientPhone || '',
-          message: giftDetails.message || '',
-          note: giftDetails.note || '',
-          cashAmount: giftDetails.cashAmount || 0,
-          includeCash: giftDetails.includeCash || false
-        });
-      }
-
-      // Initialize payment method
-      if (paymentMethod) {
-        console.log('Initializing payment method:', paymentMethod);
-        setPaymentMethodState(paymentMethod);
-      }
-
-      // Initialize payment reference
-      if (paymentReference) {
-        console.log('Initializing payment reference:', paymentReference);
-        setPaymentReferenceState(paymentReference);
-      }
-
-      // Clear the flag from localStorage
-      localStorage.removeItem('openCheckoutModal');
-      
-      // Don't remove checkout details from localStorage here
-      // This should be done in the POS page after the modal is opened
-    }
-  }, [isOpen, customerDetails, deliveryMethod, deliveryDetails, pickupDetails, giftDetails, paymentMethod, paymentReference, cart]);
-
-  // Get formatted checkout details for saving
-  const getFormattedCheckoutDetails = (): CheckoutDetails => {
-    return {
-      customerDetails: customerDetailsState,
-      deliveryMethod: deliveryMethodState,
-      deliveryDetails: deliveryDetailsState,
-      pickupDetails: pickupDetailsState,
-      giftDetails: giftDetailsState,
-      paymentMethod: paymentMethodState,
-      paymentReference: paymentReferenceState,
-      orderSummary: {
-        totalItems: cart.length,
-        products: cart.map(item => ({
-          id: item.id,
-          productId: item.product.id,
-          productName: item.product.name,
-          quantity: item.quantity,
-          price: item.totalPrice,
-          unitPrice: item.product.basePrice,
-          sku: item.product.sku,
-          requiresKitchen: item.product.requiresKitchen,
-          requiresDesign: item.product.requiresDesign,
-          hasVariations: item.selectedVariations && item.selectedVariations.length > 0,
-          hasCustomImages: item.customImages && item.customImages.length > 0
-        })),
-        totalAmount: cartTotal
-      }
+  // Ensure customer details are not empty strings
+  const sanitizeCustomerDetails = () => {
+    // Trim all values to remove whitespace
+    const trimmedName = customerDetailsState.name?.trim() || '';
+    const trimmedEmail = customerDetailsState.email?.trim() || '';
+    const trimmedPhone = customerDetailsState.phone?.trim() || '';
+    
+    // Only use the actual customer data, don't provide defaults
+    const details = {
+      name: trimmedName,
+      email: trimmedEmail,
+      phone: trimmedPhone
     };
+    
+    console.log('Sanitized customer details:', details);
+    return details;
   };
 
-  const handleQueueOrder = async () => {
+  const remainingAmountState = useMemo(() => {
+    const totalPaid = paymentsState.reduce((sum, p) => sum + p.amount, 0);
+    return Math.max(0, cartTotal - totalPaid);
+  }, [cartTotal, paymentsState]);
+
+  // Handle customer search
+  const handleCustomerSearch = useCallback(async (searchTerm: string) => {
     try {
-      setIsSubmitting(true);
-      
-      // Validate cart
-      if (!cart || cart.length === 0) {
-        toast.error('Your cart is empty');
-        setIsSubmitting(false);
-        return;
-      }
-      
-      // Validate customer details if required
-      if (customerDetailsState.name && customerDetailsState.phone) {
-        if (!customerDetailsState.name || !customerDetailsState.phone) {
-          toast.error('Please provide customer details');
-          setIsSubmitting(false);
-          return;
-        }
-      }
-      
-      // Format cart items with all necessary data
-      const cartWithMetadata = cart.map(item => {
-        // Format selected variations
-        const selectedVariations = Array.isArray(item.selectedVariations) 
-          ? item.selectedVariations.map(v => ({
-              id: v.id,
-              type: v.type,
-              value: v.value,
-              price: v.priceAdjustment || 0
-            }))
-          : [];
-          
-        // Format custom images
-        const customImages = Array.isArray(item.customImages)
-          ? item.customImages.map(img => ({
-              id: img.id || nanoid(),
-              url: img.url || '',
-              previewUrl: img.previewUrl || '',
-              comment: img.comment || ''
-            }))
-          : [];
-        
-        // Return formatted item
-        return {
-          productId: item.product.id,
-          productName: item.product.name,
-          description: item.product.description || '',
-          sku: item.product.sku || '',
-          barcode: item.product.barcode || '',
-          unitPrice: item.product.basePrice,
-          quantity: item.quantity,
-          totalPrice: item.totalPrice,
-          selectedVariations,
-          customImages,
-          notes: item.notes || '',
-          requiresKitchen: item.product.requiresKitchen || false,
-          requiresDesign: item.product.requiresDesign || false,
-          allowCustomImages: item.product.allowCustomImages || false,
-          metadata: {
-            ...item.metadata,
-            requiresKitchen: item.product.requiresKitchen || false,
-            requiresDesign: item.product.requiresDesign || false
+      const response = await apiMethods.customers.search(searchTerm);
+      if (response.data) {
+        const customers: Customer[] = response.data.map(customer => ({
+          id: customer.id,
+          firstName: customer.firstName,
+          lastName: customer.lastName,
+          email: customer.email,
+          phone: customer.phone,
+          addresses: customer.addresses || [], // Ensure addresses is always an array
+          reward: {
+            points: customer.reward?.points || 0
           }
-        };
-      });
-      
-      // Create order summary
-      const orderSummary = {
-        totalItems: cart.reduce((sum, item) => sum + item.quantity, 0),
-        products: cart.map(item => ({
-          id: nanoid(),
-          productId: item.product.id,
-          productName: item.product.name,
-          quantity: item.quantity,
-          price: item.totalPrice,
-          unitPrice: item.product.basePrice,
-          sku: item.product.sku || '',
-          requiresKitchen: item.product.requiresKitchen || false,
-          requiresDesign: item.product.requiresDesign || false,
-          hasVariations: Array.isArray(item.selectedVariations) && item.selectedVariations.length > 0,
-          hasCustomImages: Array.isArray(item.customImages) && item.customImages.length > 0
-        })),
-        totalAmount: cartTotal
-      };
-      
-      console.log('Queuing order with data:', {
-        items: cartWithMetadata,
-        customer: {
-          name: customerDetailsState.name,
-          email: customerDetailsState.email,
-          phone: customerDetailsState.phone
-        },
-        notes: '',
-        totalAmount: cartTotal,
-        deliveryMethod: deliveryMethodState,
-        deliveryDetails: deliveryMethodState === 'DELIVERY' ? {
-          date: deliveryDetailsState.date,
-          timeSlot: deliveryDetailsState.timeSlot,
-          instructions: deliveryDetailsState.instructions,
-          streetAddress: deliveryDetailsState.streetAddress,
-          apartment: deliveryDetailsState.apartment,
-          emirate: deliveryDetailsState.emirate,
-          city: deliveryDetailsState.city,
-          charge: deliveryDetailsState.charge !== undefined ? 
-            deliveryDetailsState.charge : 
-            calculateDeliveryCharge(deliveryDetailsState.emirate)
-        } : undefined,
-        pickupDetails: deliveryMethodState === 'PICKUP' ? {
-          date: pickupDetailsState.date,
-          timeSlot: pickupDetailsState.timeSlot
-        } : undefined,
-        giftDetails: giftDetailsState.isGift ? {
-          isGift: giftDetailsState.isGift,
-          recipientName: giftDetailsState.recipientName,
-          recipientPhone: giftDetailsState.recipientPhone,
-          message: giftDetailsState.message,
-          note: giftDetailsState.note,
-          cashAmount: giftDetailsState.cashAmount,
-          includeCash: giftDetailsState.includeCash
-        } : undefined,
-        orderSummary
-      });
-      
-      // Call API to queue order
-      const response = await apiMethods.pos.queueOrder({
-        items: cartWithMetadata,
-        customerName: customerDetailsState.name,
-        customerEmail: customerDetailsState.email,
-        customerPhone: customerDetailsState.phone,
-        notes: '',
-        totalAmount: cartTotal,
-        deliveryMethod: deliveryMethodState,
-        deliveryDetails: deliveryMethodState === 'DELIVERY' ? {
-          date: deliveryDetailsState.date,
-          timeSlot: deliveryDetailsState.timeSlot,
-          instructions: deliveryDetailsState.instructions,
-          streetAddress: deliveryDetailsState.streetAddress,
-          apartment: deliveryDetailsState.apartment,
-          emirate: deliveryDetailsState.emirate,
-          city: deliveryDetailsState.city,
-          charge: deliveryDetailsState.charge !== undefined ? 
-            deliveryDetailsState.charge : 
-            calculateDeliveryCharge(deliveryDetailsState.emirate)
-        } : undefined,
-        pickupDetails: deliveryMethodState === 'PICKUP' ? {
-          date: pickupDetailsState.date,
-          timeSlot: pickupDetailsState.timeSlot
-        } : undefined,
-        giftDetails: giftDetailsState.isGift ? {
-          isGift: giftDetailsState.isGift,
-          recipientName: giftDetailsState.recipientName,
-          recipientPhone: giftDetailsState.recipientPhone,
-          message: giftDetailsState.message,
-          note: giftDetailsState.note,
-          cashAmount: giftDetailsState.cashAmount,
-          includeCash: giftDetailsState.includeCash
-        } : undefined,
-        orderSummary
-      });
-      
-      if (response.success) {
-        toast.success('Order queued successfully');
-        
-        // Call onQueueOrder callback if provided
-        if (onQueueOrder) {
-          onQueueOrder({
-            customerDetails: {
-              name: customerDetailsState.name,
-              email: customerDetailsState.email,
-              phone: customerDetailsState.phone
-            },
-            deliveryMethod: deliveryMethodState,
-            deliveryDetails: deliveryMethodState === 'DELIVERY' ? {
-              date: deliveryDetailsState.date,
-              timeSlot: deliveryDetailsState.timeSlot,
-              instructions: deliveryDetailsState.instructions,
-              streetAddress: deliveryDetailsState.streetAddress,
-              apartment: deliveryDetailsState.apartment,
-              emirate: deliveryDetailsState.emirate,
-              city: deliveryDetailsState.city,
-              charge: deliveryDetailsState.charge !== undefined ? 
-                deliveryDetailsState.charge : 
-                calculateDeliveryCharge(deliveryDetailsState.emirate)
-            } : undefined,
-            pickupDetails: deliveryMethodState === 'PICKUP' ? {
-              date: pickupDetailsState.date,
-              timeSlot: pickupDetailsState.timeSlot
-            } : undefined,
-            giftDetails: giftDetailsState.isGift ? {
-              isGift: giftDetailsState.isGift,
-              recipientName: giftDetailsState.recipientName,
-              recipientPhone: giftDetailsState.recipientPhone,
-              message: giftDetailsState.message,
-              note: giftDetailsState.note,
-              cashAmount: giftDetailsState.cashAmount,
-              includeCash: giftDetailsState.includeCash
-            } : undefined,
-            paymentMethod: paymentMethodState,
-            paymentReference: paymentReferenceState,
-            orderSummary
-          });
-        }
-        
-        // Close modal and reset state
-        onClose();
-        resetCheckoutState();
-      } else {
-        toast.error(response.message || 'Failed to queue order');
+        }));
+        setSearchResults(customers); 
       }
     } catch (error) {
-      console.error('Error queuing order:', error);
-      toast.error('An error occurred while queuing the order');
-    } finally {
-      setIsSubmitting(false);
+      console.error('Error searching customers:', error);
+      toast.error('Failed to search customers');
     }
-  };
+  }, []);
+
+  // Handle customer create
+  const handleCustomerCreate = useCallback(async (customer: Omit<Customer, 'id' | 'addresses' | 'reward'>) => {
+    try {
+      const response = await apiMethods.customers.create({
+        ...customer,
+        addresses: [],
+        reward: {
+          points: 0
+        }
+      });
+      if (response.data) {
+        const newCustomer: Customer = {
+          ...response.data,
+          addresses: [],
+          reward: {
+            points: 0
+          }
+        };
+        handleCustomerSelect(newCustomer);
+        toast.success('Customer created successfully!');
+      }
+    } catch (error) {
+      console.error('Error creating customer:', error);
+      toast.error('Failed to create customer');
+    }
+  }, [handleCustomerSelect]);
+
+  const handlePaymentComplete = useCallback(() => {
+    // Reset payment form
+    setCurrentPaymentAmountState('');
+    setCurrentPaymentReferenceState('');
+
+    // If payment is complete, proceed with checkout
+    if (calculateTotalPaid() >= cartTotal) {
+      handleCreateOrder();
+    }
+  }, [cartTotal, calculateTotalPaid, handleCreateOrder]);
 
   return (
-    <Transition appear show={isOpen} as={Fragment}>
+    <Transition.Root show={isOpen} as={Fragment}>
       <Dialog as="div" className="relative z-50" onClose={onClose}>
         <Transition.Child
           as={Fragment}
@@ -1222,24 +1696,63 @@ export default function CheckoutModal({
                                 onChange={handleCustomerNameChange}
                                 className="block w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4 pl-12"
                                 placeholder="Customer Name *"
+                                autoComplete="off"
+                                onFocus={() => {
+                                  if (customerDetailsState.name.trim() !== '') {
+                                    setShowSearchResults(true);
+                                  }
+                                }}
+                                onKeyDown={(e) => {
+                                  if (showSearchResults && searchResults.length > 0) {
+                                    if (e.key === 'ArrowDown') {
+                                      e.preventDefault();
+                                      const firstResult = searchResults[0];
+                                      handleCustomerSelect(firstResult);
+                                    } else if (e.key === 'Enter' && !e.shiftKey) {
+                                      e.preventDefault();
+                                      const firstResult = searchResults[0];
+                                      handleCustomerSelect(firstResult);
+                                    } else if (e.key === 'Escape') {
+                                      e.preventDefault();
+                                      setShowSearchResults(false);
+                                    }
+                                  }
+                                }}
+                                aria-expanded={showSearchResults}
+                                aria-haspopup="listbox"
+                                aria-controls="customer-search-results"
+                                role="combobox"
                               />
                               <User className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
                             </div>
 
                             {/* Search Results Dropdown */}
                             {showSearchResults && (
-                              <div className="absolute z-10 w-full mt-1 bg-white rounded-md shadow-lg border border-gray-200">
+                              <div 
+                                id="customer-search-results"
+                                role="listbox"
+                                className="absolute z-10 w-full mt-1 bg-white rounded-md shadow-lg border border-gray-200"
+                              >
                                 {isSearching ? (
                                   <div className="p-4 text-center text-gray-500">
                                     Searching...
                                   </div>
                                 ) : searchResults.length > 0 ? (
                                   <ul className="max-h-60 overflow-auto">
-                                    {searchResults.map((customer) => (
+                                    {searchResults.map((customer, index) => (
                                       <li
                                         key={customer.id}
                                         className="p-4 hover:bg-gray-50 cursor-pointer border-b last:border-b-0"
                                         onClick={() => handleCustomerSelect(customer)}
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter' || e.key === ' ') {
+                                            e.preventDefault();
+                                            handleCustomerSelect(customer);
+                                          }
+                                        }}
+                                        role="option"
+                                        aria-selected={index === 0}
+                                        tabIndex={0}
                                       >
                                         <div className="font-medium">
                                           {customer.firstName} {customer.lastName}
@@ -1267,13 +1780,15 @@ export default function CheckoutModal({
                               onChange={(e) => setCustomerDetailsState((prev) => ({ ...prev, phone: e.target.value }))}
                               className="block w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4"
                               placeholder="Phone Number *"
+                              required
                             />
                             <input
                               type="email"
                               value={customerDetailsState.email}
                               onChange={(e) => setCustomerDetailsState((prev) => ({ ...prev, email: e.target.value }))}
                               className="block w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4"
-                              placeholder="Email (Optional)"
+                              placeholder="Email Address *"
+                              required
                             />
                           </div>
                         </div>
@@ -1284,19 +1799,19 @@ export default function CheckoutModal({
                           <div className="grid grid-cols-2 gap-4">
                             <button
                               type="button"
-                              onClick={() => setDeliveryMethodState('PICKUP')}
+                              onClick={() => setDeliveryMethodState(DeliveryMethod.PICKUP)}
                               className={`p-4 text-center border-2 rounded-lg flex items-center justify-center ${
-                                deliveryMethodState === 'PICKUP'
+                                deliveryMethodState === DeliveryMethod.PICKUP
                                   ? 'border-blue-500 bg-blue-50'
                                   : 'border-gray-200'
                               }`}
                             >
                               <div className={`w-6 h-6 border-2 rounded-full mr-3 flex items-center justify-center ${
-                                deliveryMethodState === 'PICKUP'
+                                deliveryMethodState === DeliveryMethod.PICKUP
                                   ? 'border-blue-500 bg-blue-500'
                                   : 'border-gray-300'
                               }`}>
-                                {deliveryMethodState === 'PICKUP' && (
+                                {deliveryMethodState === DeliveryMethod.PICKUP && (
                                   <div className="w-3 h-3 bg-white rounded-full" />
                                 )}
                               </div>
@@ -1305,19 +1820,19 @@ export default function CheckoutModal({
 
                             <button
                               type="button"
-                              onClick={() => setDeliveryMethodState('DELIVERY')}
+                              onClick={() => setDeliveryMethodState(DeliveryMethod.DELIVERY)}
                               className={`p-4 text-center border-2 rounded-lg flex items-center justify-center ${
-                                deliveryMethodState === 'DELIVERY'
+                                deliveryMethodState === DeliveryMethod.DELIVERY
                                   ? 'border-blue-500 bg-blue-50'
                                   : 'border-gray-200'
                               }`}
                             >
                               <div className={`w-6 h-6 border-2 rounded-full mr-3 flex items-center justify-center ${
-                                deliveryMethodState === 'DELIVERY'
+                                deliveryMethodState === DeliveryMethod.DELIVERY
                                   ? 'border-blue-500 bg-blue-500'
                                   : 'border-gray-300'
                               }`}>
-                                {deliveryMethodState === 'DELIVERY' && (
+                                {deliveryMethodState === DeliveryMethod.DELIVERY && (
                                   <div className="w-3 h-3 bg-white rounded-full" />
                                 )}
                               </div>
@@ -1327,7 +1842,7 @@ export default function CheckoutModal({
                         </div>
 
                         {/* Delivery Form */}
-                        {deliveryMethodState === 'DELIVERY' && (
+                        {deliveryMethodState === DeliveryMethod.DELIVERY && (
                           <div className="grid grid-cols-1 gap-4 pt-8">
                             <input
                               type="text"
@@ -1411,7 +1926,7 @@ export default function CheckoutModal({
                         )}
 
                         {/* Pickup Form */}
-                        {deliveryMethodState === 'PICKUP' && (
+                        {deliveryMethodState === DeliveryMethod.PICKUP && (
                           <div className="grid grid-cols-1 gap-4 pt-8">
                             <select
                               value={pickupDetailsState.date}
@@ -1446,74 +1961,71 @@ export default function CheckoutModal({
 
  {/* Gift Section */}
  <div className="mt-6 space-y-4">
-                          <div className="flex items-center justify-between">
-                            <h3 className="text-lg font-medium text-gray-900">Send as a Gift</h3>
-                            <label className="relative inline-flex items-center cursor-pointer">
-                              <input
-                                type="checkbox"
-                                className="sr-only peer"
-                                checked={giftDetailsState.isGift}
-                                onChange={(e) => setGiftDetailsState((prev) => ({ ...prev, isGift: e.target.checked }))}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setGiftDetailsState(prev => ({ ...prev, isGift: !prev.isGift }));
+                              setIsGiftState(!isGiftState);
+                            }}
+                            className="w-full flex items-center justify-between p-4 rounded-xl border-2 border-gray-200 hover:border-blue-500 transition-colors relative"
+                          >
+                            <div className="flex items-center">
+                              <span className="text-lg font-medium text-gray-900">Send as a Gift</span>
+                            </div>
+                            <div className={`w-14 h-8 relative rounded-full transition-colors ${isGiftState ? 'bg-blue-600' : 'bg-gray-200'}`}>
+                              <div 
+                                className={`absolute top-1 w-6 h-6 bg-white rounded-full shadow transition-transform transform ${
+                                  isGiftState ? 'translate-x-7' : 'translate-x-1'
+                                }`} 
                               />
-                              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                            </label>
-                          </div>
+                            </div>
+                          </button>
 
-                          {giftDetailsState.isGift && (
-                            <div className="space-y-4">
-                              <input
-                                type="text"
-                                value={giftDetailsState.recipientName}
-                                onChange={(e) => setGiftDetailsState((prev) => ({ ...prev, recipientName: e.target.value }))}
-                                className="block w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4"
-                                placeholder="Recipient Name *"
-                              />
-
-                              <input
-                                type="tel"
-                                value={giftDetailsState.recipientPhone}
-                                onChange={(e) => setGiftDetailsState((prev) => ({ ...prev, recipientPhone: e.target.value }))}
-                                className="block w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4"
-                                placeholder="Recipient Phone *"
-                              />
-
+                          {isGiftState && (
+                            <div className="space-y-4 p-4 bg-gray-50 rounded-xl">
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <input
+                                  type="text"
+                                  value={giftDetailsState.recipientName}
+                                  onChange={(e) => setGiftDetailsState(prev => ({ ...prev, recipientName: e.target.value }))}
+                                  className="block w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-lg p-4"
+                                  placeholder="Recipient Name"
+                                />
+                                <input
+                                  type="tel"
+                                  value={giftDetailsState.recipientPhone}
+                                  onChange={(e) => setGiftDetailsState(prev => ({ ...prev, recipientPhone: e.target.value }))}
+                                  className="block w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-lg p-4"
+                                  placeholder="Recipient Phone"
+                                />
+                              </div>
                               <textarea
                                 value={giftDetailsState.message}
-                                onChange={(e) => setGiftDetailsState((prev) => ({ ...prev, message: e.target.value }))}
-                                className="block w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4"
-                                placeholder="Gift Message (Optional)"
-                                rows={2}
+                                onChange={(e) => setGiftDetailsState(prev => ({ ...prev, message: e.target.value }))}
+                                className="block w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-lg p-4"
+                                placeholder="Gift Message"
+                                rows={3}
                               />
-
-                              <div className="flex items-center space-x-2">
-                                <input
-                                  type="checkbox"
-                                  id="includeCash"
-                                  checked={giftDetailsState.includeCash}
-                                  onChange={(e) => setGiftDetailsState((prev) => ({ ...prev, includeCash: e.target.checked }))}
-                                  className="h-4 w-4 rounded border-gray-300 text-black focus:ring-black"
-                                />
-                                <label htmlFor="includeCash" className="text-sm font-medium text-gray-900">
-                                  Include Cash Gift
-                                </label>
-                              </div>
-                              
-                              {giftDetailsState.includeCash && (
-                                <div className="relative">
-                                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                                    <span className="text-gray-500 text-lg">AED</span>
+                              <div className="flex items-center space-x-4">
+                                <div className="flex-1">
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">Include Cash Gift</label>
+                                  <div className="relative mt-1 rounded-xl shadow-sm">
+                                    <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4">
+                                      <span className="text-gray-500 sm:text-lg">AED</span>
+                                    </div>
+                                    <input
+                                      type="number"
+                                      value={giftDetailsState.cashAmount || ''}
+                                      onChange={(e) => setGiftDetailsState(prev => ({
+                                        ...prev, 
+                                        cashAmount: e.target.value,
+                                        includeCash: e.target.value !== ''
+                                      }))}
+                                      className="w-20 text-lg font-medium border-b-2 border-gray-300 focus:border-black focus:outline-none text-right"
+                                    />
                                   </div>
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    step="1"
-                                    value={giftDetailsState.cashAmount}
-                                    onChange={(e) => setGiftDetailsState((prev) => ({ ...prev, cashAmount: parseFloat(e.target.value) || 0 }))}
-                                    className="block w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4 pl-16"
-                                    placeholder="Cash Amount"
-                                  />
                                 </div>
-                              )}
+                              </div>
                             </div>
                           )}
                         </div>
@@ -1548,11 +2060,26 @@ export default function CheckoutModal({
                                 
                                 // Ensure selectedVariations is an array
                                 const selectedVariations = Array.isArray(item.selectedVariations) 
-                                  ? item.selectedVariations 
+                                  ? item.selectedVariations.map(v => {
+                                      if (typeof v === 'object' && v !== null) {
+                                        return {
+                                          id: v.id || '',
+                                          type: v.type,
+                                          value: v.value,
+                                          price: Number(v.price) || 0
+                                        };
+                                      }
+                                      return {
+                                        id: '',
+                                        type: '',
+                                        value: '',
+                                        price: 0
+                                      };
+                                    })
                                   : [];
-                                
+
                                 // Ensure customImages is an array
-                                const customImages = Array.isArray(item.customImages)
+                                const customImages = Array.isArray(item.customImages) 
                                   ? item.customImages
                                   : [];
                                  
@@ -1569,17 +2096,28 @@ export default function CheckoutModal({
                                       <p className="text-base text-gray-500 mt-2">
                                         Quantity: {item.quantity || 0}
                                       </p>
-                                      {selectedVariations.length > 0 ? (
-                                        selectedVariations.map((variation, i) => (
-                                          <p
-                                            key={`${item.id}-var-${i}`}
-                                            className="text-base text-gray-500"
-                                          >
-                                            {variation.type}: {variation.value}
-                                            {variation.priceAdjustment > 0 && ` (+AED ${variation.priceAdjustment.toFixed(2)})`}
-                                          </p>
-                                        ))
-                                      ) : null}
+                                      {selectedVariations.length > 0 && selectedVariations.map((variation, i) => {
+                                          // Ensure variation has the correct structure
+                                          const type = typeof variation === 'object' && variation !== null 
+                                            ? (variation.type || variation.id || '').toString()
+                                            : '';
+                                          const value = typeof variation === 'object' && variation !== null 
+                                            ? (variation.value || variation.id || '').toString()
+                                            : '';
+                                          const priceAdjustment = typeof variation === 'object' && variation !== null 
+                                            ? Number(variation.priceAdjustment) || 0
+                                            : 0;
+                                          
+                                          return (
+                                            <p
+                                              key={`${item.id}-var-${i}`}
+                                              className="text-base text-gray-500"
+                                            >
+                                              {type}: {value}
+                                              {priceAdjustment > 0 && ` (+AED ${priceAdjustment.toFixed(2)})`}
+                                            </p>
+                                          );
+                                        })}
                                       {item.notes && (
                                         <p className="text-sm text-gray-600 mt-2">
                                           Notes: {item.notes}
@@ -1622,7 +2160,7 @@ export default function CheckoutModal({
                                       </div>
                                     </div>
                                     <p className="text-lg font-medium ml-4">
-                                      AED {(item.totalPrice || 0).toFixed(2)}
+                                      AED {(item.product.basePrice * item.quantity).toFixed(2)}
                                     </p>
                                   </div>
                                 );
@@ -1634,153 +2172,272 @@ export default function CheckoutModal({
                             )}
                           </div>
 
-                          <div className="mt-6 pt-6 border-t">
+                          <div className="flex flex-col space-y-4 p-4 bg-gray-50 rounded-lg mt-4">
                             <div className="flex justify-between items-center font-medium">
                               <p className="text-xl">Subtotal</p>
                               <p className="text-xl">AED {cartTotal.toFixed(2)}</p>
                             </div>
-                            {deliveryMethodState === 'DELIVERY' && deliveryDetailsState.emirate && (
-                              <div className="flex justify-between items-center font-medium mt-2">
-                                <p className="text-xl">Delivery Charge ({deliveryDetailsState.emirate.replace('_', ' ')})</p>
-                                <div className="flex items-center">
-                                  <span className="mr-2 text-xl">AED</span>
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    step="1"
-                                    value={deliveryDetailsState.charge !== undefined ? 
-                                      deliveryDetailsState.charge : 
-                                      calculateDeliveryCharge(deliveryDetailsState.emirate)}
-                                    onChange={(e) => setDeliveryDetailsState(prev => ({ 
-                                      ...prev, 
-                                      charge: parseFloat(e.target.value) || 0 
-                                    }))}
-                                    className="w-20 text-xl font-medium border-b-2 border-gray-300 focus:border-black focus:outline-none text-right"
-                                  />
-                                </div>
-                              </div>
-                            )}
+                            
                             {appliedCoupon && (
-                              <div className="flex justify-between items-center font-medium mt-2">
-                                <p className="text-xl">Coupon Discount ({appliedCoupon.code})</p>
-                                <p className="text-xl">
-                                  AED {calculateCouponDiscount().toFixed(2)}
-                                </p>
+                              <div className="flex justify-between items-center font-medium">
+                                <div className="flex items-center">
+                                  <p className="text-xl text-green-600">
+                                    Discount ({appliedCoupon.code})
+                                    {appliedCoupon.type === 'PERCENTAGE' && ` (${appliedCoupon.value}%)`}
+                                  </p>
+                                  <button
+                                    onClick={() => {
+                                      setAppliedCoupon(null);
+                                      setCouponCode('');
+                                    }}
+                                    className="ml-2 text-red-500 hover:text-red-700"
+                                  >
+                                    <X size={16} />
+                                  </button>
+                                </div>
+                                <p className="text-xl text-green-600">-AED {appliedCoupon.discount.toFixed(2)}</p>
                               </div>
                             )}
-                            <div className="flex justify-between items-center font-medium mt-4 pt-4 border-t">
-                              <p className="text-xl font-bold">Total</p>
-                              <p className="text-2xl font-bold">AED {calculateTotal().toFixed(2)}</p>
-                            </div>
-                          </div>
-                        </div>
+                            
+                            {deliveryMethod === DeliveryMethod.DELIVERY && deliveryDetailsState.emirate && (
+                              <div className="flex justify-between items-center font-medium">
+                                <p className="text-xl">Delivery Charge ({deliveryDetailsState.emirate.replace('_', ' ')})</p>
+                                <p className="text-xl">AED {deliveryDetailsState.charge.toFixed(2)}</p>
+                              </div>
+                            )}
 
- {/* Coupon Section */}
- <div className="mt-6 space-y-4">
-                          <div className="flex items-center justify-between">
-                            <h3 className="text-lg font-medium text-gray-900">Apply Coupon</h3>
+                            <div className="flex justify-between items-center font-medium pt-2 border-t border-gray-200">
+                              <p className="text-2xl font-bold">Total</p>
+                              <p className="text-2xl font-bold">AED {calculateFinalTotal().toFixed(2)}</p>
+                            </div>
+
+                            {/* Show minimum order amount warning if coupon has minimum requirement */}
+                            {appliedCoupon?.minOrderAmount && cartTotal < appliedCoupon.minOrderAmount && (
+                              <div className="text-sm text-red-500 mt-2">
+                                Minimum order amount required: AED {appliedCoupon.minOrderAmount}
+                              </div>
+                            )}
                           </div>
-                          <div className="flex space-x-2">
-                            <input
-                              type="text"
-                              value={couponCode}
-                              onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
-                              className="flex-1 rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4"
-                              placeholder="Enter Coupon Code"
-                            />
-                            <button
-                              onClick={handleApplyCoupon}
-                              disabled={!couponCode || isValidatingCoupon}
-                              className="px-6 py-4 bg-black text-white rounded-xl hover:bg-gray-900 disabled:bg-gray-300 disabled:cursor-not-allowed"
-                            >
-                              {isValidatingCoupon ? 'Validating...' : 'Apply'}
-                            </button>
-                          </div>
-                          {couponError && (
-                            <p className="text-red-500">{couponError}</p>
-                          )}
-                          {appliedCoupon && (
-                            <div className="bg-green-50 border border-green-200 rounded-xl p-4">
-                              <div className="flex justify-between items-center">
-                                <div>
-                                  <p className="text-green-700 font-medium">{appliedCoupon.code}</p>
-                                  <p className="text-green-600 text-sm">
-                                    {appliedCoupon.type === 'PERCENTAGE' 
-                                      ? `${appliedCoupon.value}% off`
-                                      : `AED ${appliedCoupon.value} off`
-                                    }
-                                  </p>
-                                </div>
+
+                          {/* Payment Method */}
+                          <div className="mt-8 pt-8 border-t">
+                            <h4 className="text-xl font-medium mb-6">Payment Method</h4>
+                            <div className="space-y-4">
+                              <div className="flex space-x-4">
                                 <button
-                                  onClick={handleRemoveCoupon}
-                                  className="text-green-700 hover:text-green-800"
+                                  type="button"
+                                  onClick={() => handlePaymentMethodSelect(POSPaymentMethod.CASH)}
+                                  className={`flex-1 p-6 text-lg font-medium rounded-xl border-2 transition-all ${
+                                    currentPaymentMethodState === POSPaymentMethod.CASH
+                                      ? "bg-black text-white"
+                                      : "bg-gray-100 text-gray-700"
+                                  }`}
                                 >
-                                  <X className="h-5 w-5" />
+                                  Cash
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handlePaymentMethodSelect(POSPaymentMethod.CARD)}
+                                  className={`flex-1 p-6 text-lg font-medium rounded-xl border-2 transition-all ${
+                                    currentPaymentMethodState === POSPaymentMethod.CARD
+                                      ? "bg-black text-white"
+                                      : "bg-gray-100 text-gray-700"
+                                  }`}
+                                >
+                                  Card
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handlePaymentMethodSelect(POSPaymentMethod.SPLIT)}
+                                  className={`flex-1 p-6 text-lg font-medium rounded-xl border-2 transition-all ${
+                                    isSplitPaymentState
+                                      ? "bg-black text-white"
+                                      : "bg-gray-100 text-gray-700"
+                                  }`}
+                                >
+                                  Split
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handlePaymentMethodSelect(POSPaymentMethod.PARTIAL)}
+                                  className={`flex-1 p-6 text-lg font-medium rounded-xl border-2 transition-all ${
+                                    currentPaymentMethodState === POSPaymentMethod.PARTIAL
+                                      ? "bg-black text-white"
+                                      : "bg-gray-100 text-gray-700"
+                                  }`}
+                                >
+                                  Partial
                                 </button>
                               </div>
-                            </div>
-                          )}
-                        </div>
 
+                              {/* Split Payment Form */}
+                              {isSplitPaymentState && (
+                                <div className="mt-6 space-y-6">
+                                  <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                      <label className="block text-sm font-medium text-gray-700 mb-2">Cash Amount</label>
+                                      <input
+                                        type="number"
+                                        value={splitCashAmount}
+                                        onChange={(e) => setSplitCashAmount(e.target.value)}
+                                        className="block w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4"
+                                        placeholder="Enter cash amount"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="block text-sm font-medium text-gray-700 mb-2">Card Amount</label>
+                                      <input
+                                        type="number"
+                                        value={splitCardAmount}
+                                        onChange={(e) => setSplitCardAmount(e.target.value)}
+                                        className="block w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4"
+                                        placeholder="Enter card amount"
+                                      />
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">Card Reference</label>
+                                    <input
+                                      type="text"
+                                      value={splitCardReference}
+                                      onChange={(e) => setSplitCardReference(e.target.value)}
+                                      className="block w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4"
+                                      placeholder="Enter card reference"
+                                    />
+                                  </div>
+                                  <div className="flex items-center justify-between bg-gray-50 p-4 rounded-xl">
+                                    <div className="space-y-1">
+                                      <div className="text-sm font-medium text-gray-900">
+                                        Total: AED {cartTotal.toFixed(2)}
+                                      </div>
+                                      <div className="text-sm text-gray-500">
+                                        Remaining: AED {(cartTotal - (parseFloat(splitCashAmount) || 0) - (parseFloat(splitCardAmount) || 0)).toFixed(2)}
+                                      </div>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={handleSplitPayment}
+                                      className="px-6 py-3 bg-black text-white rounded-xl font-medium hover:bg-gray-900"
+                                    >
+                                      Apply Split Payment
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
 
-                        {/* Payment Method */}
-                        <div className="mt-8 pt-8 border-t">
-                          <h4 className="text-xl font-medium mb-6">Payment Method</h4>
-                          <div className="space-y-4">
-                            <div className="grid grid-cols-2 gap-4">
+                              {/* Payment Summary */}
+                              {paymentsState.length > 0 && (
+                                <div className="mt-6 bg-gray-50 rounded-xl p-3">
+                                  <div className="space-y-2">
+                                    {paymentsState.map(payment => (
+                                      <div key={payment.id} className="flex items-center justify-between py-2 px-3">
+                                        <div className="flex items-center space-x-3">
+                                          <div className={`px-2 py-1 text-sm rounded-lg ${
+                                            payment.method === POSPaymentMethod.CASH ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
+                                          }`}>
+                                            {payment.method}
+                                          </div>
+                                          {payment.reference && (
+                                            <span className="text-sm text-gray-500">Ref: {payment.reference}</span>
+                                          )}
+                                          {payment.status === POSPaymentStatus.PARTIALLY_PAID && (
+                                            <div className="px-2 py-1 text-sm rounded-lg bg-yellow-100 text-yellow-800">
+                                              Partial Payment
+                                            </div>
+                                          )}
+                                          {payment.metadata?.futurePaymentMethod && (
+                                            <div className="text-sm text-gray-500">
+                                              Future: {payment.metadata.futurePaymentMethod}
+                                            </div>
+                                          )}
+                                        </div>
+                                        <div className="flex items-center space-x-3">
+                                          <span className="font-medium">AED {payment.amount.toFixed(2)}</span>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleRemovePayment(payment.id)}
+                                            className="text-gray-400 hover:text-red-600"
+                                          >
+                                            <X className="h-4 w-4" />
+                                          </button>
+                                        </div>
+                                      </div>
+                                    ))}
+                                    <div className="flex justify-between items-center py-2 px-3 border-t border-gray-200">
+                                      <span className="text-sm font-medium text-gray-900">Remaining</span>
+                                      <span className="font-medium">AED {remainingAmountState.toFixed(2)}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Coupon Section */}
+                          <div className="mt-6 space-y-4">
+                            <div className="flex items-center justify-between">
+                              <h3 className="text-lg font-medium text-gray-900">Apply Coupon</h3>
+                            </div>
+                            <div className="flex space-x-2">
+                              <input
+                                type="text"
+                                value={couponCode}
+                                onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                                className="flex-1 rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4"
+                                placeholder="Enter Coupon Code"
+                              />
                               <button
-                                type="button"
-                                onClick={() => setPaymentMethodState('CASH')}
-                                className={`p-6 text-lg font-medium rounded-xl border-2 transition-all ${
-                                  paymentMethodState === 'CASH'
-                                    ? 'border-black bg-black text-white'
-                                    : 'border-gray-200 hover:border-gray-300'
-                                }`}
+                                onClick={handleApplyCoupon}
+                                disabled={!couponCode || isValidatingCoupon}
+                                className="px-6 py-4 bg-black text-white rounded-xl font-medium hover:bg-gray-900 disabled:bg-gray-300 disabled:cursor-not-allowed"
                               >
-                                Cash
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setPaymentMethodState('CARD')}
-                                className={`p-6 text-lg font-medium rounded-xl border-2 transition-all ${
-                                  paymentMethodState === 'CARD'
-                                    ? 'border-black bg-black text-white'
-                                    : 'border-gray-200 hover:border-gray-300'
-                                }`}
-                              >
-                                Card
+                                {isValidatingCoupon ? 'Validating...' : 'Apply'}
                               </button>
                             </div>
-                            <input
-                              type="text"
-                              value={paymentReferenceState}
-                              onChange={(e) => setPaymentReferenceState(e.target.value)}
-                              placeholder="Payment Reference"
-                              className="block w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4"
-                            />
+                            {couponError && (
+                              <p className="text-red-500">{couponError}</p>
+                            )}
+                            {appliedCoupon && (
+                              <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+                                <div className="flex justify-between items-center">
+                                  <div>
+                                    <p className="text-green-700 font-medium">{appliedCoupon.code}</p>
+                                    <p className="text-green-600 text-sm">
+                                      {appliedCoupon.type === 'PERCENTAGE' 
+                                        ? `${appliedCoupon.value}% off`
+                                        : `AED ${appliedCoupon.value} off`
+                                      }
+                                    </p>
+                                  </div>
+                                  <button
+                                    onClick={handleRemoveCoupon}
+                                    className="text-green-700 hover:text-green-800"
+                                  >
+                                    <X className="h-5 w-5" />
+                                  </button>
+                                </div>
+                              </div>
+                            )}
                           </div>
 
                           <div className="mt-8">
                             <div className="flex gap-4">
                               <button
                                 type="button"
-                                onClick={handleCheckout}
-                                disabled={isSubmitting}
-                                className={`flex-1 inline-flex justify-center rounded-lg border border-transparent shadow-sm px-6 py-4 bg-black text-xl font-medium text-white hover:bg-gray-900 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors`}
+                                onClick={handleCreateOrder}
+                                disabled={isSubmitting || isQueuingOrder}
+                                className={`flex-[2] inline-flex justify-center rounded-lg border border-transparent shadow-sm px-6 py-4 bg-black text-xl font-medium text-white hover:bg-gray-900 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors`}
                               >
                                 {isSubmitting ? "Processing..." : "Complete Order"}
                               </button>
-                              {onQueueOrder && (
-                                <button
-                                  type="button"
-                                  onClick={handleQueueOrder}
-                                  disabled={isSubmitting}
-                                  className="inline-flex justify-center rounded-lg border border-gray-300 shadow-sm px-4 py-4 bg-white text-gray-700 hover:bg-gray-50 disabled:bg-gray-100 disabled:cursor-not-allowed transition-colors"
-                                  title="Queue Order"
-                                >
-                                  <ListOrdered className="h-6 w-6" />
-                                </button>
-                              )}
+                              <button
+                                type="button"
+                                onClick={handleQueueOrder}
+                                disabled={isSubmitting || isQueuingOrder}
+                                className={`flex-1 inline-flex justify-center rounded-lg border-2 border-black px-6 py-4 bg-white text-lg font-medium text-black hover:bg-gray-50 disabled:bg-gray-100 disabled:border-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed transition-colors`}
+                              >
+                                {isQueuingOrder ? "Processing..." : "Queue Order"}
+                              </button>
                             </div>
                           </div>
                         </div>
@@ -1793,6 +2450,6 @@ export default function CheckoutModal({
           </div>
         </div>
       </Dialog>
-    </Transition>
+    </Transition.Root>
   );
 }

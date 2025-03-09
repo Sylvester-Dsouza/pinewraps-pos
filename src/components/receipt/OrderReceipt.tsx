@@ -8,49 +8,7 @@ import {
   printContent,
   withErrorHandling
 } from '@/services/printer';
-
-interface OrderItem {
-  productId?: string;
-  productName: string;
-  quantity: number;
-  totalPrice: number;
-  variations: Array<{
-    type: string;
-    value: string;
-  }>;
-  notes?: string;
-}
-
-interface Order {
-  orderNumber: string;
-  createdAt: string;
-  customerName: string;
-  customerPhone: string;
-  customerEmail?: string;
-  status: string;
-  paymentMethod: 'CASH' | 'CARD';
-  totalAmount: number;
-  paidAmount: number;
-  changeAmount?: number;
-  items: OrderItem[];
-  notes?: string;
-  deliveryMethod?: 'DELIVERY' | 'PICKUP';
-  deliveryDate?: string;
-  deliveryTimeSlot?: string;
-  deliveryCharge?: number;
-  deliveryInstructions?: string;
-  streetAddress?: string;
-  apartment?: string;
-  emirate?: string;
-  city?: string;
-  pickupDate?: string;
-  pickupTimeSlot?: string;
-}
-
-interface OrderReceiptProps {
-  order: Order;
-  onClose: () => void;
-}
+import { Order, OrderItem } from '@/types/order';
 
 // Receipt-specific styles
 const receiptStyles = `
@@ -148,15 +106,25 @@ const generateReceiptContent = (order: Order): string => `
       <tbody>
         ${order.items.map((item) => `
           <tr>
-            <td>${item.productName}</td>
+            <td>${item.name}</td>
             <td style="text-align: center;">${item.quantity}</td>
             <td style="text-align: right;">${formatCurrency(item.totalPrice)}</td>
           </tr>
-          ${item.variations.map(variation => `
-            <tr>
-              <td colspan="3" class="variation">- ${variation.type}: ${variation.value}</td>
-            </tr>
-          `).join('')}
+          ${Array.isArray(item.variations) ? item.variations.map(variation => {
+            // Ensure variation has the correct structure
+            const type = typeof variation === 'object' && variation !== null 
+              ? (variation.type || variation.id || '').toString()
+              : '';
+            const value = typeof variation === 'object' && variation !== null 
+              ? (variation.value || variation.id || '').toString()
+              : '';
+            
+            return type && value ? `
+              <tr>
+                <td colspan="3" class="variation">- ${type}: ${value}</td>
+              </tr>
+            ` : '';
+          }).join('') : ''}
           ${item.notes ? `
             <tr>
               <td colspan="3" class="notes">Note: ${item.notes}</td>
@@ -175,6 +143,18 @@ const generateReceiptContent = (order: Order): string => `
       <p style="margin: 2px 0;">${formatLineItem('Payment Method:', order.paymentMethod)}</p>
       <p style="margin: 2px 0;">${formatLineItem('Amount Paid:', formatCurrency(order.paidAmount))}</p>
       ${order.changeAmount ? `<p style="margin: 2px 0;">${formatLineItem('Change:', formatCurrency(order.changeAmount))}</p>` : ''}
+      ${order.payments && order.payments.length > 0 ? `
+        <div class="divider"></div>
+        <div style="margin: 10px 0;">
+          <p style="margin: 2px 0; font-weight: bold;">Payment Details:</p>
+          ${order.payments.map(payment => `
+            <p style="margin: 2px 0;">${formatLineItem(payment.method, formatCurrency(payment.amount))}</p>
+            ${payment.reference ? `<p style="margin: 2px 0;">${formatLineItem('Reference:', payment.reference)}</p>` : ''}
+            ${payment.metadata && payment.metadata.cashAmount ? `<p style="margin: 2px 0;">${formatLineItem('Cash Amount:', formatCurrency(payment.metadata.cashAmount))}</p>` : ''}
+            ${payment.metadata && payment.metadata.changeAmount ? `<p style="margin: 2px 0;">${formatLineItem('Change Amount:', formatCurrency(payment.metadata.changeAmount))}</p>` : ''}
+          `).join('')}
+        </div>
+      ` : ''}
     </div>
     
     ${order.notes ? `
@@ -192,6 +172,11 @@ const generateReceiptContent = (order: Order): string => `
     </div>
   </div>
 `;
+
+interface OrderReceiptProps {
+  order: Order;
+  onClose: () => void;
+}
 
 const OrderReceipt: React.FC<OrderReceiptProps> = ({ order, onClose }) => {
   useEffect(() => {

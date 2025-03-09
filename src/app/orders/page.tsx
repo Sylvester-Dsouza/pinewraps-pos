@@ -13,52 +13,8 @@ import OrderReceipt from '@/components/receipt/OrderReceipt';
 import Cookies from 'js-cookie';
 import { nanoid } from 'nanoid';
 import { invoiceService } from '@/services/invoice.service';
-
-interface OrderItem {
-  productId: string;
-  productName: string;
-  quantity: number;
-  totalPrice: number;
-  variations: Array<{
-    type: string;
-    value: string;
-  }>;
-  notes?: string;
-  designImages?: Array<{
-    url: string;
-  }>;
-}
-
-interface Order {
-  id: string;
-  orderNumber: string;
-  customerName: string;
-  customerPhone: string;
-  customerEmail?: string;
-  createdAt: string;
-  status: 'PENDING' | 'DESIGN_QUEUE' | 'DESIGN_PROCESSING' | 'DESIGN_READY' | 'KITCHEN_QUEUE' | 'KITCHEN_PROCESSING' | 'KITCHEN_READY' | 'FINAL_CHECK_QUEUE' | 'FINAL_CHECK_PROCESSING' | 'FINAL_CHECK_COMPLETE' | 'COMPLETED' | 'CANCELLED' | 'PENDING_PAYMENT';
-  totalAmount: number;
-  paidAmount: number;
-  paymentMethod: 'CASH' | 'CARD';
-  items: OrderItem[];
-  notes?: string;
-  deliveryMethod?: 'DELIVERY' | 'PICKUP';
-  deliveryDate?: string;
-  deliveryTimeSlot?: string;
-  deliveryCharge?: number;
-  deliveryInstructions?: string;
-  streetAddress?: string;
-  apartment?: string;
-  emirate?: string;
-  city?: string;
-  pickupDate?: string;
-  pickupTimeSlot?: string;
-  isGift?: boolean;
-  giftRecipientName?: string;
-  giftRecipientPhone?: string;
-  giftMessage?: string;
-  giftCashAmount?: number;
-}
+import { Order, OrderItem, OrderPayment, POSPaymentMethod, POSPaymentStatus } from '@/types/order';
+import RemainingPaymentModal from '@/components/pos/RemainingPaymentModal';
 
 const statusColors = {
   PENDING: { bg: 'bg-yellow-100', text: 'text-yellow-800', icon: Clock },
@@ -109,6 +65,7 @@ const OrdersPage = () => {
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [downloadingInvoices, setDownloadingInvoices] = useState<Record<string, boolean>>({});
   const [showCancelConfirm, setShowCancelConfirm] = useState<string | null>(null);
+  const [selectedOrderForPayment, setSelectedOrderForPayment] = useState<Order | null>(null);
 
   // Check authentication status
   useEffect(() => {
@@ -180,11 +137,42 @@ const OrdersPage = () => {
           ...order,
           items: order.items.map((item: any) => ({
             ...item,
-            variations: Array.isArray(item.variations) ? item.variations : [],
+            name: item.productName || item.name,
+            // Normalize variations to a consistent format
+            variations: ((item.selectedVariations || item.variations) || []).map((v: any) => {
+              if (typeof v === 'object' && v !== null) {
+                return {
+                  id: v.id || nanoid(),
+                  type: (v.type || v.name || v.variationType || '').toString(),
+                  value: (v.value || v.variationValue || '').toString(),
+                  price: Number(v.price) || 0,
+                  priceAdjustment: Number(v.priceAdjustment) || 0
+                };
+              }
+              return {
+                id: nanoid(),
+                type: 'Option',
+                value: String(v || ''),
+                price: 0,
+                priceAdjustment: 0
+              };
+            }),
             totalPrice: Number(item.totalPrice) || 0
           })),
           totalAmount: Number(order.total || order.totalAmount) || 0,
-          paidAmount: Number(order.paidAmount) || 0
+          paidAmount: Number(order.paidAmount) || 0,
+          changeAmount: Number(order.changeAmount) || 0,
+          // Normalize payment information
+          paymentMethod: order.paymentMethod || 'CASH',
+          payments: Array.isArray(order.payments) ? order.payments.map((payment: any) => ({
+            method: payment.method || order.paymentMethod || 'CASH',
+            amount: Number(payment.amount) || 0,
+            reference: payment.reference || '',
+            metadata: {
+              cashAmount: Number(payment.metadata?.cashAmount) || 0,
+              changeAmount: Number(payment.metadata?.changeAmount) || 0
+            }
+          })) : [],
         }));
         
         console.log('Transformed orders:', transformedOrders);
@@ -216,48 +204,6 @@ const OrdersPage = () => {
 
     return () => clearInterval(refreshInterval);
   }, [isAuthenticated, selectedStatus]);
-
-  // Filter orders
-  const filteredOrders = orders.filter(order => {
-    const searchMatch = searchTerm === '' || 
-      order.orderNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      order.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      order.customerPhone.toLowerCase().includes(searchTerm.toLowerCase());
-
-    const statusMatch = selectedStatus === 'all' || order.status === selectedStatus;
-
-    // Date filter
-    const orderDate = new Date(order.createdAt);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    let dateMatch = true;
-    switch (selectedDateRange) {
-      case 'today':
-        dateMatch = orderDate >= today;
-        break;
-      case 'week':
-        const weekAgo = new Date(today);
-        weekAgo.setDate(weekAgo.getDate() - 7);
-        dateMatch = orderDate >= weekAgo;
-        break;
-      case 'month':
-        const monthAgo = new Date(today);
-        monthAgo.setMonth(monthAgo.getMonth() - 1);
-        dateMatch = orderDate >= monthAgo;
-        break;
-      default:
-        dateMatch = true;
-    }
-
-    return searchMatch && statusMatch && dateMatch;
-  });
-
-  // Get order counts by status
-  const orderCounts = orders.reduce((acc, order) => {
-    acc[order.status] = (acc[order.status] || 0) + 1;
-    return acc;
-  }, {} as Record<string, number>);
 
   const handleReorder = async (order: any) => {
     try {
@@ -293,18 +239,30 @@ const OrdersPage = () => {
         id: nanoid(), // Generate a new cart item ID
         product: {
           id: item.productId,
-          name: item.productName,
+          name: item.name,
           basePrice: item.totalPrice / item.quantity, // Calculate unit price
           status: 'ACTIVE',
           images: item.designImages || []
         },
         quantity: item.quantity,
-        selectedVariations: item.variations?.map(v => ({
-          id: nanoid(), // Generate ID for variation
-          type: v.type,
-          value: v.value,
-          priceAdjustment: 0 // Since we don't have this info from the order
-        })) || [],
+        selectedVariations: ((item.selectedVariations || item.variations) || []).map(v => {
+          // Handle both object and string formats
+          if (typeof v === 'object' && v !== null) {
+            return {
+              id: v.id || nanoid(),
+              type: (v.type || v.name || v.variationType || '').toString(),
+              value: (v.value || v.variationValue || '').toString(),
+              priceAdjustment: Number(v.priceAdjustment) || Number(v.price) || 0
+            };
+          }
+          // If it's not an object or is null, create a default format
+          return {
+            id: nanoid(),
+            type: 'Option',
+            value: String(v || ''),
+            priceAdjustment: 0
+          };
+        }).filter(v => v.type && v.value), // Filter out any invalid variations
         totalPrice: item.totalPrice,
         notes: item.notes || ''
       }));
@@ -363,6 +321,22 @@ const OrdersPage = () => {
     }
   };
 
+  const calculateRemainingAmount = (order: Order) => {
+    const totalPaid = order.payments?.reduce((sum, payment) => sum + payment.amount, 0) || 0;
+    return order.totalAmount - totalPaid;
+  };
+
+  const hasPartialPayment = (order: Order) => {
+    const hasPartialStatus = order.payments?.some(p => p.status === POSPaymentStatus.PARTIALLY_PAID);
+    const totalPaid = order.payments?.reduce((sum, payment) => sum + payment.amount, 0) || 0;
+    return hasPartialStatus || (totalPaid > 0 && totalPaid < order.totalAmount);
+  };
+
+  const handlePaymentComplete = async () => {
+    await fetchOrders();
+    setSelectedOrderForPayment(null);
+  };
+
   if (!isAuthenticated) {
     return <div className="min-h-screen bg-gray-50 flex items-center justify-center">
       <div className="text-center">
@@ -400,7 +374,7 @@ const OrdersPage = () => {
               <option value="all">All Status ({orders.length})</option>
               {Object.entries(statusLabels).map(([value, label]) => (
                 <option key={value} value={value}>
-                  {label} ({orderCounts[value] || 0})
+                  {label} ({orders.filter(order => order.status === value).length})
                 </option>
               ))}
             </select>
@@ -432,11 +406,11 @@ const OrdersPage = () => {
           </div>
         ) : error ? (
           <div className="text-center text-red-600 py-8">{error}</div>
-        ) : filteredOrders.length === 0 ? (
+        ) : orders.length === 0 ? (
           <div className="text-center text-gray-500 py-8">No orders found</div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {filteredOrders.map((order) => (
+            {orders.map((order) => (
               <div key={order.id} className="bg-white rounded-lg shadow-sm p-6 h-full">
                 <div className="flex flex-col h-full">
                   <div className="flex justify-between items-start gap-4 mb-4">
@@ -469,8 +443,33 @@ const OrdersPage = () => {
                         <p>Phone: {order.customerPhone}</p>
                         {order.customerEmail && <p>Email: {order.customerEmail}</p>}
                         <p>Date: {format(new Date(order.createdAt), 'PPpp')}</p>
-                        <p>Total Amount: AED {order.totalAmount?.toFixed(2) || '0.00'}</p>
-                        <p>Payment Method: {order.paymentMethod}</p>
+                        
+                        {/* Payment Details Section */}
+                        <div className="mt-2 pt-2 border-t border-gray-200">
+                          <p className="font-medium text-gray-700">Payment Details:</p>
+                          <p>Total Amount: AED {order.totalAmount?.toFixed(2) || '0.00'}</p>
+                          <p>Paid Amount: AED {typeof order.paidAmount === 'number' ? order.paidAmount.toFixed(2) : '0.00'}</p>
+                          <p>Payment Method: {order.paymentMethod === 'SPLIT' ? 'Split Payment' : order.paymentMethod}</p>
+                          {order.payments && order.payments.length > 0 && (
+                            <div className="ml-2 mt-1">
+                              {order.payments.map((payment, idx) => (
+                                <div key={idx} className="text-sm">
+                                  {payment.method === 'SPLIT' ? (
+                                    <>
+                                      <p>Cash: AED {payment.metadata?.cashAmount || '0.00'}</p>
+                                      <p>Card: AED {typeof payment.amount === 'number' && payment.metadata?.cashAmount 
+                                        ? (payment.amount - parseFloat(payment.metadata.cashAmount)).toFixed(2) 
+                                        : '0.00'}</p>
+                                      {payment.reference && <p>Card Reference: {payment.reference}</p>}
+                                    </>
+                                  ) : (
+                                    <p>{payment.method}: AED {typeof payment.amount === 'number' ? payment.amount.toFixed(2) : '0.00'} {payment.reference && `(Ref: ${payment.reference})`}</p>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                         
                         {/* Delivery/Pickup Details */}
                         {order.deliveryMethod === 'DELIVERY' ? (
@@ -515,27 +514,43 @@ const OrdersPage = () => {
                           <div className="flex-1">
                             <p className="font-medium">{item.productName}</p>
                             <p className="text-gray-600">Quantity: {item.quantity}</p>
-                            {item.variations?.length > 0 && (
-                              <p className="text-gray-600">
-                                Options: {item.variations.map(v => `${v.type}: ${v.value}`).join(', ')}
-                              </p>
+                            {item.selectedVariations && item.selectedVariations.length > 0 && (
+                              <div className="text-gray-600">
+                                <p className="font-medium text-gray-700">Options:</p>
+                                <ul className="list-disc list-inside ml-2">
+                                  {item.selectedVariations.map((v, idx) => (
+                                    <li key={idx} className="text-sm">
+                                      {v.type}: <span className="font-medium">{v.value}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
                             )}
-                            {item.notes && <p className="text-gray-600">Notes: {item.notes}</p>}
-                            {item.designImages && item.designImages.length > 0 && (
-                              <div className="mt-2 flex gap-2">
-                                {item.designImages.map((image, idx) => (
-                                  <img 
-                                    key={idx} 
-                                    src={image.url} 
-                                    alt={`Design ${idx + 1}`} 
-                                    className="w-20 h-20 object-cover rounded-lg border border-gray-200"
-                                  />
-                                ))}
+                            {item.notes && (
+                              <p className="text-gray-600 mt-1">Notes: {item.notes}</p>
+                            )}
+                            {item.customImages && item.customImages.length > 0 && (
+                              <div className="mt-2">
+                                <p className="font-medium text-gray-700">Custom Images:</p>
+                                <div className="grid grid-cols-2 gap-2 mt-1">
+                                  {item.customImages.map((img, idx) => (
+                                    <div key={idx} className="relative">
+                                      <img
+                                        src={img.url}
+                                        alt={`Custom image ${idx + 1}`}
+                                        className="w-full h-24 object-cover rounded"
+                                      />
+                                      {img.comment && (
+                                        <p className="text-xs text-gray-600 mt-1">{img.comment}</p>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
                               </div>
                             )}
                           </div>
-                          <div className="text-right ml-4">
-                            <p className="font-medium">AED {(item.totalPrice || 0).toFixed(2)}</p>
+                          <div className="text-right">
+                            <p>AED {typeof item.totalPrice === 'number' ? item.totalPrice.toFixed(2) : '0.00'}</p>
                           </div>
                         </div>
                       ))}
@@ -575,6 +590,14 @@ const OrdersPage = () => {
                         )}
                         {downloadingInvoices[order.id] ? 'Downloading...' : 'Download Invoice'}
                       </button>
+                    {hasPartialPayment(order) && (
+                      <button
+                        onClick={() => setSelectedOrderForPayment(order)}
+                        className="px-4 py-2 text-sm font-medium text-indigo-600 bg-indigo-100 rounded-md hover:bg-indigo-200 flex-1"
+                      >
+                        Pay Remaining
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -616,6 +639,17 @@ const OrdersPage = () => {
         <OrderReceipt
           order={selectedOrder}
           onClose={() => setSelectedOrder(null)}
+        />
+      )}
+
+      {/* Remaining Payment Modal */}
+      {selectedOrderForPayment && (
+        <RemainingPaymentModal
+          isOpen={!!selectedOrderForPayment}
+          onClose={() => setSelectedOrderForPayment(null)}
+          orderId={selectedOrderForPayment.id}
+          remainingAmount={calculateRemainingAmount(selectedOrderForPayment)}
+          onPaymentComplete={handlePaymentComplete}
         />
       )}
     </div>

@@ -1,24 +1,38 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '@/providers/auth-provider';
 import { useRouter } from 'next/navigation';
-import { Clock, ArrowLeft, Trash2, ShoppingCart, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react';
+import { Clock, ArrowLeft, Trash2, ShoppingCart, RefreshCw, ChevronDown, ChevronUp, Search } from 'lucide-react';
 import { apiMethods, type PosQueuedOrder, type Product } from '@/services/api';
 import toast from 'react-hot-toast';
 import Header from '@/components/header/header';
 import { useQuery } from '@tanstack/react-query';
 import { formatDistanceToNow } from 'date-fns';
 import { nanoid } from 'nanoid';
+import { 
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 export default function QueuedOrdersPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
-  const [queuedOrders, setQueuedOrders] = useState<PosQueuedOrder[]>([]);
-  const [expandedOrders, setExpandedOrders] = useState<{[key: string]: boolean}>({});
+  const [queuedOrders, setQueuedOrders] = useState<any[]>([]);
+  const [expandedOrders, setExpandedOrders] = useState<Record<string, boolean>>({});
+  const [orderToDelete, setOrderToDelete] = useState<string | null>(null);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Fetch queued orders
-  const { data: queuedOrdersData, refetch: refetchQueuedOrders, isLoading } = useQuery({
+  const { data: queuedOrdersData, refetch: refetchQueuedOrders, isLoading: isFetching } = useQuery({
     queryKey: ['queuedOrders'],
     queryFn: async () => {
       try {
@@ -41,136 +55,165 @@ export default function QueuedOrdersPage() {
     if (queuedOrdersData) {
       setQueuedOrders(queuedOrdersData);
       console.log('Updated queued orders:', queuedOrdersData.length);
+      setIsLoading(false);
     }
   }, [queuedOrdersData]);
 
-  // Set up automatic refresh
-  useEffect(() => {
-    // Refresh on component mount
-    refetchQueuedOrders();
-    
-    // Set up interval for automatic refresh
-    const intervalId = setInterval(() => {
-      refetchQueuedOrders();
-    }, 15000); // Refresh every 15 seconds
-    
-    return () => clearInterval(intervalId);
-  }, [refetchQueuedOrders]);
+  // Filter orders based on search query
+  const filteredOrders = useMemo(() => {
+    if (!searchQuery.trim()) return queuedOrders;
 
-  // Debug function to log the full structure of a queued order
+    const query = searchQuery.toLowerCase().trim();
+    return queuedOrders.filter(order => {
+      // Search in customer details
+      const customerMatch = 
+        (order.customerName?.toLowerCase().includes(query) ?? false) ||
+        (order.customerPhone?.toLowerCase().includes(query) ?? false) ||
+        (order.customerEmail?.toLowerCase().includes(query) ?? false);
+
+      // Search in order ID
+      const idMatch = order.id.toLowerCase().includes(query);
+
+      // Search in order items
+      const itemsMatch = order.items?.some((item: any) => 
+        item.productName?.toLowerCase().includes(query)
+      ) ?? false;
+
+      return customerMatch || idMatch || itemsMatch;
+    });
+  }, [queuedOrders, searchQuery]);
+
+  // Debounced search handler
+  const handleSearch = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchQuery(event.target.value);
+  }, []);
+
+  // Debug function to log the structure of a queued order
   const debugQueuedOrder = (order: any) => {
-    console.log('Queued Order Structure:', JSON.stringify(order, null, 2));
-    
-    // Log specific important parts
-    console.log('Order ID:', order.id);
+    console.log('Queued Order ID:', order.id);
+    console.log('Name:', order.name);
     console.log('Created At:', order.createdAt);
     console.log('Total Amount:', order.totalAmount);
     
-    // Log customer details
-    console.log('Customer Details:', {
-      name: order.customerName,
-      email: order.customerEmail,
-      phone: order.customerPhone
-    });
+    // Log customer information
+    console.log('Customer Name:', order.customerName);
+    console.log('Customer Phone:', order.customerPhone);
+    console.log('Customer Email:', order.customerEmail);
     
     // Log items
     if (Array.isArray(order.items)) {
-      console.log(`Items (${order.items.length}):`, order.items.map(item => ({
-        id: item.id,
-        productId: item.productId,
-        name: item.name,
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        totalPrice: item.totalPrice,
-        hasVariations: Array.isArray(item.selectedVariations) && item.selectedVariations.length > 0,
-        hasCustomImages: Array.isArray(item.customImages) && item.customImages.length > 0
-      })));
+      console.log('Items Count:', order.items.length);
+      order.items.forEach((item, index) => {
+        console.log(`Item ${index + 1}:`, {
+          id: item.id,
+          productId: item.productId,
+          productName: item.productName,
+          unitPrice: item.unitPrice,
+          quantity: item.quantity,
+          totalPrice: item.totalPrice,
+          hasSelectedVariations: item.selectedVariations && Array.isArray(item.selectedVariations) && item.selectedVariations.length > 0,
+          hasCustomImages: item.customImages && Array.isArray(item.customImages) && item.customImages.length > 0,
+          notes: item.notes
+        });
+      });
     } else {
       console.log('Items: Not an array or missing');
     }
     
     // Log delivery/pickup details
     console.log('Delivery Method:', order.deliveryMethod);
-    if (order.deliveryMethod === 'DELIVERY' && order.deliveryDetails) {
-      console.log('Delivery Details:', order.deliveryDetails);
-    } else if (order.deliveryMethod === 'PICKUP' && order.pickupDetails) {
-      console.log('Pickup Details:', order.pickupDetails);
+    if (order.deliveryMethod === 'DELIVERY') {
+      console.log('Delivery Details:', {
+        date: order.deliveryDate,
+        timeSlot: order.deliveryTimeSlot,
+        instructions: order.deliveryInstructions,
+        charge: order.deliveryCharge,
+        streetAddress: order.streetAddress,
+        apartment: order.apartment,
+        emirate: order.emirate,
+        city: order.city
+      });
+    } else if (order.deliveryMethod === 'PICKUP') {
+      console.log('Pickup Details:', {
+        date: order.pickupDate,
+        timeSlot: order.pickupTimeSlot
+      });
     }
     
-    // Log order summary if available
-    if (order.orderSummary) {
-      console.log('Order Summary:', order.orderSummary);
+    // Log gift details if available
+    if (order.isGift) {
+      console.log('Gift Details:', {
+        isGift: order.isGift,
+        recipientName: order.giftRecipientName,
+        recipientPhone: order.giftRecipientPhone,
+        message: order.giftMessage,
+        cashAmount: order.giftCashAmount
+      });
     }
   };
 
   // Load a queued order into the POS
   const handleLoadQueuedOrder = async (order: any) => {
     try {
+      console.log('Loading queued order:', order);
+      console.log('Delivery method:', order.deliveryMethod);
+      
+      // Close the order details if it's expanded
+      if (expandedOrders[order.id]) {
+        toggleOrderExpanded(order.id);
+      }
+
       // Debug the order structure
       debugQueuedOrder(order);
-      
-      console.log('Original order data:', JSON.stringify(order, null, 2));
-      
-      // Check if items exist in the order
+
+      // Log customer information
+      console.log('Customer information:', {
+        customerName: order.customerName,
+        customerPhone: order.customerPhone,
+        customerEmail: order.customerEmail
+      });
+
+      // Ensure the order has all required fields
       if (!order.items || !Array.isArray(order.items) || order.items.length === 0) {
-        console.error('No items found in the queued order:', order);
-        toast.error('This order has no items to load');
+        console.error('Order is missing items array or has no items');
+        toast.error('Invalid order data');
         return;
       }
+
+      // Normalize delivery method - ensure it's uppercase and a valid value
+      const normalizedDeliveryMethod = 
+        (order.deliveryMethod && order.deliveryMethod.toUpperCase() === 'DELIVERY') 
+          ? 'DELIVERY' 
+          : 'PICKUP';
       
-      // Collect all product IDs from the order items
-      const productIds = order.items.map((item: any) => item.productId).filter(Boolean);
-      console.log('Product IDs to fetch:', productIds);
-      
-      // Fetch product data for all products in the order
-      let productData: { [key: string]: Product } = {};
-      
-      if (productIds.length > 0) {
-        try {
-          // Fetch products from API
-          const response = await apiMethods.products.getProductsByIds(productIds);
-          if (response.success && Array.isArray(response.data)) {
-            // Create a map of product ID to product data
-            const productMap: { [key: string]: Product } = {};
-            response.data.forEach(product => {
-              productMap[product.id] = product;
-            });
-            productData = productMap;
-            console.log('Fetched product data:', productData);
-          } else {
-            console.error('Failed to fetch product data:', response);
-          }
-        } catch (error) {
-          console.error('Error fetching product data:', error);
-        }
-      }
+      console.log('Normalized delivery method:', normalizedDeliveryMethod);
       
       // Format cart items - ensure all required fields are present and use product data when available
-      const cartItems = Array.isArray(order.items) ? order.items.map((item: any) => {
+      const cartItems = order.items.map((item: any) => {
         console.log('Processing item:', JSON.stringify(item, null, 2));
         
-        // Get product data from the fetched products or use the item data as fallback
-        const fetchedProduct = item.productId ? productData[item.productId] : null;
+        // Get product data from the item's product relation or use the item data as fallback
+        const fetchedProduct = item.product || null;
         
-        // Ensure we have a valid product object
+        // Create a product object with all the necessary data
         const product: Product = {
           id: item.productId || '',
-          name: fetchedProduct?.name || item.name || 'Unknown Product',
-          description: fetchedProduct?.description || item.description || '',
-          sku: fetchedProduct?.sku || item.sku || '',
+          name: item.productName || '',
+          description: fetchedProduct?.description || '',
+          sku: fetchedProduct?.sku || '',
           status: (fetchedProduct?.status || 'ACTIVE') as 'ACTIVE' | 'DRAFT',
-          basePrice: fetchedProduct?.basePrice || parseFloat(String(item.unitPrice)) || 0,
+          basePrice: item.unitPrice || 0,
           stock: fetchedProduct?.stock || 0,
           trackInventory: fetchedProduct?.trackInventory || false,
-          categoryId: fetchedProduct?.categoryId || item.categoryId || '',
+          categoryId: fetchedProduct?.categoryId || '',
           options: fetchedProduct?.options || [],
-          variants: fetchedProduct?.variants || item.variants || [],
-          images: fetchedProduct?.images || item.images || [],
+          variants: fetchedProduct?.variants || [],
+          images: fetchedProduct?.images || [],
           visibility: fetchedProduct?.visibility || 'ALL',
-          allowCustomPrice: fetchedProduct?.allowCustomPrice || item.allowCustomPrice || false,
-          requiresDesign: fetchedProduct?.requiresDesign || item.requiresDesign || item.metadata?.requiresDesign || false,
-          requiresKitchen: fetchedProduct?.requiresKitchen || item.requiresKitchen || item.metadata?.requiresKitchen || false,
-          allowCustomImages: fetchedProduct?.allowCustomImages || item.allowCustomImages || false
+          allowCustomPrice: fetchedProduct?.allowCustomPrice || false,
+          allowCustomImages: fetchedProduct?.allowCustomImages || false,
+          requiresKitchen: fetchedProduct?.requiresKitchen || false,
+          requiresDesign: fetchedProduct?.requiresDesign || false
         };
         
         // Process selected variations - ensure they have proper structure
@@ -180,15 +223,7 @@ export default function QueuedOrdersPage() {
             id: v.id || nanoid(),
             type: v.type || 'Option',
             value: v.value || '',
-            price: parseFloat(String(v.price)) || 0
-          }));
-        } else if (item.variants && Array.isArray(item.variants)) {
-          // If selectedVariations is missing but variants exists, use that
-          selectedVariations = item.variants.map((v: any) => ({
-            id: v.id || nanoid(),
-            type: v.type || 'Option',
-            value: v.value || '',
-            price: parseFloat(String(v.price)) || 0
+            priceAdjustment: parseFloat(String(v.price)) || 0
           }));
         }
         
@@ -198,7 +233,7 @@ export default function QueuedOrdersPage() {
           customImages = item.customImages.map((img: any) => ({
             id: img.id || nanoid(),
             url: img.url || '',
-            previewUrl: img.previewUrl || '',
+            previewUrl: img.previewUrl || img.url || '',
             comment: img.comment || ''
           }));
         }
@@ -207,14 +242,18 @@ export default function QueuedOrdersPage() {
         return {
           id: item.id || nanoid(), // Generate a unique ID for each cart item
           product,
-          quantity: parseInt(String(item.quantity)) || 1,
+          quantity: item.quantity || 1,
           selectedVariations,
           notes: item.notes || '',
           customImages,
-          totalPrice: parseFloat(String(item.totalPrice)) || 0,
-          metadata: item.metadata || {}
+          totalPrice: item.totalPrice || 0,
+          metadata: {
+            requiresKitchen: product.requiresKitchen,
+            requiresDesign: product.requiresDesign,
+            allowCustomImages: product.allowCustomImages
+          }
         };
-      }) : [];
+      });
 
       console.log('Formatted cart items:', JSON.stringify(cartItems, null, 2));
       
@@ -225,139 +264,86 @@ export default function QueuedOrdersPage() {
         return;
       }
 
-      // Format checkout details
+      // Create checkout details object with direct fields
       const checkoutDetails = {
         customerDetails: {
           name: order.customerName || '',
           email: order.customerEmail || '',
-          phone: order.customerPhone || '',
+          phone: order.customerPhone || ''
         },
-        deliveryMethod: order.deliveryMethod || 'PICKUP',
-        deliveryDetails: order.deliveryMethod === 'DELIVERY' ? {
-          date: order.deliveryDetails?.date || '',
-          timeSlot: order.deliveryDetails?.timeSlot || '',
-          instructions: order.deliveryDetails?.instructions || '',
-          streetAddress: order.deliveryDetails?.streetAddress || '',
-          apartment: order.deliveryDetails?.apartment || '',
-          emirate: order.deliveryDetails?.emirate || '',
-          city: order.deliveryDetails?.city || '',
-          charge: order.deliveryDetails?.charge || 0,
-        } : {
-          date: '',
-          timeSlot: '',
-          instructions: '',
-          streetAddress: '',
-          apartment: '',
-          emirate: '',
-          city: '',
-          charge: 0,
-        },
-        pickupDetails: {
-          date: order.pickupDetails?.date || '',
-          timeSlot: order.pickupDetails?.timeSlot || '',
-        },
-        giftDetails: {
-          isGift: order.giftDetails?.isGift || false,
-          recipientName: order.giftDetails?.recipientName || '',
-          recipientPhone: order.giftDetails?.recipientPhone || '',
-          message: order.giftDetails?.message || '',
-          note: order.giftDetails?.note || '',
-          cashAmount: order.giftDetails?.cashAmount || 0,
-          includeCash: order.giftDetails?.includeCash || false,
-        },
-        paymentMethod: order.paymentMethod || 'CASH',
-        paymentReference: order.paymentReference || '',
-        orderSummary: order.orderSummary ? {
-          totalItems: order.orderSummary.totalItems || cartItems.length,
-          products: Array.isArray(order.orderSummary.products) 
-            ? order.orderSummary.products.map((p: any) => ({
-                id: p.id || '',
-                productId: p.productId || '',
-                productName: p.name || 'Unknown Product',
-                quantity: parseInt(String(p.quantity)) || 1,
-                price: parseFloat(String(p.price)) || 0,
-                unitPrice: parseFloat(String(p.unitPrice)) || 0,
-                sku: p.sku || '',
-                requiresKitchen: p.requiresKitchen || false,
-                requiresDesign: p.requiresDesign || false,
-                hasVariations: p.hasVariations || false,
-                hasCustomImages: p.hasCustomImages || false
-              }))
-            : cartItems.map(item => ({
-                id: item.id,
-                productId: item.product.id,
-                productName: item.product.name,
-                quantity: item.quantity,
-                price: item.totalPrice,
-                unitPrice: item.product.basePrice,
-                sku: item.product.sku || '',
-                requiresKitchen: item.product.requiresKitchen || false,
-                requiresDesign: item.product.requiresDesign || false,
-                hasVariations: Array.isArray(item.selectedVariations) && item.selectedVariations.length > 0,
-                hasCustomImages: Array.isArray(item.customImages) && item.customImages.length > 0
-              })),
-          totalAmount: parseFloat(String(order.orderSummary.totalAmount)) || 
-            parseFloat(String(order.totalAmount)) || 
-            cartItems.reduce((sum, item) => sum + item.totalPrice, 0)
-        } : {
-          totalItems: cartItems.length,
-          products: cartItems.map(item => ({
-            id: item.id,
-            productId: item.product.id,
-            productName: item.product.name,
-            quantity: item.quantity,
-            price: item.totalPrice,
-            unitPrice: item.product.basePrice,
-            sku: item.product.sku || '',
-            requiresKitchen: item.product.requiresKitchen || false,
-            requiresDesign: item.product.requiresDesign || false,
-            hasVariations: Array.isArray(item.selectedVariations) && item.selectedVariations.length > 0,
-            hasCustomImages: Array.isArray(item.customImages) && item.customImages.length > 0
-          })),
-          totalAmount: parseFloat(String(order.totalAmount)) || cartItems.reduce((total, item) => total + item.totalPrice, 0)
-        }
+        deliveryMethod: normalizedDeliveryMethod as 'PICKUP' | 'DELIVERY',
+        deliveryDetails: normalizedDeliveryMethod === 'DELIVERY' ? {
+          date: order.deliveryDate || '',
+          timeSlot: order.deliveryTimeSlot || '',
+          instructions: order.deliveryInstructions || '',
+          streetAddress: order.streetAddress || '',
+          apartment: order.apartment || '',
+          emirate: order.emirate || '',
+          city: order.city || '',
+          charge: order.deliveryCharge || 0,
+        } : undefined,
+        pickupDetails: normalizedDeliveryMethod === 'PICKUP' ? {
+          date: order.pickupDate || '',
+          timeSlot: order.pickupTimeSlot || '',
+        } : undefined,
+        giftDetails: order.isGift ? {
+          isGift: order.isGift || false,
+          recipientName: order.giftRecipientName || '',
+          recipientPhone: order.giftRecipientPhone || '',
+          message: order.giftMessage || '',
+          cashAmount: order.giftCashAmount || 0,
+          includeCash: order.giftCashAmount ? true : false,
+          note: ''
+        } : undefined,
+        name: order.name || '',
+        notes: order.notes || ''
       };
 
-      console.log('Loading queued order with checkout details:', checkoutDetails);
-      console.log('Loading queued order with cart items:', cartItems);
+      console.log('Checkout details:', checkoutDetails);
 
-      // First clear any existing cart items and checkout details
-      localStorage.removeItem('cartItems');
-      localStorage.removeItem('checkoutDetails');
-      localStorage.removeItem('pos-cart');
+      // Build the URL with parameters to pass to the POS page
+      const params = new URLSearchParams();
+      params.append('orderId', order.id);
+      params.append('customerName', order.customerName || '');
+      params.append('customerEmail', order.customerEmail || '');
+      params.append('customerPhone', order.customerPhone || '');
+      params.append('deliveryMethod', normalizedDeliveryMethod);
       
-      // Then save the new data to localStorage
-      localStorage.setItem('cartItems', JSON.stringify(cartItems));
-      localStorage.setItem('checkoutDetails', JSON.stringify(checkoutDetails));
+      // Navigate to POS page with the queued order data
+      router.push(`/pos?${params.toString()}`);
       
-      // Set the flag to open checkout modal
-      localStorage.setItem('openCheckoutModal', 'true');
-
-      // Navigate to POS page
-      router.push('/pos');
+      // Store cart items and checkout details in localStorage for the POS page to access
+      localStorage.setItem('pos-cart-items', JSON.stringify(cartItems));
+      localStorage.setItem('pos-checkout-details', JSON.stringify(checkoutDetails));
       
       toast.success('Order loaded successfully');
     } catch (error) {
       console.error('Error loading queued order:', error);
-      toast.error('Failed to load queued order');
+      toast.error('Failed to load order');
     }
   };
 
-  // Function to delete a queued order
+  // Handle delete order
   const handleDeleteQueuedOrder = async (orderId: string) => {
     try {
       const response = await apiMethods.pos.deleteQueuedOrder(orderId);
-      
-      if (response.success) {
-        toast.success('Queued order deleted successfully');
-        refetchQueuedOrders();
-      } else {
-        toast.error(response.message || 'Failed to delete queued order');
+      if (!response.success) {
+        throw new Error(response.message || 'Failed to delete order');
       }
+      toast.success('Order deleted successfully');
+      setOrderToDelete(null);
+      setIsDeleteDialogOpen(false);
+      refetchQueuedOrders();
     } catch (error) {
-      console.error('Error deleting queued order:', error);
-      toast.error('Failed to delete queued order');
+      console.error('Error deleting order:', error);
+      toast.error('Failed to delete order');
     }
+  };
+
+  // Confirm delete
+  const confirmDelete = (orderId: string) => {
+    setOrderToDelete(orderId);
+    setIsDeleteDialogOpen(true);
   };
 
   // Toggle expanded state for an order
@@ -374,7 +360,7 @@ export default function QueuedOrdersPage() {
   };
 
   // If still loading or no user, show loading state
-  if (authLoading || !user) {
+  if (authLoading || !user || isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="text-center">
@@ -389,223 +375,363 @@ export default function QueuedOrdersPage() {
     <div className="min-h-screen bg-gray-50">
       <Header title="Queued Orders" />
       
-      <div className="container mx-auto px-4 py-6">
-        <div className="flex items-center mb-6">
-          <button 
-            onClick={() => router.push('/pos')}
-            className="flex items-center text-gray-700 hover:text-black"
-          >
-            <ArrowLeft className="mr-2 h-5 w-5" />
-            <span>Back to POS</span>
-          </button>
-          
-          <button
-            onClick={() => refetchQueuedOrders()}
-            className="ml-auto flex items-center px-3 py-1 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
-            disabled={isLoading}
-          >
-            <RefreshCw className={`h-4 w-4 mr-1 ${isLoading ? 'animate-spin' : ''}`} />
-            <span>Refresh</span>
-          </button>
+      <main className="container mx-auto px-4 py-8">
+        {/* Search Bar */}
+        <div className="mb-6">
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Search by customer name, phone, email, or order ID..."
+              value={searchQuery}
+              onChange={handleSearch}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+            <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+              <Search className="h-5 w-5 text-gray-400" />
+            </div>
+          </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow-sm p-6">
-          <h1 className="text-2xl font-bold mb-6">Queued Orders</h1>
-          
+        {/* Orders List */}
+        <div>
           {isLoading ? (
-            <div className="py-8 text-center text-gray-500">
-              <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-black mx-auto"></div>
-              <p className="mt-2">Loading orders...</p>
+            <div className="text-center py-8">
+              <RefreshCw className="h-8 w-8 animate-spin mx-auto text-gray-400" />
+              <p className="mt-2 text-gray-600">Loading orders...</p>
             </div>
-          ) : queuedOrders.length === 0 ? (
-            <div className="py-8 text-center text-gray-500">
-              <ShoppingCart className="mx-auto h-12 w-12 text-gray-400" />
-              <p className="mt-2 text-lg">No queued orders</p>
-              <button 
-                onClick={() => router.push('/pos')}
-                className="mt-4 px-4 py-2 bg-black text-white rounded-md hover:bg-gray-800"
-              >
-                Return to POS
-              </button>
+          ) : filteredOrders.length === 0 ? (
+            <div className="text-center py-8">
+              <p className="text-gray-600">
+                {searchQuery ? 'No orders found matching your search.' : 'No queued orders available.'}
+              </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {queuedOrders.map((order) => (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {filteredOrders.map((order) => (
                 <div
                   key={order.id}
-                  className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition-colors"
+                  className="bg-white shadow-sm border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition-colors"
                 >
-                  <div className="flex justify-between items-start">
-                    <div className="w-full">
-                      <div className="flex justify-between items-center">
-                        <h4 className="font-medium text-lg">
-                          {order.name || `Order #${order.id.substring(0, 8)}`}
-                        </h4>
-                        <button 
-                          onClick={() => toggleOrderExpanded(order.id)}
-                          className="p-1 rounded-full hover:bg-gray-200"
-                        >
-                          {isOrderExpanded(order.id) ? (
-                            <ChevronUp className="h-5 w-5" />
-                          ) : (
-                            <ChevronDown className="h-5 w-5" />
-                          )}
-                        </button>
-                      </div>
-                      
-                      <div className="mt-1 flex items-center text-sm text-gray-500">
-                        <Clock className="mr-1 h-4 w-4" />
-                        <span>
-                          {formatDistanceToNow(new Date(order.createdAt), { addSuffix: true })}
-                        </span>
-                      </div>
-                      
-                      {/* Summary info always visible */}
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        <span className="text-sm bg-gray-100 px-2 py-1 rounded">
-                          {order.items.length} {order.items.length === 1 ? 'item' : 'items'}
-                        </span>
-                        <span className="text-sm bg-gray-100 px-2 py-1 rounded">
-                          AED {order.totalAmount.toFixed(2)}
-                        </span>
-                        {order.deliveryMethod && (
-                          <span className="text-sm bg-gray-100 px-2 py-1 rounded">
-                            {order.deliveryMethod}
-                          </span>
+                  <div className="flex flex-col h-full">
+                    <div className="flex justify-between items-start mb-3">
+                      <h4 className="font-medium text-lg truncate">
+                        {order.name || `Order #${order.id.substring(0, 8)}`}
+                      </h4>
+                      <button 
+                        onClick={() => toggleOrderExpanded(order.id)}
+                        className="p-1 rounded-full hover:bg-gray-200"
+                      >
+                        {isOrderExpanded(order.id) ? (
+                          <ChevronUp className="h-5 w-5" />
+                        ) : (
+                          <ChevronDown className="h-5 w-5" />
                         )}
-                      </div>
-                      
-                      {/* Detailed info only visible when expanded */}
-                      {isOrderExpanded(order.id) && (
-                        <div className="mt-3 animate-fadeIn">
-                          {/* Customer Information */}
-                          {(order.customerName || order.customerPhone || order.customerEmail) && (
-                            <div className="mt-3 border-t border-gray-100 pt-3">
-                              <p className="font-medium text-sm">Customer:</p>
-                              <div className="mt-1 text-sm">
-                                {order.customerName && <p>{order.customerName}</p>}
-                                {order.customerPhone && <p>Phone: {order.customerPhone}</p>}
-                                {order.customerEmail && <p>Email: {order.customerEmail}</p>}
-                              </div>
-                            </div>
-                          )}
-                          
-                          {/* Delivery/Pickup Information */}
+                      </button>
+                    </div>
+                    
+                    <div className="flex items-center text-sm text-gray-500 mb-3">
+                      <Clock className="mr-1 h-4 w-4" />
+                      <span>
+                        {formatDistanceToNow(new Date(order.createdAt), { addSuffix: true })}
+                      </span>
+                    </div>
+                    
+                    {/* Summary info always visible */}
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      <span className="text-sm bg-gray-100 px-2 py-1 rounded">
+                        {order.items.length} {order.items.length === 1 ? 'item' : 'items'}
+                      </span>
+                      <span className="text-sm bg-gray-100 px-2 py-1 rounded">
+                        AED {(order.totalAmount || calculateOrderTotal(order.items)).toFixed(2)}
+                      </span>
+                      {order.deliveryMethod && (
+                        <span className={`text-sm px-2 py-1 rounded ${
+                          order.deliveryMethod === 'DELIVERY' 
+                            ? 'bg-blue-100 text-blue-800' 
+                            : 'bg-green-100 text-green-800'
+                        }`}>
+                          {order.deliveryMethod === 'DELIVERY' ? 'Delivery' : 'Pickup'}
+                        </span>
+                      )}
+                    </div>
+                    
+                    {/* Expanded content */}
+                    {isOrderExpanded(order.id) && (
+                      <div className="border-t border-gray-100 pt-3">
+                        {/* Customer Information */}
+                        {(order.customerName || order.customerPhone || order.customerEmail) && (
                           <div className="mt-3 border-t border-gray-100 pt-3">
-                            <p className="font-medium text-sm">
-                              {order.deliveryMethod === 'DELIVERY' ? 'Delivery Details:' : 'Pickup Details:'}
-                            </p>
+                            <p className="font-medium text-sm">Customer:</p>
                             <div className="mt-1 text-sm">
-                              {order.deliveryMethod === 'DELIVERY' && order.deliveryDetails && (
-                                <>
-                                  {order.deliveryDetails.date && order.deliveryDetails.timeSlot && (
-                                    <p>When: {order.deliveryDetails.date}, {order.deliveryDetails.timeSlot}</p>
-                                  )}
-                                  {order.deliveryDetails.streetAddress && (
-                                    <p>Address: {order.deliveryDetails.streetAddress}</p>
-                                  )}
-                                  {order.deliveryDetails.apartment && (
-                                    <p>Apt/Villa: {order.deliveryDetails.apartment}</p>
-                                  )}
-                                  {order.deliveryDetails.emirate && (
-                                    <p>Emirate: {order.deliveryDetails.emirate.replace('_', ' ')}</p>
-                                  )}
-                                  {order.deliveryDetails.city && (
-                                    <p>City: {order.deliveryDetails.city}</p>
-                                  )}
-                                  {order.deliveryDetails.charge > 0 && (
-                                    <p>Delivery Charge: AED {order.deliveryDetails.charge.toFixed(2)}</p>
-                                  )}
-                                  {order.deliveryDetails.instructions && (
-                                    <p>Instructions: {order.deliveryDetails.instructions}</p>
-                                  )}
-                                </>
+                              {order.customerName && <p>{order.customerName}</p>}
+                              {order.customerPhone && <p>Phone: {order.customerPhone}</p>}
+                              {order.customerEmail && <p>Email: {order.customerEmail}</p>}
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* Payment Information */}
+                        {(order.paymentMethod || order.paymentReference) && (
+                          <div className="mt-3 border-t border-gray-100 pt-3">
+                            <p className="font-medium text-sm">Payment:</p>
+                            <div className="mt-1 text-sm">
+                              {order.paymentMethod && <p>Method: {order.paymentMethod}</p>}
+                              {order.paymentReference && <p>Reference: {order.paymentReference}</p>}
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* Delivery/Pickup Information */}
+                        <div className="mt-3 border-t border-gray-100 pt-3">
+                          <p className="font-medium text-sm">
+                            {(order.deliveryMethod && order.deliveryMethod.toUpperCase() === 'DELIVERY') 
+                              ? 'Delivery Details:' 
+                              : 'Pickup Details:'}
+                          </p>
+                          <div className="mt-1 text-sm">
+                            {(order.deliveryMethod && order.deliveryMethod.toUpperCase() === 'DELIVERY') && (
+                              <>
+                                {order.deliveryDate && <p>Date: {order.deliveryDate}</p>}
+                                {order.deliveryTimeSlot && <p>Time: {order.deliveryTimeSlot}</p>}
+                                {order.streetAddress && (
+                                  <p>Address: {order.streetAddress}{order.apartment ? `, ${order.apartment}` : ''}</p>
+                                )}
+                                {(order.emirate || order.city) && (
+                                  <p>Location: {order.city}{order.emirate ? `, ${order.emirate}` : ''}</p>
+                                )}
+                                {order.deliveryInstructions && (
+                                  <p>Instructions: {order.deliveryInstructions}</p>
+                                )}
+                                {order.deliveryCharge && (
+                                  <p>Delivery Charge: AED {order.deliveryCharge.toFixed(2)}</p>
+                                )}
+                              </>
+                            )}
+                            {(order.deliveryMethod && order.deliveryMethod.toUpperCase() !== 'DELIVERY') && (
+                              <>
+                                {order.pickupDate && (
+                                  <p>Date: {order.pickupDate}</p>
+                                )}
+                                {order.pickupTimeSlot && (
+                                  <p>Time: {order.pickupTimeSlot}</p>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        </div>
+                        
+                        {/* Address Details (if separate from delivery details) */}
+                        {order.addressDetails && order.deliveryMethod !== 'DELIVERY' && (
+                          <div className="mt-3 border-t border-gray-100 pt-3">
+                            <p className="font-medium text-sm">Address Details:</p>
+                            <div className="mt-1 text-sm">
+                              {order.addressDetails.streetAddress && (
+                                <p>Address: {order.addressDetails.streetAddress}</p>
                               )}
-                              
-                              {order.deliveryMethod === 'PICKUP' && order.pickupDetails && (
-                                <>
-                                  {order.pickupDetails.date && (
-                                    <p>Date: {order.pickupDetails.date}</p>
-                                  )}
-                                  {order.pickupDetails.timeSlot && (
-                                    <p>Time: {order.pickupDetails.timeSlot}</p>
-                                  )}
-                                </>
+                              {order.addressDetails.apartment && (
+                                <p>Apt/Villa: {order.addressDetails.apartment}</p>
+                              )}
+                              {order.addressDetails.emirate && (
+                                <p>Emirate: {order.addressDetails.emirate.replace('_', ' ')}</p>
+                              )}
+                              {order.addressDetails.city && (
+                                <p>City: {order.addressDetails.city}</p>
                               )}
                             </div>
                           </div>
-                          
-                          {/* Gift Details */}
-                          {order.giftDetails && order.giftDetails.isGift && (
-                            <div className="mt-3 border-t border-gray-100 pt-3">
-                              <p className="font-medium text-sm">Gift Details:</p>
-                              <div className="mt-1 text-sm">
-                                {order.giftDetails.recipientName && (
-                                  <p>Recipient: {order.giftDetails.recipientName}</p>
-                                )}
-                                {order.giftDetails.recipientPhone && (
-                                  <p>Recipient Phone: {order.giftDetails.recipientPhone}</p>
-                                )}
-                                {order.giftDetails.message && (
-                                  <p>Message: {order.giftDetails.message}</p>
-                                )}
-                                {order.giftDetails.includeCash && (
-                                  <p>Cash Gift: AED {order.giftDetails.cashAmount.toFixed(2)}</p>
-                                )}
-                                {order.giftDetails.note && (
-                                  <p>Note: {order.giftDetails.note}</p>
-                                )}
-                              </div>
+                        )}
+                        
+                        {/* Gift Details */}
+                        {order.isGift && (
+                          <div className="mt-3 border-t border-gray-100 pt-3">
+                            <p className="font-medium text-sm">Gift Details:</p>
+                            <div className="mt-1 text-sm">
+                              {order.giftRecipientName && (
+                                <p>Recipient: {order.giftRecipientName}</p>
+                              )}
+                              {order.giftRecipientPhone && (
+                                <p>Recipient Phone: {order.giftRecipientPhone}</p>
+                              )}
+                              {order.giftMessage && (
+                                <p>Message: {order.giftMessage}</p>
+                              )}
+                              {order.giftCashAmount && (
+                                <p>Cash Gift: AED {order.giftCashAmount.toFixed(2)}</p>
+                              )}
                             </div>
-                          )}
-                          
-                          {order.notes && (
-                            <div className="mt-3 border-t border-gray-100 pt-3">
-                              <p className="font-medium text-sm">Notes:</p>
-                              <p className="mt-1 text-sm">{order.notes}</p>
-                            </div>
-                          )}
-                          
-                          {/* Display order summary if available */}
-                          {order.orderSummary && order.orderSummary.products && (
-                            <div className="mt-3 border-t border-gray-100 pt-3">
-                              <p className="font-medium text-sm">Order Items:</p>
-                              <div className="mt-1 max-h-40 overflow-y-auto">
-                                {order.orderSummary.products.map((product, idx) => (
-                                  <div key={idx} className="flex justify-between text-sm py-1">
-                                    <span>{product.productName} x{product.quantity}</span>
-                                    <span>AED {(product.price || 0).toFixed(2)}</span>
+                          </div>
+                        )}
+                        
+                        {/* Order Items */}
+                        {order.items && Array.isArray(order.items) && order.items.length > 0 ? (
+                          <div className="mt-3 border-t border-gray-100 pt-3">
+                            <p className="font-medium text-sm">Order Items:</p>
+                            <div className="mt-1 text-sm max-h-60 overflow-y-auto">
+                              {order.items.map((item, index) => (
+                                <div key={index} className="py-2 border-b border-gray-100 last:border-b-0">
+                                  <div className="flex justify-between">
+                                    <span className="font-medium">{item.productName} x{item.quantity}</span>
+                                    <span>AED {item.totalPrice.toFixed(2)}</span>
                                   </div>
-                                ))}
-                              </div>
+                                  <p className="text-xs text-gray-500">Unit Price: AED {item.unitPrice.toFixed(2)}</p>
+                                  
+                                  {/* Product details */}
+                                  {(item.product?.sku || item.product?.barcode) && (
+                                    <div className="text-xs text-gray-500 flex flex-wrap gap-2 mt-1">
+                                      {item.product?.sku && <span>SKU: {item.product.sku}</span>}
+                                      {item.product?.barcode && <span>Barcode: {item.product.barcode}</span>}
+                                    </div>
+                                  )}
+                                  
+                                  {/* Product metadata */}
+                                  <div className="flex flex-wrap gap-1 mt-1">
+                                    {item.product?.requiresKitchen && (
+                                      <span className="text-xs bg-yellow-100 px-1 rounded">Kitchen</span>
+                                    )}
+                                    {item.product?.requiresDesign && (
+                                      <span className="text-xs bg-blue-100 px-1 rounded">Design</span>
+                                    )}
+                                    {item.selectedVariations && item.selectedVariations.length > 0 && (
+                                      <span className="text-xs bg-purple-100 px-1 rounded">Variations</span>
+                                    )}
+                                    {item.customImages && item.customImages.length > 0 && (
+                                      <span className="text-xs bg-green-100 px-1 rounded">Custom Images</span>
+                                    )}
+                                  </div>
+                                  
+                                  {/* Variations */}
+                                  {item.selectedVariations && item.selectedVariations.length > 0 && (
+                                    <div className="mt-1 pl-2 border-l-2 border-purple-200">
+                                      <p className="text-xs font-medium text-purple-700">Variations:</p>
+                                      <div className="text-xs space-y-1 mt-1">
+                                        {item.selectedVariations.map((variation, variationIndex) => (
+                                          <div key={variationIndex} className="flex justify-between">
+                                            <div>
+                                              <span className="font-medium">{variation.type}:</span> {variation.value}
+                                            </div>
+                                            {variation.price > 0 && (
+                                              <span className="text-green-600">+AED {variation.price.toFixed(2)}</span>
+                                            )}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                  
+                                  {/* Custom Images */}
+                                  {item.customImages && item.customImages.length > 0 && (
+                                    <div className="mt-1 pl-2 border-l-2 border-green-200">
+                                      <p className="text-xs font-medium text-green-700">Custom Images:</p>
+                                      <div className="flex flex-wrap gap-1 mt-1">
+                                        {item.customImages.map((image, imageIndex) => (
+                                          <div key={imageIndex} className="text-xs">
+                                            <img 
+                                              src={image.url} 
+                                              alt="Custom" 
+                                              className="w-10 h-10 object-cover rounded border border-gray-200" 
+                                              onError={(e) => {
+                                                e.currentTarget.src = '/images/placeholder.png';
+                                                e.currentTarget.onerror = null;
+                                              }}
+                                            />
+                                            {image.comment && <p className="text-xs">{image.comment}</p>}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                  
+                                  {/* Notes */}
+                                  {item.notes && (
+                                    <div className="mt-1 pl-2 border-l-2 border-gray-200">
+                                      <p className="text-xs font-medium text-gray-700">Notes:</p>
+                                      <p className="text-xs">{item.notes}</p>
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
                             </div>
-                          )}
-                        </div>
-                      )}
+                            <div className="mt-2 border-t border-gray-100 pt-2 flex justify-between font-medium">
+                              <span>Total:</span>
+                              <span>AED {(order.totalAmount || calculateOrderTotal(order.items)).toFixed(2)}</span>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="mt-3 border-t border-gray-100 pt-3">
+                            <p className="font-medium text-sm">Order Items:</p>
+                            <p className="mt-1 text-sm text-gray-500">No items found for this order.</p>
+                          </div>
+                        )}
+                        
+                        {order.notes && (
+                          <div className="mt-3 border-t border-gray-100 pt-3">
+                            <p className="font-medium text-sm">Notes:</p>
+                            <p className="mt-1 text-sm">{order.notes}</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    
+                    <div className="mt-auto pt-4 flex space-x-2">
+                      <button
+                        onClick={() => handleLoadQueuedOrder(order)}
+                        className="flex-1 px-3 py-2 text-sm bg-black text-white rounded-md hover:bg-gray-800"
+                      >
+                        Load Order
+                      </button>
+                      <button
+                        onClick={() => confirmDelete(order.id)}
+                        className="p-2 text-red-600 hover:bg-red-50 rounded-md"
+                        aria-label="Delete order"
+                      >
+                        <Trash2 className="h-5 w-5" />
+                      </button>
                     </div>
-                  </div>
-                  
-                  <div className="mt-4 flex space-x-2">
-                    <button
-                      onClick={() => handleLoadQueuedOrder(order)}
-                      className="flex-1 px-3 py-2 text-sm bg-black text-white rounded-md hover:bg-gray-800"
-                    >
-                      Load Order
-                    </button>
-                    <button
-                      onClick={() => handleDeleteQueuedOrder(order.id)}
-                      className="p-2 text-red-600 hover:bg-red-50 rounded-md"
-                      aria-label="Delete order"
-                    >
-                      <Trash2 className="h-5 w-5" />
-                    </button>
                   </div>
                 </div>
               ))}
             </div>
           )}
+          
+          {/* Bottom refresh button */}
+          {filteredOrders.length > 0 && (
+            <div className="mt-8 text-center">
+              <button
+                onClick={() => refetchQueuedOrders()}
+                className="inline-flex items-center px-4 py-2 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
+                disabled={isFetching}
+              >
+                <RefreshCw className={`h-4 w-4 mr-2 ${isFetching ? 'animate-spin' : ''}`} />
+                <span>Refresh Orders</span>
+              </button>
+            </div>
+          )}
         </div>
-      </div>
+      </main>
+
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Order</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this order? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setOrderToDelete(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={() => orderToDelete && handleDeleteQueuedOrder(orderToDelete)}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
+}
+
+function calculateOrderTotal(items: any[]) {
+  return items.reduce((total, item) => total + (item.totalPrice || 0), 0);
 }

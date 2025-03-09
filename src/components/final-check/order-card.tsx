@@ -26,7 +26,7 @@ interface FinalCheckOrder {
   customerName: string;
   items: Array<{
     id: string;
-    productName: string;
+    name: string;
     quantity: number;
     variations: Record<string, any>;
     kitchenNotes?: string;
@@ -101,19 +101,19 @@ export default function OrderCard({ order, onUpdateStatus }: OrderCardProps) {
       case "FINAL_CHECK_PROCESSING":
         // Check if the order has cake items (requires kitchen)
         const hasCakeItems = order.items.some(item => 
-          item.productName.toLowerCase().includes('cake') || 
+          item.name.toLowerCase().includes('cake') || 
           (item.category && item.category.toLowerCase().includes('cake'))
         );
         
         // Check if the order has flower items (requires design)
         const hasFlowerItems = order.items.some(item => 
-          item.productName.toLowerCase().includes('flower') || 
+          item.name.toLowerCase().includes('flower') || 
           (item.category && item.category.toLowerCase().includes('flower'))
         );
         
         // Check if the order has sets items (requires both kitchen and design)
         const hasSetsItems = order.items.some(item => 
-          item.productName.toLowerCase().includes('set') || 
+          item.name.toLowerCase().includes('set') || 
           (item.category && item.category.toLowerCase().includes('set'))
         );
         
@@ -230,7 +230,7 @@ export default function OrderCard({ order, onUpdateStatus }: OrderCardProps) {
             <div key={item.id} className="flex justify-between items-start pb-2 border-b border-gray-100 last:border-0">
               <div className="flex-1 space-y-2">
                 <div>
-                  <h4 className="font-medium">{item.productName}</h4>
+                  <h4 className="font-medium">{item.name}</h4>
                   <p className="text-sm text-gray-500">Quantity: {item.quantity}</p>
                   
                   {/* Variations */}

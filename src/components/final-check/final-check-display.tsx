@@ -27,7 +27,7 @@ export interface FinalCheckOrder {
   customerName: string;
   items: Array<{
     id: string;
-    productName: string;
+    name: string;
     quantity: number;
     variations: Record<string, any>;
     kitchenNotes?: string;

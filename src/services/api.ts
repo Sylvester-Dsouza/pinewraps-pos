@@ -4,6 +4,15 @@ import axios from 'axios';
 import { getAuth, signInWithEmailAndPassword } from 'firebase/auth';
 import Cookies from 'js-cookie';
 import { nanoid } from 'nanoid';
+import { 
+  Order, 
+  OrderPayment, 
+  POSOrderStatus, 
+  POSPaymentMethod, 
+  POSPaymentStatus,
+  POSOrderData,
+  POSOrderItemData
+} from '@/types/order';
 import { CartItem, CustomImage } from '@/types/cart';
 
 const baseURL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
@@ -147,11 +156,11 @@ export const authApi = {
   }
 };
 
-// Types
+// API response types
 export interface APIResponse<T> {
   success: boolean;
-  data: T;
   message?: string;
+  data?: T;
 }
 
 export interface ProductOptionValue {
@@ -190,31 +199,74 @@ export interface ProductImage {
 
 export type OrderCustomImage = CustomImage;
 
+export type PosQueuedOrderItem = {
+  id: string;
+  productId: string | null;
+  productName: string;
+  unitPrice: number;
+  totalPrice: number;
+  quantity: number;
+  selectedVariations: Array<{
+    id: string;
+    type: string;
+    value: string;
+    price?: number;
+  }> | null;
+  notes: string | null;
+  customImages: Array<OrderCustomImage> | null;
+  product?: Product;
+  requiresKitchen?: boolean;
+  requiresDesign?: boolean;
+  sku?: string;
+  categoryId?: string;
+  barcode?: string;
+};
+
 export type PosQueuedOrder = {
   id: string;
   name: string | null;
-  items: CartItem[];
-  customer: any | null;
+  items: PosQueuedOrderItem[];
   notes: string | null;
   createdAt: string;
   updatedAt: string;
   createdById: string;
   totalAmount: number;
-  customerName?: string;
-  customerPhone?: string;
-  customerEmail?: string;
-  deliveryMethod?: 'PICKUP' | 'DELIVERY';
-  deliveryDetails?: any;
-  pickupDetails?: any;
-  giftDetails?: any;
-  addressDetails?: any;
-  orderSummary?: {
-    products: Array<{
-      productName: string;
-      quantity: number;
-      price: number;
-    }>;
-    total: number;
+  customerName: string | null;
+  customerPhone: string | null;
+  customerEmail: string | null;
+  deliveryMethod: 'PICKUP' | 'DELIVERY';
+  
+  // Delivery details as direct fields
+  deliveryDate: string | null;
+  deliveryTimeSlot: string | null;
+  deliveryInstructions: string | null;
+  deliveryCharge: number | null;
+  
+  // Pickup details as direct fields
+  pickupDate: string | null;
+  pickupTimeSlot: string | null;
+  
+  // Address details as direct fields
+  streetAddress: string | null;
+  apartment: string | null;
+  emirate: string | null;
+  city: string | null;
+  
+  // Gift details as direct fields
+  isGift: boolean;
+  giftRecipientName: string | null;
+  giftRecipientPhone: string | null;
+  giftMessage: string | null;
+  giftCashAmount: number | null;
+  
+  paymentMethod?: POSPaymentMethod;
+  paymentReference?: string;
+  createdBy?: {
+    id: string;
+    firstName?: string;
+    lastName?: string;
+    email?: string;
+    name?: string;
   };
 };
 
@@ -258,63 +310,8 @@ export interface Category {
   updatedAt?: string;
 }
 
-export type POSOrderStatus = 
-  | "PENDING"
-  | "KITCHEN_QUEUE"
-  | "KITCHEN_PROCESSING"
-  | "KITCHEN_READY"
-  | "DESIGN_QUEUE"
-  | "DESIGN_PROCESSING"
-  | "DESIGN_READY"
-  | "COMPLETED";
-
-export interface POSOrderItemData {
-  id: string;
-  productId: string;
-  productName: string;
-  unitPrice: number;
-  quantity: number;
-  totalPrice: number;
-  images?: string[];
-  allowCustomPrice?: boolean;
-  allowCustomImages?: boolean;
-  selectedVariations?: Array<{
-    id: string;
-    type: string;
-    value: string;
-    price: number;
-  }>;
-  notes?: string;
-  customImages?: OrderCustomImage[];
-  metadata?: any;
-}
-
-export interface POSOrderData {
-  items: POSOrderItemData[];
-  paymentMethod: 'CASH' | 'CARD';
-  customerName?: string;
-  customerPhone?: string;
-  customerEmail?: string;
-  paymentReference?: string;
-  status?: POSOrderStatus;
-  expectedReadyTime?: Date;
-  deliveryMethod: 'PICKUP' | 'DELIVERY';
-  deliveryDate?: string;
-  deliveryTimeSlot?: string;
-  deliveryCharge?: number;
-  deliveryInstructions?: string;
-  streetAddress?: string;
-  apartment?: string;
-  emirate?: string;
-  city?: string;
-  pickupDate?: string;
-  pickupTimeSlot?: string;
-  totalAmount: number;
-  paidAmount: number;
-  changeAmount: number;
-  couponCode?: string;
-  couponDiscount?: number;
-  couponType?: 'PERCENTAGE' | 'FIXED_AMOUNT';
+export interface POSPaymentData extends Omit<OrderPayment, 'id'> {
+  id?: string;
 }
 
 // API methods
@@ -325,8 +322,8 @@ export const apiMethods = {
     getCategories: async () => {
       try {
         const response = await api.get<APIResponse<Category[]>>('/api/categories/public');
-        if (!response.data.success) {
-          throw new Error(response.data.message || 'Failed to fetch categories');
+        if (!response.data?.success) {
+          throw new Error(response.data?.message || 'Failed to fetch categories');
         }
         return {
           success: true,
@@ -383,7 +380,7 @@ export const apiMethods = {
           status: string;
           totalAmount: number;
           items: Array<{
-            productName: string;
+            name: string;
             quantity: number;
             variations: Array<{
               type: string;
@@ -427,50 +424,70 @@ export const apiMethods = {
     
     // Queue order related endpoints
     queueOrder(orderData: { 
-      items: any[]; 
+      items: Array<{
+        productId: string;
+        productName: string;
+        unitPrice: number;
+        quantity: number;
+        totalPrice: number;
+        notes?: string;
+        selectedVariations?: Array<{
+          id: string;
+          type: string;
+          value: string;
+          price?: number;
+        }>;
+        customImages?: OrderCustomImage[];
+        requiresKitchen?: boolean;
+        requiresDesign?: boolean;
+        sku?: string;
+        categoryId?: string;
+        barcode?: string;
+      }>; 
       name?: string; 
-      customer?: any; 
+      notes?: string; 
+      totalAmount: number;
+      
+      // Customer information as direct fields
       customerName?: string;
       customerEmail?: string;
       customerPhone?: string;
-      notes?: string; 
-      totalAmount: number;
-      deliveryMethod?: 'PICKUP' | 'DELIVERY';
-      deliveryDetails?: {
-        date: string;
-        timeSlot: string;
-        instructions: string;
-        streetAddress: string;
-        apartment: string;
-        emirate: string;
-        city: string;
-        charge: number;
-      };
-      pickupDetails?: {
-        date: string;
-        timeSlot: string;
-      };
-      giftDetails?: {
-        isGift: boolean;
-        recipientName: string;
-        recipientPhone: string;
-        message: string;
-        note: string;
-        cashAmount: number;
-        includeCash: boolean;
-      };
-      orderSummary?: {
-        totalItems: number;
-        products: {
-          productName: string;
-          quantity: number;
-          price: number;
-        }[];
-        totalAmount: number;
-      };
+      
+      // Delivery method
+      deliveryMethod: 'PICKUP' | 'DELIVERY';
+      
+      // Delivery details as direct fields
+      deliveryDate?: string;
+      deliveryTimeSlot?: string;
+      deliveryInstructions?: string;
+      deliveryCharge?: number;
+      
+      // Pickup details as direct fields
+      pickupDate?: string;
+      pickupTimeSlot?: string;
+      
+      // Address details as direct fields
+      streetAddress?: string;
+      apartment?: string;
+      emirate?: string;
+      city?: string;
+      
+      // Gift details as direct fields
+      isGift?: boolean;
+      giftRecipientName?: string;
+      giftRecipientPhone?: string;
+      giftMessage?: string;
+      giftCashAmount?: number;
+      
+      // Legacy fields for backward compatibility
+      customer?: any;
+      deliveryDetails?: any;
+      pickupDetails?: any;
+      giftDetails?: any;
+      addressDetails?: any;
+      orderSummary?: any;
     }): Promise<APIResponse<any>> {
-      return api.post('/api/pos/queue', orderData)
-        .then(response => response.data);
+      return api.post('/api/pos/queue', orderData);
     },
     
     getQueuedOrders(): Promise<APIResponse<any[]>> {
@@ -532,24 +549,18 @@ export const apiMethods = {
       }
     },
     
-    createOrder: async (orderData: POSOrderData & { items: Array<POSOrderItemData & { customImages?: (CustomImage | OrderCustomImage)[] }> }) => {
+    createOrder: async (orderData: POSOrderData & { items: Array<POSOrderItemData & { customImages?: CustomImage[] }> }) => {
       // Check if any items have custom images with files
       const hasCustomImages = orderData.items.some(item => 
         item.customImages?.some(img => 'file' in img && img.file instanceof File)
       );
 
       if (hasCustomImages) {
-        // Create form data
+        // Create FormData for multipart request
         const formData = new FormData();
-        formData.append('orderData', JSON.stringify({
-          ...orderData,
-          items: orderData.items.map(item => ({
-            ...item,
-            customImages: item.customImages?.filter(img => !('file' in img))
-          }))
-        }));
+        formData.append('orderData', JSON.stringify(orderData));
 
-        // Add custom images
+        // Append each file to FormData
         orderData.items.forEach((item, itemIndex) => {
           item.customImages?.forEach((image, imageIndex) => {
             if ('file' in image && image.file instanceof File) {
@@ -560,15 +571,15 @@ export const apiMethods = {
         });
 
         // Send multipart request
-        return api.post<APIResponse<any>>('/api/pos/orders', formData, {
+        return api.post<APIResponse<Order>>('/api/pos/orders', formData, {
           headers: {
-            'Content-Type': 'multipart/form-data',
-          },
+            'Content-Type': 'multipart/form-data'
+          }
         });
       }
 
-      // No custom images, send regular JSON request
-      return api.post<APIResponse<any>>('/api/pos/orders', orderData);
+      // Regular JSON request if no files
+      return api.post<APIResponse<Order>>('/api/pos/orders', orderData);
     },
 
     updateOrderStatus: async (orderId: string, { status, notes, teamNotes }: { status: string, notes?: string, teamNotes?: string }) => {
@@ -778,8 +789,22 @@ export const apiMethods = {
         throw error;
       }
     },
+    updateOrderPayment: async (orderId: string, payment: OrderPayment): Promise<APIResponse<Order>> => {
+      return api.post(`/api/pos/orders/${orderId}/payments`, payment);
+    },
+    addPartialPayment: async (orderId: string, payment: OrderPayment): Promise<APIResponse<Order>> => {
+      return api.post(`/api/pos/orders/${orderId}/partial-payment`, payment);
+    },
+    updatePaymentStatus: async (orderId: string, paymentId: string, status: POSPaymentStatus): Promise<APIResponse<Order>> => {
+      return api.patch(`/api/pos/orders/${orderId}/payments/${paymentId}`, { status });
+    },
+    completePayment: async (orderId: string): Promise<APIResponse<Order>> => {
+      return api.post(`/api/pos/orders/${orderId}/complete-payment`);
+    }
   }
 };
 
 // Export the configured axios instance
 export { api };
+
+export { POSOrderStatus, POSPaymentMethod, POSPaymentStatus };

@@ -32,7 +32,7 @@ interface KitchenOrder {
   orderNumber: string;
   items: {
     id: string;
-    productName: string;
+    name: string;
     quantity: number;
     variations: Record<string, VariationOption>;
     kitchenNotes?: string;
@@ -505,7 +505,7 @@ export default function KitchenDisplay() {
               <div className="flex-1 space-y-4">
                 <div className="flex justify-between items-start">
                   <div>
-                    <h4 className="font-medium">{item.productName}</h4>
+                    <h4 className="font-medium">{item.name}</h4>
                     <p className="text-sm text-gray-500">Quantity: {item.quantity}</p>
                     {/* Show variations */}
                     {Object.entries(item.variations || {}).map(([type, variation]) => (

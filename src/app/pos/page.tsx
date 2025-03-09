@@ -7,7 +7,6 @@ import { apiMethods, type Product, type Category, type APIResponse, type PosQueu
 import toast from 'react-hot-toast';
 import ProductDetailsModal from '@/components/pos/product-details-modal';
 import CheckoutModal from '@/components/pos/checkout-modal';
-import QueueOrderModal from '@/components/pos/queue-order-modal';
 import Header from '@/components/header/header';
 import { useQuery } from '@tanstack/react-query';
 import Image from 'next/image';
@@ -28,19 +27,14 @@ export default function POSPage() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [isCheckoutModalOpen, setIsCheckoutModalOpen] = useState(false);
-  const [isQueueModalOpen, setIsQueueModalOpen] = useState(false);
   const [queuedOrders, setQueuedOrders] = useState<PosQueuedOrder[]>([]);
   const checkoutDetailsRef = useRef<any>(null);
   const [checkoutDetails, setCheckoutDetails] = useState<any>(null);
 
-  // Load cart items from localStorage on mount (for queued orders)
+  // Load cart items from localStorage on mount
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      // Check if we need to open the checkout modal (from queued orders)
-      const openCheckoutModal = localStorage.getItem('openCheckoutModal');
-      
-      // Load cart items
-      const savedCartItems = localStorage.getItem('cartItems');
+      const savedCartItems = localStorage.getItem('pos-cart');
       if (savedCartItems) {
         try {
           const parsedCartItems = JSON.parse(savedCartItems);
@@ -65,15 +59,7 @@ export default function POSPage() {
                   id: v.id || nanoid(),
                   type: v.type || 'Option',
                   value: v.value || '',
-                  price: parseFloat(String(v.price)) || 0
-                }));
-              } else if (item.product.variations && Array.isArray(item.product.variations)) {
-                // If selectedVariations is missing but product.variations exists, use that
-                selectedVariations = item.product.variations.map((v: any) => ({
-                  id: v.id || nanoid(),
-                  type: v.type || 'Option',
-                  value: v.value || '',
-                  price: parseFloat(String(v.price)) || 0
+                  priceAdjustment: parseFloat(String(v.price || v.priceAdjustment)) || 0
                 }));
               }
               
@@ -83,7 +69,7 @@ export default function POSPage() {
                 customImages = item.customImages.map((img: any) => ({
                   id: img.id || nanoid(),
                   url: img.url || '',
-                  previewUrl: img.previewUrl || '',
+                  previewUrl: img.previewUrl || img.url || '',
                   comment: img.comment || ''
                 }));
               }
@@ -95,46 +81,46 @@ export default function POSPage() {
                   id: item.product?.id || '',
                   name: item.product?.name || 'Unknown Product',
                   basePrice: parseFloat(String(item.product?.basePrice)) || 0,
-                  requiresKitchen: item.product?.requiresKitchen || item.product?.metadata?.requiresKitchen || false,
-                  requiresDesign: item.product?.requiresDesign || item.product?.metadata?.requiresDesign || false,
+                  requiresKitchen: item.product?.requiresKitchen || false,
+                  requiresDesign: item.product?.requiresDesign || false,
                   allowCustomImages: item.product?.allowCustomImages || false,
                   status: item.product?.status || 'ACTIVE',
                   images: Array.isArray(item.product?.images) ? item.product.images : [],
                   allowCustomPrice: item.product?.allowCustomPrice || false,
-                  categoryId: item.product?.categoryId || '',
-                  description: item.product?.description || '',
-                  sku: item.product?.sku || '',
-                  barcode: item.product?.barcode || '',
-                  variants: Array.isArray(item.product?.variants) ? item.product.variants : []
                 },
                 quantity: parseInt(String(item.quantity)) || 1,
                 selectedVariations,
                 notes: item.notes || '',
                 customImages,
-                totalPrice: parseFloat(String(item.totalPrice)) || 0,
-                metadata: item.metadata || {}
+                totalPrice: parseFloat(String(item.totalPrice)) || 0
               };
             }).filter(item => item !== null);
             
-            console.log('Setting cart with validated items:', JSON.stringify(validatedCartItems, null, 2));
+            console.log('Setting cart with validated items:', validatedCartItems);
             setCart(validatedCartItems);
-            
-            // Calculate cart total for display
-            const total = validatedCartItems.reduce((sum, item) => sum + item.totalPrice, 0);
-            console.log(`Loaded ${validatedCartItems.length} items with total: ${total}`);
-          } else {
-            console.error('Invalid cart items format:', parsedCartItems);
           }
         } catch (error) {
           console.error('Error parsing cart items from localStorage:', error);
         }
-        
-        // Clean up localStorage
-        localStorage.removeItem('cartItems');
       }
-      
-      // Load checkout details
-      const savedCheckoutDetails = localStorage.getItem('checkoutDetails');
+    }
+  }, []);
+
+  // Save cart items to localStorage whenever cart changes
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      if (cart.length > 0 || isCheckoutModalOpen) {
+        localStorage.setItem('pos-cart', JSON.stringify(cart));
+      } else {
+        localStorage.removeItem('pos-cart');
+      }
+    }
+  }, [cart, isCheckoutModalOpen]);
+
+  // Load checkout details
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const savedCheckoutDetails = localStorage.getItem('pos-checkout-details');
       if (savedCheckoutDetails) {
         try {
           const parsedCheckoutDetails = JSON.parse(savedCheckoutDetails);
@@ -148,7 +134,7 @@ export default function POSPage() {
               phone: parsedCheckoutDetails.customerDetails?.phone || '',
             },
             deliveryMethod: parsedCheckoutDetails.deliveryMethod || 'PICKUP',
-            deliveryDetails: {
+            deliveryDetails: parsedCheckoutDetails.deliveryDetails ? {
               date: parsedCheckoutDetails.deliveryDetails?.date || '',
               timeSlot: parsedCheckoutDetails.deliveryDetails?.timeSlot || '',
               instructions: parsedCheckoutDetails.deliveryDetails?.instructions || '',
@@ -157,12 +143,12 @@ export default function POSPage() {
               emirate: parsedCheckoutDetails.deliveryDetails?.emirate || '',
               city: parsedCheckoutDetails.deliveryDetails?.city || '',
               charge: parseFloat(String(parsedCheckoutDetails.deliveryDetails?.charge)) || 0,
-            },
-            pickupDetails: {
+            } : undefined,
+            pickupDetails: parsedCheckoutDetails.pickupDetails ? {
               date: parsedCheckoutDetails.pickupDetails?.date || '',
               timeSlot: parsedCheckoutDetails.pickupDetails?.timeSlot || '',
-            },
-            giftDetails: {
+            } : undefined,
+            giftDetails: parsedCheckoutDetails.giftDetails ? {
               isGift: parsedCheckoutDetails.giftDetails?.isGift || false,
               recipientName: parsedCheckoutDetails.giftDetails?.recipientName || '',
               recipientPhone: parsedCheckoutDetails.giftDetails?.recipientPhone || '',
@@ -170,63 +156,35 @@ export default function POSPage() {
               note: parsedCheckoutDetails.giftDetails?.note || '',
               cashAmount: parseFloat(String(parsedCheckoutDetails.giftDetails?.cashAmount)) || 0,
               includeCash: parsedCheckoutDetails.giftDetails?.includeCash || false,
-            },
-            paymentMethod: parsedCheckoutDetails.paymentMethod || 'CASH',
-            paymentReference: parsedCheckoutDetails.paymentReference || '',
-            orderSummary: parsedCheckoutDetails.orderSummary ? {
-              totalItems: parseInt(String(parsedCheckoutDetails.orderSummary.totalItems)) || 0,
-              products: Array.isArray(parsedCheckoutDetails.orderSummary.products) 
-                ? parsedCheckoutDetails.orderSummary.products.map((p: any) => ({
-                    id: p.id || '',
-                    productId: p.productId || '',
-                    productName: p.productName || 'Unknown Product',
-                    quantity: parseInt(String(p.quantity)) || 1,
-                    price: parseFloat(String(p.price)) || 0,
-                    unitPrice: parseFloat(String(p.unitPrice)) || 0,
-                    sku: p.sku || '',
-                    requiresKitchen: p.requiresKitchen || false,
-                    requiresDesign: p.requiresDesign || false,
-                    hasVariations: p.hasVariations || false,
-                    hasCustomImages: p.hasCustomImages || false
-                  }))
-                : [],
-              totalAmount: parseFloat(String(parsedCheckoutDetails.orderSummary.totalAmount)) || 0
-            } : {
-              totalItems: 0,
-              products: [],
-              totalAmount: 0
-            }
+            } : undefined,
+            addressDetails: parsedCheckoutDetails.addressDetails ? {
+              streetAddress: parsedCheckoutDetails.addressDetails?.streetAddress || '',
+              apartment: parsedCheckoutDetails.addressDetails?.apartment || '',
+              emirate: parsedCheckoutDetails.addressDetails?.emirate || '',
+              city: parsedCheckoutDetails.addressDetails?.city || '',
+            } : undefined,
+            name: parsedCheckoutDetails.name || '',
+            notes: parsedCheckoutDetails.notes || ''
           };
           
           console.log('Validated checkout details:', validatedCheckoutDetails);
           setCheckoutDetails(validatedCheckoutDetails);
           
           // Clean up localStorage
-          localStorage.removeItem('checkoutDetails');
+          localStorage.removeItem('pos-checkout-details');
+          
+          // Open the checkout modal after a short delay to ensure state is updated
+          setTimeout(() => {
+            setIsCheckoutModalOpen(true);
+          }, 500);
         } catch (error) {
           console.error('Error parsing checkout details from localStorage:', error);
         }
       } else {
         console.warn('No checkout details found in localStorage');
       }
-      
-      // Open the checkout modal after a short delay to ensure state is updated
-      if (openCheckoutModal === 'true') {
-        setTimeout(() => {
-          setIsCheckoutModalOpen(true);
-          // Clear the flag
-          localStorage.removeItem('openCheckoutModal');
-        }, 500);
-      }
     }
   }, []);
-
-  // Persist cart to localStorage whenever it changes
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('pos-cart', JSON.stringify(cart));
-    }
-  }, [cart]);
 
   // Clear cart function
   const handleClearCart = () => {
@@ -348,8 +306,13 @@ export default function POSPage() {
   };
 
   // Calculate total price for variations
-  const calculateTotalPrice = (basePrice: number, quantity: number, variations: Array<{ priceAdjustment: number }>) => {
-    const variationTotal = variations.reduce((total, variation) => total + (variation.priceAdjustment || 0), 0);
+  const calculateTotalPrice = (basePrice: number, quantity: number, variations: Array<{ priceAdjustment?: number; price?: number }>) => {
+    const variationTotal = variations.reduce((total, variation) => {
+      // Use priceAdjustment if available, otherwise try to use price, or default to 0
+      const adjustmentValue = variation.priceAdjustment !== undefined ? variation.priceAdjustment : 
+                             (variation.price !== undefined ? variation.price : 0);
+      return total + adjustmentValue;
+    }, 0);
     return (basePrice + variationTotal) * quantity;
   };
 
@@ -507,162 +470,105 @@ export default function POSPage() {
     return () => clearInterval(intervalId);
   }, [refetchQueuedOrders]);
 
-  // Function to queue the current order
-  const handleQueueOrder = async (name: string, notes: string, checkoutDetails: any) => {
-    console.log('Handling queue order with checkout details:', checkoutDetails);
-    
-    if (cart.length === 0) {
-      toast.error('Cannot queue an empty order');
-      return;
-    }
-
-    // Check if user is authenticated
-    if (!user) {
-      toast.error('You must be logged in to queue an order');
-      router.push('/login');
-      return;
-    }
-
-    // Create a copy of the cart with additional metadata
-    const cartWithMetadata = cart.map(item => {
-      // Format each item to ensure it has all required fields
-      return {
-        id: item.id || nanoid(),
-        productId: item.product.id,
-        productName: item.product.name,
-        unitPrice: item.product.basePrice,
-        quantity: item.quantity,
-        totalPrice: item.totalPrice,
-        notes: item.notes || '',
-        selectedVariations: item.selectedVariations || [],
-        customImages: item.customImages || [],
-        images: item.product.images || [],
-        allowCustomPrice: item.product.allowCustomPrice || false,
-        allowCustomImages: item.product.allowCustomImages || false,
-        metadata: {
-          ...item.metadata,
-          paymentMethod: checkoutDetails.paymentMethod || 'CASH',
-          paymentReference: checkoutDetails.paymentReference || ''
-        }
-      };
-    });
-
-    // Create order summary for easier display in queued orders
-    const orderSummary = {
-      totalItems: cart.length,
-      products: cart.map(item => ({
-        productName: item.product.name,
-        quantity: item.quantity,
-        price: item.totalPrice
-      })),
-      totalAmount: cartTotal
-    };
-
-    // Extract customer details from checkoutDetails
-    const customerDetails = checkoutDetails.customerDetails || {};
-    const customerName = customerDetails.name || '';
-    const customerEmail = customerDetails.email || '';
-    const customerPhone = customerDetails.phone || '';
-
-    console.log('Queuing order with cart items:', cartWithMetadata);
-    console.log('Queuing order with checkout details:', checkoutDetails);
-    console.log('Queuing order with order summary:', orderSummary);
-    console.log('Customer details:', { customerName, customerEmail, customerPhone });
-
+  // Handle queue order
+  const handleQueueOrder = async (checkoutDetails: any) => {
     try {
-      const response = await apiMethods.pos.queueOrder({
-        items: cartWithMetadata,
-        name,
-        notes,
-        totalAmount: cartTotal,
-        customer: checkoutDetails.customerDetails,
-        customerName,
-        customerEmail,
-        customerPhone,
-        deliveryMethod: checkoutDetails.deliveryMethod,
-        deliveryDetails: checkoutDetails.deliveryDetails,
-        pickupDetails: checkoutDetails.pickupDetails,
-        giftDetails: checkoutDetails.giftDetails,
-        orderSummary: orderSummary
+      // Validate cart
+      if (cart.length === 0) {
+        toast.error('Cannot queue an empty order');
+        return;
+      }
+
+      // Ensure we have a name for the order
+      const orderName = checkoutDetails.customerName || checkoutDetails.customerDetails?.name || 'Untitled Order';
+
+      console.log('Queueing order with details:', {
+        ...checkoutDetails,
+        name: orderName
       });
+
+      // Format the order data to match the API requirements
+      const orderData = {
+        ...checkoutDetails,
+        name: orderName,
+        items: cart.map(item => ({
+          productId: item.product.id,
+          name: item.product.name, // Required by API
+          productName: item.product.name,
+          unitPrice: item.product.basePrice,
+          quantity: item.quantity,
+          totalPrice: item.totalPrice,
+          notes: item.notes || '',
+          selectedVariations: item.selectedVariations?.map(v => ({
+            id: v.id,
+            type: v.type,
+            value: v.value,
+            price: v.priceAdjustment
+          })) || [],
+          customImages: item.customImages || [],
+          requiresKitchen: item.product.requiresKitchen || false,
+          requiresDesign: item.product.requiresDesign || false,
+          sku: item.product.sku || '',
+          categoryId: item.product.categoryId || ''
+        })),
+        totalAmount: cart.reduce((sum, item) => sum + item.totalPrice, 0)
+      };
+
+      // Call the API to queue the order
+      const response = await apiMethods.pos.queueOrder(orderData);
 
       if (response.success) {
         toast.success('Order queued successfully');
         setCart([]);
-        // Force refetch queued orders to update the count immediately
+        localStorage.removeItem('pos-cart');
+        setCheckoutDetails(null);
+        setIsCheckoutModalOpen(false);
         await refetchQueuedOrders();
       } else {
-        toast.error(response.message || 'Failed to queue order');
+        throw new Error(response.message || 'Failed to queue order');
       }
     } catch (error: any) {
-      console.error('Error queuing order:', error);
+      console.error('Error queueing order:', error);
+      toast.error(error.message || 'Failed to queue order');
       
       // Handle authentication errors
       if (error.response?.status === 401) {
         toast.error('Your session has expired. Please log in again.');
-        // Attempt to refresh token
-        const newToken = await refreshToken();
-        if (!newToken) {
-          router.push('/login');
-        } else {
-          // Retry the operation with new token
-          toast.error('Please try queuing the order again');
-        }
-      } else {
-        toast.error(error.response?.data?.message || 'Failed to queue order');
+        await refreshToken();
       }
     }
   };
 
-  // Log checkout details whenever they change
+  // Handle URL parameters
   useEffect(() => {
-    if (checkoutDetails) {
-      console.log('Checkout details updated in POS page:', checkoutDetails);
-    }
-  }, [checkoutDetails]);
+    const params = new URLSearchParams(window.location.search);
+    const queuedOrderId = params.get('queuedOrderId');
+    const deliveryMethod = params.get('deliveryMethod');
+    const customerName = params.get('customerName');
+    const customerPhone = params.get('customerPhone');
+    const customerEmail = params.get('customerEmail');
+    
+    console.log('URL parameters:', { 
+      queuedOrderId, 
+      deliveryMethod,
+      customerName,
+      customerPhone,
+      customerEmail
+    });
 
-  // Save checkout details to localStorage
-  const onSaveCheckoutDetails = (details: any) => {
-    console.log('Saving checkout details to localStorage:', details);
-    try {
-      // Store in localStorage
-      localStorage.setItem('checkoutDetails', JSON.stringify(details));
-      
-      // Use a ref to compare if the details have actually changed
-      // before updating state to prevent infinite loops
-      const prevDetails = checkoutDetailsRef.current;
-      
-      // Only update state if the details have actually changed in a meaningful way
-      // Perform a more selective comparison that ignores fields that might change frequently
-      const shouldUpdate = !prevDetails || 
-        // Compare customer details
-        prevDetails.customerDetails?.name !== details.customerDetails?.name ||
-        prevDetails.customerDetails?.email !== details.customerDetails?.email ||
-        prevDetails.customerDetails?.phone !== details.customerDetails?.phone ||
-        // Compare delivery method
-        prevDetails.deliveryMethod !== details.deliveryMethod ||
-        // Compare payment details
-        prevDetails.paymentMethod !== details.paymentMethod ||
-        prevDetails.paymentReference !== details.paymentReference ||
-        // Compare gift details
-        prevDetails.giftDetails?.isGift !== details.giftDetails?.isGift ||
-        prevDetails.giftDetails?.recipientName !== details.giftDetails?.recipientName ||
-        // Compare delivery details (only important fields)
-        prevDetails.deliveryDetails?.streetAddress !== details.deliveryDetails?.streetAddress ||
-        prevDetails.deliveryDetails?.emirate !== details.deliveryDetails?.emirate ||
-        prevDetails.deliveryDetails?.city !== details.deliveryDetails?.city;
-      
-      if (shouldUpdate) {
-        console.log('Updating checkout details state with new values');
-        checkoutDetailsRef.current = details;
-        setCheckoutDetails(details);
-      } else {
-        console.log('Skipping checkout details state update - no meaningful changes');
-      }
-    } catch (error) {
-      console.error('Error saving checkout details to localStorage:', error);
+    // If we have customer information or delivery method from URL, set it in checkout details
+    if (customerName || customerPhone || customerEmail || deliveryMethod) {
+      setCheckoutDetails(prev => ({
+        ...prev,
+        customerDetails: {
+          name: customerName || prev?.customerDetails?.name || '',
+          phone: customerPhone || prev?.customerDetails?.phone || '',
+          email: customerEmail || prev?.customerDetails?.email || ''
+        },
+        deliveryMethod: (deliveryMethod === 'DELIVERY' ? 'DELIVERY' : 'PICKUP') as 'PICKUP' | 'DELIVERY'
+      }));
     }
-  };
+  }, []);
 
   // If still loading or no user, show loading state
   if (authLoading || !user) {
@@ -919,13 +825,6 @@ export default function POSPage() {
             
             <div className="grid grid-cols-2 gap-2 mb-3">
               <button
-                disabled={cart.length === 0}
-                onClick={() => setIsQueueModalOpen(true)}
-                className="py-2 bg-gray-200 text-gray-800 rounded-lg disabled:opacity-50 hover:bg-gray-300 transition-colors"
-              >
-                Queue Order
-              </button>
-              <button
                 onClick={() => router.push('/pos/queued-orders')}
                 className="py-2 flex items-center justify-center bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition-colors"
               >
@@ -957,21 +856,15 @@ export default function POSPage() {
 
       <CheckoutModal
         isOpen={isCheckoutModalOpen}
-        onClose={() => {
-          setIsCheckoutModalOpen(false);
-          setCheckoutDetails(null);
-          localStorage.removeItem('pos-checkout-details');
-        }}
+        onClose={() => setIsCheckoutModalOpen(false)}
         cart={cart}
         setCart={setCart}
         cartTotal={cartTotal}
         onCheckoutComplete={handleCheckoutComplete}
-        onQueueOrder={(details) => {
+        onQueueOrder={handleQueueOrder}
+        onSaveCheckoutDetails={(details) => {
           setCheckoutDetails(details);
-          setIsCheckoutModalOpen(false);
-          setIsQueueModalOpen(true);
         }}
-        onSaveCheckoutDetails={onSaveCheckoutDetails}
         customerDetails={checkoutDetails?.customerDetails}
         deliveryMethod={checkoutDetails?.deliveryMethod}
         deliveryDetails={checkoutDetails?.deliveryDetails}
@@ -979,13 +872,7 @@ export default function POSPage() {
         giftDetails={checkoutDetails?.giftDetails}
         paymentMethod={checkoutDetails?.paymentMethod}
         paymentReference={checkoutDetails?.paymentReference}
-      />
-      
-      <QueueOrderModal
-        isOpen={isQueueModalOpen}
-        onClose={() => setIsQueueModalOpen(false)}
-        onQueueOrder={handleQueueOrder}
-        checkoutDetails={checkoutDetails}
+        orderName={checkoutDetails?.name || ''}
       />
     </div>
   );
