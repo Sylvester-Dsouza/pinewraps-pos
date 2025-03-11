@@ -4,7 +4,8 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '@/providers/auth-provider';
 import { useRouter } from 'next/navigation';
 import { Clock, ArrowLeft, Trash2, ShoppingCart, RefreshCw, ChevronDown, ChevronUp, Search } from 'lucide-react';
-import { apiMethods, type PosQueuedOrder, type Product } from '@/services/api';
+import { apiMethods, type Product } from '@/services/api';
+import { type ParkedOrder } from '@/types/order';
 import toast from 'react-hot-toast';
 import Header from '@/components/header/header';
 import { useQuery } from '@tanstack/react-query';
@@ -20,30 +21,33 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
 
-export default function QueuedOrdersPage() {
+export default function ParkedOrdersPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
-  const [queuedOrders, setQueuedOrders] = useState<any[]>([]);
+  const [parkedOrders, setParkedOrders] = useState<any[]>([]);
   const [expandedOrders, setExpandedOrders] = useState<Record<string, boolean>>({});
   const [orderToDelete, setOrderToDelete] = useState<string | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Fetch queued orders
-  const { data: queuedOrdersData, refetch: refetchQueuedOrders, isLoading: isFetching } = useQuery({
-    queryKey: ['queuedOrders'],
+  // Fetch parked orders
+  const { data: parkedOrdersData, refetch: refetchParkedOrders, isLoading: isFetching } = useQuery({
+    queryKey: ['parkedOrders'],
     queryFn: async () => {
       try {
-        const response = await apiMethods.pos.getQueuedOrders();
+        console.log('Fetching parked orders...');
+        const response = await apiMethods.pos.getParkedOrders();
+        console.log('Parked orders response:', response);
         if (!response.success) {
-          throw new Error(response.message || 'Failed to fetch queued orders');
+          throw new Error(response.message || 'Failed to fetch parked orders');
         }
         return response.data;
       } catch (error) {
-        console.error('Error fetching queued orders:', error);
-        toast.error('Failed to load queued orders');
+        console.error('Error fetching parked orders:', error);
+        toast.error('Failed to load parked orders');
         return [];
       }
     },
@@ -52,19 +56,19 @@ export default function QueuedOrdersPage() {
   });
 
   useEffect(() => {
-    if (queuedOrdersData) {
-      setQueuedOrders(queuedOrdersData);
-      console.log('Updated queued orders:', queuedOrdersData.length);
+    if (parkedOrdersData) {
+      setParkedOrders(parkedOrdersData);
+      console.log('Updated parked orders:', parkedOrdersData.length);
       setIsLoading(false);
     }
-  }, [queuedOrdersData]);
+  }, [parkedOrdersData]);
 
   // Filter orders based on search query
   const filteredOrders = useMemo(() => {
-    if (!searchQuery.trim()) return queuedOrders;
+    if (!searchQuery.trim()) return parkedOrders;
 
     const query = searchQuery.toLowerCase().trim();
-    return queuedOrders.filter(order => {
+    return parkedOrders.filter(order => {
       // Search in customer details
       const customerMatch = 
         (order.customerName?.toLowerCase().includes(query) ?? false) ||
@@ -81,16 +85,16 @@ export default function QueuedOrdersPage() {
 
       return customerMatch || idMatch || itemsMatch;
     });
-  }, [queuedOrders, searchQuery]);
+  }, [parkedOrders, searchQuery]);
 
   // Debounced search handler
   const handleSearch = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     setSearchQuery(event.target.value);
   }, []);
 
-  // Debug function to log the structure of a queued order
-  const debugQueuedOrder = (order: any) => {
-    console.log('Queued Order ID:', order.id);
+  // Debug function to log the structure of a parked order
+  const debugParkedOrder = (order: any) => {
+    console.log('Parked Order ID:', order.id);
     console.log('Name:', order.name);
     console.log('Created At:', order.createdAt);
     console.log('Total Amount:', order.totalAmount);
@@ -152,10 +156,10 @@ export default function QueuedOrdersPage() {
     }
   };
 
-  // Load a queued order into the POS
-  const handleLoadQueuedOrder = async (order: any) => {
+  // Load a parked order into the POS
+  const handleLoadParkedOrder = async (order: any) => {
     try {
-      console.log('Loading queued order:', order);
+      console.log('Loading parked order:', order);
       console.log('Delivery method:', order.deliveryMethod);
       
       // Close the order details if it's expanded
@@ -164,7 +168,7 @@ export default function QueuedOrdersPage() {
       }
 
       // Debug the order structure
-      debugQueuedOrder(order);
+      debugParkedOrder(order);
 
       // Log customer information
       console.log('Customer information:', {
@@ -259,7 +263,7 @@ export default function QueuedOrdersPage() {
       
       // Make sure we have cart items
       if (cartItems.length === 0) {
-        console.error('No valid cart items could be created from the queued order');
+        console.error('No valid cart items could be created from the parked order');
         toast.error('Could not load order items. Please try again.');
         return;
       }
@@ -273,7 +277,7 @@ export default function QueuedOrdersPage() {
         },
         deliveryMethod: normalizedDeliveryMethod as 'PICKUP' | 'DELIVERY',
         deliveryDetails: normalizedDeliveryMethod === 'DELIVERY' ? {
-          date: order.deliveryDate || '',
+          date: order.deliveryDate ? new Date(order.deliveryDate).toISOString().split('T')[0] : '',
           timeSlot: order.deliveryTimeSlot || '',
           instructions: order.deliveryInstructions || '',
           streetAddress: order.streetAddress || '',
@@ -283,7 +287,7 @@ export default function QueuedOrdersPage() {
           charge: order.deliveryCharge || 0,
         } : undefined,
         pickupDetails: normalizedDeliveryMethod === 'PICKUP' ? {
-          date: order.pickupDate || '',
+          date: order.pickupDate ? new Date(order.pickupDate).toISOString().split('T')[0] : '',
           timeSlot: order.pickupTimeSlot || '',
         } : undefined,
         giftDetails: order.isGift ? {
@@ -309,34 +313,55 @@ export default function QueuedOrdersPage() {
       params.append('customerPhone', order.customerPhone || '');
       params.append('deliveryMethod', normalizedDeliveryMethod);
       
-      // Navigate to POS page with the queued order data
+      // Navigate to POS page with the parked order data
       router.push(`/pos?${params.toString()}`);
       
       // Store cart items and checkout details in localStorage for the POS page to access
-      localStorage.setItem('pos-cart-items', JSON.stringify(cartItems));
+      localStorage.setItem('pos-cart', JSON.stringify(cartItems));
       localStorage.setItem('pos-checkout-details', JSON.stringify(checkoutDetails));
       
       toast.success('Order loaded successfully');
     } catch (error) {
-      console.error('Error loading queued order:', error);
+      console.error('Error loading parked order:', error);
       toast.error('Failed to load order');
     }
   };
 
   // Handle delete order
-  const handleDeleteQueuedOrder = async (orderId: string) => {
+  const handleDeleteParkedOrder = async (orderId: string) => {
     try {
-      const response = await apiMethods.pos.deleteQueuedOrder(orderId);
-      if (!response.success) {
-        throw new Error(response.message || 'Failed to delete order');
+      console.log('Deleting parked order:', orderId);
+      const response = await apiMethods.pos.deleteParkedOrder(orderId);
+      
+      // Even if we get an error response, the order might have been deleted
+      // So we'll refetch the orders list regardless
+      console.log('Delete response:', response);
+      
+      if (response && response.success) {
+        toast.success('Order deleted successfully');
+      } else {
+        console.warn('Received unsuccessful response but order might be deleted:', response);
+        toast.warning('Order may have been deleted, refreshing list...');
       }
-      toast.success('Order deleted successfully');
+      
+      // Always clean up the UI state
       setOrderToDelete(null);
       setIsDeleteDialogOpen(false);
-      refetchQueuedOrders();
+      
+      // Always refetch to get the current state from the server
+      refetchParkedOrders();
     } catch (error) {
       console.error('Error deleting order:', error);
-      toast.error('Failed to delete order');
+      
+      // Even on error, the deletion might have succeeded on the server
+      toast.warning('Error occurred, but order may have been deleted. Refreshing list...');
+      
+      // Clean up UI state
+      setOrderToDelete(null);
+      setIsDeleteDialogOpen(false);
+      
+      // Refetch to check the current state
+      refetchParkedOrders();
     }
   };
 
@@ -373,7 +398,7 @@ export default function QueuedOrdersPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <Header title="Queued Orders" />
+      <Header title="Parked Orders" />
       
       <main className="container mx-auto px-4 py-8">
         {/* Search Bar */}
@@ -402,7 +427,7 @@ export default function QueuedOrdersPage() {
           ) : filteredOrders.length === 0 ? (
             <div className="text-center py-8">
               <p className="text-gray-600">
-                {searchQuery ? 'No orders found matching your search.' : 'No queued orders available.'}
+                {searchQuery ? 'No orders found matching your search.' : 'No parked orders available.'}
               </p>
             </div>
           ) : (
@@ -674,7 +699,7 @@ export default function QueuedOrdersPage() {
                     
                     <div className="mt-auto pt-4 flex space-x-2">
                       <button
-                        onClick={() => handleLoadQueuedOrder(order)}
+                        onClick={() => handleLoadParkedOrder(order)}
                         className="flex-1 px-3 py-2 text-sm bg-black text-white rounded-md hover:bg-gray-800"
                       >
                         Load Order
@@ -697,7 +722,7 @@ export default function QueuedOrdersPage() {
           {filteredOrders.length > 0 && (
             <div className="mt-8 text-center">
               <button
-                onClick={() => refetchQueuedOrders()}
+                onClick={() => refetchParkedOrders()}
                 className="inline-flex items-center px-4 py-2 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
                 disabled={isFetching}
               >
@@ -720,7 +745,7 @@ export default function QueuedOrdersPage() {
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setOrderToDelete(null)}>Cancel</AlertDialogCancel>
             <AlertDialogAction 
-              onClick={() => orderToDelete && handleDeleteQueuedOrder(orderToDelete)}
+              onClick={() => orderToDelete && handleDeleteParkedOrder(orderToDelete)}
               className="bg-red-600 hover:bg-red-700 text-white"
             >
               Delete

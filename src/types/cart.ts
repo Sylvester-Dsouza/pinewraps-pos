@@ -1,10 +1,17 @@
 /**
+ * Cart Domain Types
+ * Contains all cart-related interfaces and types
+ */
+
+/**
  * Defines the structure of a custom image in the POS system
  */
 export interface CustomImage {
   id: string;
   url: string;
   previewUrl?: string;
+  type?: string;
+  notes?: string;
   comment?: string;
   createdAt?: string;
   file?: File; // Only used during upload, not stored in database
@@ -22,35 +29,36 @@ export interface SelectedVariation {
 }
 
 /**
+ * Defines the structure of a product in the cart
+ */
+export interface CartProduct {
+  id: string;
+  name: string;
+  basePrice: number;
+  status?: string;
+  images?: any[];
+  allowCustomPrice?: boolean;
+  requiresDesign?: boolean;
+  requiresKitchen?: boolean;
+  allowCustomImages?: boolean;
+  categoryId?: string;
+  category?: any;
+  description?: string;
+  sku?: string;
+  barcode?: string;
+  variants?: any[];
+  options?: any[];
+  visibility?: string;
+  stock?: number;
+  trackInventory?: boolean;
+}
+
+/**
  * Defines the structure of a cart item in the POS system
  */
 export interface CartItem {
-  [x: string]: any;
-  unitPrice: any;
-  price: any;
-  name: any;
   id: string;
-  product: {
-    id: string;
-    name: string;
-    basePrice: number;
-    status?: string;
-    images?: any[];
-    allowCustomPrice?: boolean;
-    requiresDesign?: boolean;
-    requiresKitchen?: boolean;
-    allowCustomImages?: boolean;
-    categoryId?: string;
-    category?: any;
-    description?: string;
-    sku?: string;
-    barcode?: string;
-    variants?: any[];
-    options?: any[];
-    visibility?: string;
-    stock?: number;
-    trackInventory?: boolean;
-  };
+  product: CartProduct;
   quantity: number;
   selectedVariations: SelectedVariation[];
   totalPrice: number;
@@ -67,64 +75,27 @@ export interface CartItem {
 }
 
 /**
- * Defines the structure of the checkout details
+ * Defines the structure of a cart
  */
-export interface CheckoutDetails {
-  customerDetails: {
-    name: string;
-    email: string;
-    phone: string;
+export interface Cart {
+  items: CartItem[];
+  totalItems: number;
+  totalPrice: number;
+  metadata?: {
+    createdAt?: string;
+    updatedAt?: string;
+    sessionId?: string;
+    userId?: string;
+    [key: string]: any;
   };
-  deliveryMethod: 'PICKUP' | 'DELIVERY';
-  deliveryDetails?: {
-    date: string;
-    timeSlot: string;
-    instructions: string;
-    streetAddress: string;
-    apartment: string;
-    emirate: string;
-    city: string;
-    charge: number;
-  };
-  pickupDetails?: {
-    date: string;
-    timeSlot: string;
-  };
-  giftDetails?: {
-    isGift: boolean;
-    recipientName: string;
-    recipientPhone: string;
-    message: string;
-    note: string;
-    cashAmount: number;
-    includeCash: boolean;
-  };
-  addressDetails?: {
-    streetAddress: string;
-    apartment: string;
-    emirate: string;
-    city: string;
-  };
-  paymentMethod: 'CASH' | 'CARD';
-  paymentReference: string;
-  orderSummary?: {
-    totalItems?: number;
-    products: Array<{
-      id?: string;
-      productId?: string;
-      name: string;
-      quantity: number;
-      price: number;
-      unitPrice?: number;
-      sku?: string;
-      barcode?: string;
-      categoryId?: string;
-      requiresKitchen?: boolean;
-      requiresDesign?: boolean;
-      hasVariations?: boolean;
-      hasCustomImages?: boolean;
-    }>;
-    totalAmount: number;
-  };
-  cartItems?: any[];
+}
+
+/**
+ * Defines cart calculation functions
+ */
+export interface CartCalculations {
+  calculateItemTotal: (item: CartItem) => number;
+  calculateCartTotal: (items: CartItem[]) => number;
+  calculateTax: (total: number, taxRate: number) => number;
+  calculateDiscount: (total: number, discountRate: number) => number;
 }

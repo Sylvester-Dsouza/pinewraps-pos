@@ -4,6 +4,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { X, Upload } from 'lucide-react';
 import Image from 'next/image';
 import { CustomImage } from '@/types/cart';
+import { nanoid } from 'nanoid';
 
 interface ImageUploadProps {
   onChange: (images: CustomImage[]) => void;
@@ -31,7 +32,7 @@ export default function ImageUpload({ onChange, value }: ImageUploadProps) {
     
     // Create preview URLs for new images
     const newImages = files.map(file => ({
-      id: Math.random().toString(36).substring(2, 15),
+      id: nanoid(),
       file,
       previewUrl: URL.createObjectURL(file),
       url: '',

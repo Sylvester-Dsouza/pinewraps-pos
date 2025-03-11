@@ -11,7 +11,9 @@ import {
   POSPaymentMethod, 
   POSPaymentStatus,
   POSOrderData,
-  POSOrderItemData
+  POSOrderItemData,
+  ParkedOrder,
+  ParkedOrderData
 } from '@/types/order';
 import { CartItem, CustomImage } from '@/types/cart';
 
@@ -422,6 +424,83 @@ export const apiMethods = {
       }
     },
     
+    // Parked order related endpoints
+    parkOrder(orderData: ParkedOrderData): Promise<APIResponse<ParkedOrder>> {
+      console.log('API: Parking order with data:', JSON.stringify(orderData, null, 2));
+      return api.post('/api/pos/parked-orders', orderData)
+        .then(response => {
+          console.log('API: Park order response:', response.data);
+          return response.data;
+        })
+        .catch(error => {
+          console.error('API: Error parking order:', error);
+          console.error('API: Error details:', {
+            message: error.message,
+            response: error.response ? {
+              status: error.response.status,
+              data: error.response.data
+            } : 'No response',
+            request: error.request ? 'Request was made but no response received' : 'No request was made'
+          });
+          
+          // Return a structured error response
+          return {
+            success: false,
+            message: error.response?.data?.message || error.message || 'Failed to park order',
+            error: error.response?.data || error.message
+          };
+        });
+    },
+
+    getParkedOrders(): Promise<APIResponse<ParkedOrder[]>> {
+      console.log('API: Calling getParkedOrders endpoint');
+      return api.get('/api/pos/parked-orders')
+        .then(response => {
+          console.log('API: getParkedOrders response received:', response.data);
+          return response.data;
+        })
+        .catch(error => {
+          console.error('API: getParkedOrders error:', error);
+          console.error('API: getParkedOrders error details:', {
+            message: error.message,
+            response: error.response ? {
+              status: error.response.status,
+              data: error.response.data
+            } : 'No response',
+            request: error.request ? 'Request was made but no response received' : 'No request was made'
+          });
+          throw error;
+        });
+    },
+
+    getParkedOrderById(id: string): Promise<APIResponse<ParkedOrder>> {
+      return api.get(`/api/pos/parked-orders/${id}`);
+    },
+
+    deleteParkedOrder(id: string): Promise<APIResponse<any>> {
+      console.log('API: Deleting parked order:', id);
+      return api.delete(`/api/pos/parked-orders/${id}`)
+        .then(response => {
+          console.log('API: Delete parked order response:', response.data);
+          return response.data;
+        })
+        .catch(error => {
+          console.error('API: Error deleting parked order:', error);
+          // Check if the error is a 404 (not found), which could mean the order was already deleted
+          if (error.response && error.response.status === 404) {
+            console.log('API: Order not found, may have been already deleted');
+            return {
+              success: true,
+              message: 'Order not found or already deleted'
+            };
+          }
+          return {
+            success: false,
+            message: error instanceof Error ? error.message : 'Failed to delete parked order',
+          };
+        });
+    },
+
     // Queue order related endpoints
     queueOrder(orderData: { 
       items: Array<{
@@ -550,36 +629,52 @@ export const apiMethods = {
     },
     
     createOrder: async (orderData: POSOrderData & { items: Array<POSOrderItemData & { customImages?: CustomImage[] }> }) => {
-      // Check if any items have custom images with files
-      const hasCustomImages = orderData.items.some(item => 
-        item.customImages?.some(img => 'file' in img && img.file instanceof File)
-      );
+      try {
+        // Check if any items have custom images with files
+        const hasCustomImages = orderData.items.some(item => 
+          item.customImages?.some(img => 'file' in img && img.file instanceof File)
+        );
 
-      if (hasCustomImages) {
-        // Create FormData for multipart request
-        const formData = new FormData();
-        formData.append('orderData', JSON.stringify(orderData));
+        let response;
+        if (hasCustomImages) {
+          // Create FormData for multipart request
+          const formData = new FormData();
+          formData.append('orderData', JSON.stringify(orderData));
 
-        // Append each file to FormData
-        orderData.items.forEach((item, itemIndex) => {
-          item.customImages?.forEach((image, imageIndex) => {
-            if ('file' in image && image.file instanceof File) {
-              formData.append(`item_${itemIndex}_image_${imageIndex}`, image.file);
-              formData.append(`item_${itemIndex}_comment_${imageIndex}`, image.comment || '');
+          // Append each file to FormData
+          orderData.items.forEach((item, itemIndex) => {
+            item.customImages?.forEach((image, imageIndex) => {
+              if ('file' in image && image.file instanceof File) {
+                formData.append(`item_${itemIndex}_image_${imageIndex}`, image.file);
+                formData.append(`item_${itemIndex}_comment_${imageIndex}`, image.comment || '');
+              }
+            });
+          });
+
+          // Send multipart request
+          response = await api.post<any>('/api/pos/orders', formData, {
+            headers: {
+              'Content-Type': 'multipart/form-data'
             }
           });
-        });
+        } else {
+          // Regular JSON request if no files
+          response = await api.post<any>('/api/pos/orders', orderData);
+        }
 
-        // Send multipart request
-        return api.post<APIResponse<Order>>('/api/pos/orders', formData, {
-          headers: {
-            'Content-Type': 'multipart/form-data'
-          }
-        });
+        // Process the response
+        return {
+          success: true,
+          message: response.data.message || 'Order created successfully',
+          data: response.data.data
+        };
+      } catch (error: any) {
+        console.error('Error creating order:', error);
+        return {
+          success: false,
+          message: error.response?.data?.error || error.message || 'Failed to create order'
+        };
       }
-
-      // Regular JSON request if no files
-      return api.post<APIResponse<Order>>('/api/pos/orders', orderData);
     },
 
     updateOrderStatus: async (orderId: string, { status, notes, teamNotes }: { status: string, notes?: string, teamNotes?: string }) => {
@@ -800,7 +895,7 @@ export const apiMethods = {
     },
     completePayment: async (orderId: string): Promise<APIResponse<Order>> => {
       return api.post(`/api/pos/orders/${orderId}/complete-payment`);
-    }
+    },
   }
 };
 

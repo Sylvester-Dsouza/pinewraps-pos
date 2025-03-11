@@ -60,17 +60,17 @@ export default function Header({ title }: HeaderProps) {
                 Point of Sale
               </Link>
               <Link
-                href="/pos/queued-orders"
+                href="/pos/parked-orders"
                 className={`text-sm font-medium flex items-center gap-1 ${
-                  pathname === "/pos/queued-orders"
+                  pathname === "/pos/parked-orders"
                     ? "text-primary"
                     : "text-muted-foreground hover:text-primary"
                 }`}
               >
                 <ListOrdered className="w-4 h-4" />
-                Queued Orders
+                Parked Orders
               </Link>
-              <Link
+              {/* <Link
                 href="/drawer"
                 className={`text-sm font-medium flex items-center gap-1 ${
                   pathname === "/drawer"
@@ -80,7 +80,7 @@ export default function Header({ title }: HeaderProps) {
               >
                 <DollarSign className="w-4 h-4" />
                 Cash Drawer
-              </Link>
+              </Link> */}
               <Link
                 href="/orders"
                 className={`text-sm font-medium ${
@@ -101,7 +101,7 @@ export default function Header({ title }: HeaderProps) {
               >
                 Kitchen Display
               </Link>
-              <Link
+              {/* <Link
                 href="/printer"
                 className={`text-sm font-medium ${
                   pathname === "/printer"
@@ -110,7 +110,7 @@ export default function Header({ title }: HeaderProps) {
                 }`}
               >
                 Printer
-              </Link>
+              </Link> */}
               <Link
                 href="/design"
                 className={`text-sm font-medium ${

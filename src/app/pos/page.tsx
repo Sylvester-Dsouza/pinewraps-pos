@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '@/providers/auth-provider';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { apiMethods, type Product, type Category, type APIResponse, type PosQueuedOrder } from '@/services/api';
+import { apiMethods, type Product, type Category, type APIResponse } from '@/services/api';
 import toast from 'react-hot-toast';
 import ProductDetailsModal from '@/components/pos/product-details-modal';
 import CheckoutModal from '@/components/pos/checkout-modal';
@@ -13,7 +13,7 @@ import Image from 'next/image';
 import { nanoid } from 'nanoid';
 import { CartItem, CustomImage } from '@/types/cart';
 
-import { Search, X, Minus, Plus, ListOrdered } from 'lucide-react';
+import { Search, X, Minus, Plus } from 'lucide-react';
 
 export default function POSPage() {
   const { user, loading: authLoading, refreshToken } = useAuth();
@@ -27,14 +27,16 @@ export default function POSPage() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [isCheckoutModalOpen, setIsCheckoutModalOpen] = useState(false);
-  const [queuedOrders, setQueuedOrders] = useState<PosQueuedOrder[]>([]);
   const checkoutDetailsRef = useRef<any>(null);
   const [checkoutDetails, setCheckoutDetails] = useState<any>(null);
 
   // Load cart items from localStorage on mount
   useEffect(() => {
     if (typeof window !== 'undefined') {
+      // First try to load from localStorage
       const savedCartItems = localStorage.getItem('pos-cart');
+      const savedCheckoutDetails = localStorage.getItem('pos-checkout-details');
+      
       if (savedCartItems) {
         try {
           const parsedCartItems = JSON.parse(savedCartItems);
@@ -43,9 +45,6 @@ export default function POSPage() {
           if (Array.isArray(parsedCartItems)) {
             // Ensure all required fields are present
             const validatedCartItems = parsedCartItems.map(item => {
-              // Log each item for debugging
-              console.log('Processing cart item:', JSON.stringify(item, null, 2));
-              
               // Check if product exists
               if (!item.product) {
                 console.error('Cart item missing product:', item);
@@ -92,7 +91,10 @@ export default function POSPage() {
                 selectedVariations,
                 notes: item.notes || '',
                 customImages,
-                totalPrice: parseFloat(String(item.totalPrice)) || 0
+                totalPrice: parseFloat(String(item.totalPrice)) || 0,
+                name: item.product?.name || 'Unknown Product',
+                unitPrice: parseFloat(String(item.unitPrice)) || 0,
+                price: parseFloat(String(item.price)) || 0
               };
             }).filter(item => item !== null);
             
@@ -103,24 +105,7 @@ export default function POSPage() {
           console.error('Error parsing cart items from localStorage:', error);
         }
       }
-    }
-  }, []);
-
-  // Save cart items to localStorage whenever cart changes
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      if (cart.length > 0 || isCheckoutModalOpen) {
-        localStorage.setItem('pos-cart', JSON.stringify(cart));
-      } else {
-        localStorage.removeItem('pos-cart');
-      }
-    }
-  }, [cart, isCheckoutModalOpen]);
-
-  // Load checkout details
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const savedCheckoutDetails = localStorage.getItem('pos-checkout-details');
+      
       if (savedCheckoutDetails) {
         try {
           const parsedCheckoutDetails = JSON.parse(savedCheckoutDetails);
@@ -135,7 +120,7 @@ export default function POSPage() {
             },
             deliveryMethod: parsedCheckoutDetails.deliveryMethod || 'PICKUP',
             deliveryDetails: parsedCheckoutDetails.deliveryDetails ? {
-              date: parsedCheckoutDetails.deliveryDetails?.date || '',
+              date: parsedCheckoutDetails.deliveryDetails?.date ? new Date(parsedCheckoutDetails.deliveryDetails?.date).toISOString().split('T')[0] : '',
               timeSlot: parsedCheckoutDetails.deliveryDetails?.timeSlot || '',
               instructions: parsedCheckoutDetails.deliveryDetails?.instructions || '',
               streetAddress: parsedCheckoutDetails.deliveryDetails?.streetAddress || '',
@@ -145,7 +130,7 @@ export default function POSPage() {
               charge: parseFloat(String(parsedCheckoutDetails.deliveryDetails?.charge)) || 0,
             } : undefined,
             pickupDetails: parsedCheckoutDetails.pickupDetails ? {
-              date: parsedCheckoutDetails.pickupDetails?.date || '',
+              date: parsedCheckoutDetails.pickupDetails?.date ? new Date(parsedCheckoutDetails.pickupDetails?.date).toISOString().split('T')[0] : '',
               timeSlot: parsedCheckoutDetails.pickupDetails?.timeSlot || '',
             } : undefined,
             giftDetails: parsedCheckoutDetails.giftDetails ? {
@@ -172,6 +157,7 @@ export default function POSPage() {
           
           // Clean up localStorage
           localStorage.removeItem('pos-checkout-details');
+          localStorage.removeItem('pos-cart');
           
           // Open the checkout modal after a short delay to ensure state is updated
           setTimeout(() => {
@@ -185,6 +171,17 @@ export default function POSPage() {
       }
     }
   }, []);
+
+  // Save cart items to localStorage whenever cart changes
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      if (cart.length > 0 || isCheckoutModalOpen) {
+        localStorage.setItem('pos-cart', JSON.stringify(cart));
+      } else {
+        localStorage.removeItem('pos-cart');
+      }
+    }
+  }, [cart, isCheckoutModalOpen]);
 
   // Clear cart function
   const handleClearCart = () => {
@@ -345,7 +342,10 @@ export default function POSPage() {
       quantity: 1,
       selectedVariations: [],
       totalPrice: product.basePrice,
-      customImages: []
+      customImages: [],
+      name: product.name,
+      unitPrice: product.basePrice,
+      price: product.basePrice
     };
 
     setCart(prevCart => [...prevCart, cartItem]);
@@ -364,6 +364,10 @@ export default function POSPage() {
     
     // Multiply by quantity
     totalPrice *= quantity;
+
+    // Calculate unit price
+    const unitPrice = customPrice !== null ? customPrice : 
+      (product.basePrice + selectedVariations.reduce((sum, variation) => sum + (variation.priceAdjustment || 0), 0));
     
     // Create cart item
     const cartItem: CartItem = {
@@ -376,7 +380,10 @@ export default function POSPage() {
       selectedVariations,
       totalPrice,
       notes,
-      customImages
+      customImages,
+      name: product.name,
+      unitPrice,
+      price: totalPrice
     };
     
     setCart(prevCart => [...prevCart, cartItem]);
@@ -431,125 +438,15 @@ export default function POSPage() {
     localStorage.removeItem('pos-cart');
   };
 
-  // Fetch queued orders count
-  const { data: queuedOrdersData, refetch: refetchQueuedOrders } = useQuery({
-    queryKey: ['queuedOrdersCount'],
-    queryFn: async () => {
-      try {
-        const response = await apiMethods.pos.getQueuedOrders();
-        if (!response.success) {
-          throw new Error(response.message || 'Failed to fetch queued orders');
-        }
-        return response.data;
-      } catch (error) {
-        console.error('Error fetching queued orders:', error);
-        return [];
-      }
-    },
-    staleTime: 30 * 1000, // Cache for 30 seconds
-    refetchInterval: 30 * 1000, // Auto-refresh every 30 seconds
-  });
-
-  useEffect(() => {
-    if (queuedOrdersData) {
-      setQueuedOrders(queuedOrdersData);
-      console.log('Updated queued orders count:', queuedOrdersData.length);
-    }
-  }, [queuedOrdersData]);
-
-  useEffect(() => {
-    // Refresh queued orders when the component mounts
-    refetchQueuedOrders();
-    
-    // Set up an interval to refresh queued orders
-    const intervalId = setInterval(() => {
-      refetchQueuedOrders();
-    }, 15000); // Refresh every 15 seconds
-    
-    // Clean up the interval when the component unmounts
-    return () => clearInterval(intervalId);
-  }, [refetchQueuedOrders]);
-
-  // Handle queue order
-  const handleQueueOrder = async (checkoutDetails: any) => {
-    try {
-      // Validate cart
-      if (cart.length === 0) {
-        toast.error('Cannot queue an empty order');
-        return;
-      }
-
-      // Ensure we have a name for the order
-      const orderName = checkoutDetails.customerName || checkoutDetails.customerDetails?.name || 'Untitled Order';
-
-      console.log('Queueing order with details:', {
-        ...checkoutDetails,
-        name: orderName
-      });
-
-      // Format the order data to match the API requirements
-      const orderData = {
-        ...checkoutDetails,
-        name: orderName,
-        items: cart.map(item => ({
-          productId: item.product.id,
-          name: item.product.name, // Required by API
-          productName: item.product.name,
-          unitPrice: item.product.basePrice,
-          quantity: item.quantity,
-          totalPrice: item.totalPrice,
-          notes: item.notes || '',
-          selectedVariations: item.selectedVariations?.map(v => ({
-            id: v.id,
-            type: v.type,
-            value: v.value,
-            price: v.priceAdjustment
-          })) || [],
-          customImages: item.customImages || [],
-          requiresKitchen: item.product.requiresKitchen || false,
-          requiresDesign: item.product.requiresDesign || false,
-          sku: item.product.sku || '',
-          categoryId: item.product.categoryId || ''
-        })),
-        totalAmount: cart.reduce((sum, item) => sum + item.totalPrice, 0)
-      };
-
-      // Call the API to queue the order
-      const response = await apiMethods.pos.queueOrder(orderData);
-
-      if (response.success) {
-        toast.success('Order queued successfully');
-        setCart([]);
-        localStorage.removeItem('pos-cart');
-        setCheckoutDetails(null);
-        setIsCheckoutModalOpen(false);
-        await refetchQueuedOrders();
-      } else {
-        throw new Error(response.message || 'Failed to queue order');
-      }
-    } catch (error: any) {
-      console.error('Error queueing order:', error);
-      toast.error(error.message || 'Failed to queue order');
-      
-      // Handle authentication errors
-      if (error.response?.status === 401) {
-        toast.error('Your session has expired. Please log in again.');
-        await refreshToken();
-      }
-    }
-  };
-
   // Handle URL parameters
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const queuedOrderId = params.get('queuedOrderId');
     const deliveryMethod = params.get('deliveryMethod');
     const customerName = params.get('customerName');
     const customerPhone = params.get('customerPhone');
     const customerEmail = params.get('customerEmail');
     
     console.log('URL parameters:', { 
-      queuedOrderId, 
       deliveryMethod,
       customerName,
       customerPhone,
@@ -823,16 +720,6 @@ export default function POSPage() {
               <span className="font-medium">{`AED ${cartTotal.toFixed(2)}`}</span>
             </div>
             
-            <div className="grid grid-cols-2 gap-2 mb-3">
-              <button
-                onClick={() => router.push('/pos/queued-orders')}
-                className="py-2 flex items-center justify-center bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition-colors"
-              >
-                <ListOrdered className="h-4 w-4 mr-1" />
-                <span>Queued Orders ({queuedOrders.length})</span>
-              </button>
-            </div>
-            
             <button
               disabled={cart.length === 0}
               onClick={() => setIsCheckoutModalOpen(true)}
@@ -856,23 +743,23 @@ export default function POSPage() {
 
       <CheckoutModal
         isOpen={isCheckoutModalOpen}
-        onClose={() => setIsCheckoutModalOpen(false)}
+        onClose={() => {
+          console.log('Closing checkout modal from parent');
+          setIsCheckoutModalOpen(false);
+        }}
         cart={cart}
         setCart={setCart}
         cartTotal={cartTotal}
-        onCheckoutComplete={handleCheckoutComplete}
-        onQueueOrder={handleQueueOrder}
-        onSaveCheckoutDetails={(details) => {
-          setCheckoutDetails(details);
-        }}
         customerDetails={checkoutDetails?.customerDetails}
         deliveryMethod={checkoutDetails?.deliveryMethod}
         deliveryDetails={checkoutDetails?.deliveryDetails}
         pickupDetails={checkoutDetails?.pickupDetails}
         giftDetails={checkoutDetails?.giftDetails}
-        paymentMethod={checkoutDetails?.paymentMethod}
-        paymentReference={checkoutDetails?.paymentReference}
-        orderName={checkoutDetails?.name || ''}
+        orderName={checkoutDetails?.name}
+        onCheckoutComplete={handleCheckoutComplete}
+        onSaveCheckoutDetails={(details) => {
+          setCheckoutDetails(details);
+        }}
       />
     </div>
   );

@@ -1,3 +1,7 @@
+import { CustomImage } from './cart';
+import { CustomerDetails, DeliveryDetails, PickupDetails, GiftDetails } from './customer';
+import { Payment } from './payment';
+
 export interface OrderItem {
   productId: string;
   productName: string;
@@ -5,11 +9,7 @@ export interface OrderItem {
   unitPrice: number;
   totalPrice: number;
   variations?: Record<string, any>;
-  selectedVariations?: Array<{
-    type: string;
-    value: string;
-    price?: number;
-  }>;
+  selectedVariations?: ProductVariation[];
   notes?: string;
   customImages?: Array<{
     url: string;
@@ -56,18 +56,35 @@ export enum DeliveryMethod {
   PICKUP = 'PICKUP'
 }
 
+export interface ProductVariation {
+  id?: string;
+  type: string;
+  value: string;
+  price?: number;
+  priceAdjustment?: number;
+}
+
 export interface OrderPayment {
   id?: string;
   amount: number;
   method: POSPaymentMethod;
   reference?: string | null;
   status?: POSPaymentStatus;
-  metadata?: {
-    source: 'POS';
-    futurePaymentMethod?: POSPaymentMethod;
-    cashAmount?: string;
-    changeAmount?: string;
-  };
+  
+  // Cash payment specific fields
+  cashAmount?: number;
+  changeAmount?: number;
+  
+  // Split payment specific fields
+  isSplitPayment?: boolean;
+  cashPortion?: number;
+  cardPortion?: number;
+  cardReference?: string;
+  
+  // Partial payment specific fields
+  isPartialPayment?: boolean;
+  remainingAmount?: number;
+  futurePaymentMethod?: POSPaymentMethod;
 }
 
 export interface POSOrderItemData {
@@ -78,19 +95,9 @@ export interface POSOrderItemData {
   totalPrice: number;
   quantity: number;
   variations?: Record<string, any>;
-  selectedVariations?: Array<{
-    type: string;
-    value: string;
-    price?: number;
-  }>;
+  selectedVariations?: ProductVariation[];
   notes?: string;
-  customImages?: Array<{
-    url: string;
-    comment?: string;
-    previewUrl?: string;
-    createdAt?: string;
-    file?: File;
-  }>;
+  customImages?: CustomImage[];
   requiresKitchen?: boolean;
   requiresDesign?: boolean;
   sku?: string;
@@ -102,11 +109,13 @@ export interface POSOrderData {
   id?: string;
   orderNumber?: string;
   status?: POSOrderStatus;
+  name?: string;
+  notes?: string;
 
   // Items and Payments
   items: POSOrderItemData[];
   payments: OrderPayment[];
-  totalAmount: number;
+  total: number;
   subtotal?: number;
 
   // Customer details
@@ -151,8 +160,59 @@ export interface POSOrderData {
   giftCashAmount?: string;
 
   // Payment details
-  paymentMethod: POSPaymentMethod;
+  paymentMethod?: POSPaymentMethod;
   paymentReference?: string;
+  
+  // Order routing and processing metadata
+  metadata?: {
+    routing: {
+      initialQueue: POSOrderStatus;
+      status: POSOrderStatus;
+      assignedTeam: 'KITCHEN' | 'DESIGN';
+      processingFlow: POSOrderStatus[];
+      currentStep: number;
+    };
+    qualityControl: {
+      requiresFinalCheck: boolean;
+      canReturnToKitchen: boolean;
+      canReturnToDesign: boolean;
+      finalCheckNotes: string;
+    };
+  };
+}
+
+/**
+ * Defines the structure of the checkout details used in the checkout process
+ */
+export interface CheckoutDetails {
+  customerDetails: CustomerDetails;
+  deliveryMethod: DeliveryMethod;
+  deliveryDetails?: DeliveryDetails;
+  pickupDetails?: PickupDetails;
+  giftDetails?: GiftDetails;
+  payments: Payment[];
+  paymentMethod: POSPaymentMethod;
+  paymentReference: string;
+  route?: 'KITCHEN' | 'DESIGN' | 'BOTH' | null;
+  cartItems?: any[]; 
+  orderSummary: {
+    totalItems: number;
+    totalAmount: number;
+    products: {
+      id: string;
+      productId: string;
+      name: string;
+      quantity: number;
+      price: number;
+      unitPrice: number;
+      sku: string;
+      requiresKitchen: boolean;
+      requiresDesign: boolean;
+      hasVariations?: boolean;
+      hasCustomImages?: boolean;
+      variations: ProductVariation[];
+    }[];
+  };
 }
 
 export interface Order {
@@ -216,6 +276,119 @@ export interface Order {
   giftMessage?: string;
   giftCashAmount?: string;
 
+  // General notes
+  notes?: string;
+}
+
+/**
+ * Parked Order interface - represents a temporary order saved for later completion
+ */
+export interface ParkedOrder {
+  id: string;
+  name?: string;
+  createdAt: string;
+  updatedAt: string;
+  
+  // Customer Information
+  customerName?: string;
+  customerPhone?: string;
+  customerEmail?: string;
+  
+  // Order Items and Amounts
+  items: OrderItem[];
+  totalAmount: number;
+  
+  // Delivery Information
+  deliveryMethod?: DeliveryMethod;
+  deliveryDate?: string;
+  deliveryTimeSlot?: string;
+  deliveryInstructions?: string;
+  deliveryCharge?: number;
+  
+  // Address Information
+  streetAddress?: string;
+  apartment?: string;
+  emirate?: string;
+  city?: string;
+  
+  // Pickup Information
+  pickupDate?: string;
+  pickupTimeSlot?: string;
+  
+  // Gift Information
+  isGift?: boolean;
+  giftRecipientName?: string;
+  giftRecipientPhone?: string;
+  giftMessage?: string;
+  giftCashAmount?: number;
+  
+  // General notes
+  notes?: string;
+  
+  // Created by information
+  createdBy?: {
+    id: string;
+    firstName?: string;
+    lastName?: string;
+    email?: string;
+    name?: string;
+  };
+}
+
+/**
+ * Parked Order Data interface - used for creating a parked order
+ */
+export interface ParkedOrderData {
+  name?: string;
+  
+  // Customer Information
+  customerName?: string;
+  customerPhone?: string;
+  customerEmail?: string;
+  
+  // Order Items
+  items: Array<{
+    productId: string;
+    productName: string;
+    unitPrice: number;
+    quantity: number;
+    totalPrice: number;
+    selectedVariations?: any;
+    notes?: string;
+    customImages?: any;
+    requiresKitchen?: boolean;
+    requiresDesign?: boolean;
+    sku?: string;
+    categoryId?: string;
+  }>;
+  
+  // Order Amount
+  totalAmount: number;
+  
+  // Delivery Information
+  deliveryMethod?: DeliveryMethod;
+  deliveryDate?: string;
+  deliveryTimeSlot?: string;
+  deliveryInstructions?: string;
+  deliveryCharge?: number;
+  
+  // Address Information
+  streetAddress?: string;
+  apartment?: string;
+  emirate?: string;
+  city?: string;
+  
+  // Pickup Information
+  pickupDate?: string;
+  pickupTimeSlot?: string;
+  
+  // Gift Information
+  isGift?: boolean;
+  giftRecipientName?: string;
+  giftRecipientPhone?: string;
+  giftMessage?: string;
+  giftCashAmount?: number;
+  
   // General notes
   notes?: string;
 }
