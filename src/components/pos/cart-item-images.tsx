@@ -3,6 +3,19 @@
 import Image from 'next/image';
 import { useState } from 'react';
 
+// Helper function to sanitize image URLs
+const sanitizeImageUrl = (url: string) => {
+  if (!url) return '/placeholder.jpg';
+  try {
+    const urlObject = new URL(url);
+    if (urlObject.protocol && urlObject.host) return url;
+    return '/placeholder.jpg';
+  } catch (error) {
+    console.error(`Invalid image URL: ${url}`);
+    return '/placeholder.jpg';
+  }
+};
+
 interface CartItemImagesProps {
   images: Array<{
     url: string;
@@ -25,11 +38,20 @@ export default function CartItemImages({ images, compact = false }: CartItemImag
           onClick={() => setSelectedImage(0)}
         >
           <Image
-            src={firstImage.url}
+            src={sanitizeImageUrl(firstImage.url)}
             alt="Design preview"
             fill
             sizes="40px"
             className="object-cover hover:opacity-90 transition-opacity"
+            onError={(e) => {
+              console.error(`Image load error: ${(e.target as HTMLImageElement).src}`);
+              const target = e.target as HTMLImageElement;
+              if (target.parentElement) {
+                target.parentElement.innerHTML = '<span class="text-[8px] text-center text-gray-400">No image</span>';
+              } else {
+                target.style.display = 'none';
+              }
+            }}
           />
           {images.length > 1 && (
             <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-[10px] px-1 py-0.5 text-center">
@@ -51,11 +73,20 @@ export default function CartItemImages({ images, compact = false }: CartItemImag
             onClick={() => setSelectedImage(index)}
           >
             <Image
-              src={image.url}
+              src={sanitizeImageUrl(image.url)}
               alt={`Design ${index + 1}`}
               fill
               sizes="60px"
               className="object-cover hover:opacity-90 transition-opacity"
+              onError={(e) => {
+                console.error(`Image load error: ${(e.target as HTMLImageElement).src}`);
+                const target = e.target as HTMLImageElement;
+                if (target.parentElement) {
+                  target.parentElement.innerHTML = '<span class="text-[8px] text-center text-gray-400">No image</span>';
+                } else {
+                  target.style.display = 'none';
+                }
+              }}
             />
             {image.comment && (
               <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-[10px] px-1 py-0.5 truncate">
@@ -77,11 +108,20 @@ export default function CartItemImages({ images, compact = false }: CartItemImag
             onClick={e => e.stopPropagation()}
           >
             <Image
-              src={images[selectedImage].url}
+              src={sanitizeImageUrl(images[selectedImage].url)}
               alt={`Design ${selectedImage + 1}`}
               fill
               sizes="(max-width: 768px) 100vw, 768px"
               className="object-contain"
+              onError={(e) => {
+                console.error(`Image load error: ${(e.target as HTMLImageElement).src}`);
+                const target = e.target as HTMLImageElement;
+                if (target.parentElement) {
+                  target.parentElement.innerHTML = '<div class="flex items-center justify-center h-full text-gray-400">Image not available</div>';
+                } else {
+                  target.style.display = 'none';
+                }
+              }}
             />
             {images[selectedImage].comment && (
               <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-sm px-4 py-2">

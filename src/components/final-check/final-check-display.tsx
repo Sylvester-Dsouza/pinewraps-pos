@@ -95,9 +95,20 @@ export default function FinalCheckDisplay() {
         }
 
         const userData = data.data;
+        console.log('User data for final check access:', {
+          role: userData.role,
+          isPosUser: userData.isPosUser,
+          isFinalCheckStaff: userData.isFinalCheckStaff
+        });
         
-        // Check if user has final check staff access or is an admin
-        if (!userData.isFinalCheckStaff && userData.role !== 'ADMIN' && userData.role !== 'SUPER_ADMIN') {
+        // Allow access if user has any of these roles/permissions
+        const hasAccess = 
+          userData.isFinalCheckStaff || 
+          userData.isPosUser || 
+          userData.role === 'ADMIN' || 
+          userData.role === 'SUPER_ADMIN';
+        
+        if (!hasAccess) {
           toast.error('You do not have access to the Final Check Display');
           router.push('/pos');
           return;
@@ -244,13 +255,11 @@ export default function FinalCheckDisplay() {
 
   const updateOrderStatus = async (orderId: string, newStatus: FinalCheckOrderStatus, teamNotes?: string) => {
     try {
-      const payload: UpdateOrderStatusPayload = {
+      console.log('Updating order status:', { orderId, newStatus, teamNotes });
+      const response = await apiMethods.updateOrderStatus(orderId, {
         status: newStatus,
-        teamNotes: teamNotes || "",
-        notes: ""
-      };
-      
-      const response = await apiMethods.pos.updateOrderStatus(orderId, payload);
+        teamNotes: teamNotes || ''
+      });
 
       if (response.success) {
         setOrders(prevOrders =>
@@ -265,6 +274,9 @@ export default function FinalCheckDisplay() {
           )
         );
         toast.success('Order status updated');
+      } else {
+        console.error('Error updating order status:', response.message);
+        toast.error(`Failed to update order status: ${response.message}`);
       }
     } catch (error) {
       console.error('Error updating order status:', error);

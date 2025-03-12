@@ -62,15 +62,17 @@ export default function OrderCard({ order, onUpdateStatus }: OrderCardProps) {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [teamNotes, setTeamNotes] = useState(order.finalCheckNotes || "");
   const [nextStatus, setNextStatus] = useState<FinalCheckOrderStatus | null>(null);
+  const [sendBackTarget, setSendBackTarget] = useState<'KITCHEN' | 'DESIGN' | null>(null);
 
   const toggleExpand = () => {
     setExpanded(!expanded);
   };
 
   const handleStatusUpdate = (newStatus: FinalCheckOrderStatus) => {
-    if (newStatus === "FINAL_CHECK_COMPLETE" || newStatus === "COMPLETED") {
+    if (newStatus === "COMPLETED") {
       // Open dialog for notes before completing
       setNextStatus(newStatus);
+      setSendBackTarget(null);
       setIsDialogOpen(true);
     } else {
       // For other statuses, update directly
@@ -78,11 +80,18 @@ export default function OrderCard({ order, onUpdateStatus }: OrderCardProps) {
     }
   };
 
+  const handleSendBack = (target: 'KITCHEN' | 'DESIGN') => {
+    setSendBackTarget(target);
+    setNextStatus(target === 'KITCHEN' ? 'KITCHEN_QUEUE' : 'DESIGN_QUEUE');
+    setIsDialogOpen(true);
+  };
+
   const confirmStatusUpdate = () => {
     if (nextStatus) {
       onUpdateStatus?.(order.id, nextStatus, teamNotes);
       setIsDialogOpen(false);
       setNextStatus(null);
+      setSendBackTarget(null);
     }
   };
 
@@ -99,55 +108,33 @@ export default function OrderCard({ order, onUpdateStatus }: OrderCardProps) {
           </button>
         );
       case "FINAL_CHECK_PROCESSING":
-        // Check if the order has cake items (requires kitchen)
-        const hasCakeItems = order.items.some(item => 
-          item.name.toLowerCase().includes('cake') || 
-          (item.category && item.category.toLowerCase().includes('cake'))
-        );
-        
-        // Check if the order has flower items (requires design)
-        const hasFlowerItems = order.items.some(item => 
-          item.name.toLowerCase().includes('flower') || 
-          (item.category && item.category.toLowerCase().includes('flower'))
-        );
-        
-        // Check if the order has sets items (requires both kitchen and design)
-        const hasSetsItems = order.items.some(item => 
-          item.name.toLowerCase().includes('set') || 
-          (item.category && item.category.toLowerCase().includes('set'))
-        );
-        
         return (
           <div className="space-y-3">
-            {/* Kitchen button */}
-            {(hasCakeItems || hasSetsItems) && (
+            {/* Send Back buttons */}
+            <div className="grid grid-cols-2 gap-2">
               <button
-                onClick={() => handleStatusUpdate("KITCHEN_QUEUE")}
-                className="w-full py-3 px-4 bg-blue-500 hover:bg-blue-600 text-white font-medium rounded-lg flex items-center justify-center gap-2"
+                onClick={() => handleSendBack('KITCHEN')}
+                className="py-3 px-4 bg-blue-500 hover:bg-blue-600 text-white font-medium rounded-lg flex items-center justify-center gap-2"
               >
                 <Clock className="w-5 h-5" />
                 Send to Kitchen
               </button>
-            )}
-            
-            {/* Design button */}
-            {(hasFlowerItems || hasSetsItems) && (
               <button
-                onClick={() => handleStatusUpdate("DESIGN_QUEUE")}
-                className="w-full py-3 px-4 bg-purple-500 hover:bg-purple-600 text-white font-medium rounded-lg flex items-center justify-center gap-2"
+                onClick={() => handleSendBack('DESIGN')}
+                className="py-3 px-4 bg-purple-500 hover:bg-purple-600 text-white font-medium rounded-lg flex items-center justify-center gap-2"
               >
                 <Clock className="w-5 h-5" />
                 Send to Design
               </button>
-            )}
+            </div>
             
             {/* Complete button */}
             <button
-              onClick={() => handleStatusUpdate("FINAL_CHECK_COMPLETE")}
-              className="w-full py-3 px-4 bg-amber-500 hover:bg-amber-600 text-white font-medium rounded-lg flex items-center justify-center gap-2"
+              onClick={() => handleStatusUpdate("COMPLETED")}
+              className="w-full py-3 px-4 bg-green-500 hover:bg-green-600 text-white font-medium rounded-lg flex items-center justify-center gap-2"
             >
               <CheckCircle2 className="w-5 h-5" />
-              Mark Complete
+              Complete Order
             </button>
           </div>
         );
@@ -297,11 +284,15 @@ export default function OrderCard({ order, onUpdateStatus }: OrderCardProps) {
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add Final Check Notes</DialogTitle>
+            {sendBackTarget ? (
+              <DialogTitle>Send Back to {sendBackTarget}</DialogTitle>
+            ) : (
+              <DialogTitle>Add Final Check Notes</DialogTitle>
+            )}
           </DialogHeader>
           <div className="py-4">
             <textarea
-              placeholder="Add any notes about this order (optional)"
+              placeholder={sendBackTarget ? `Add notes for ${sendBackTarget}` : 'Add any notes about this order (optional)'}
               value={teamNotes}
               onChange={(e) => setTeamNotes(e.target.value)}
               rows={4}

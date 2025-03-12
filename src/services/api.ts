@@ -679,6 +679,7 @@ export const apiMethods = {
 
     updateOrderStatus: async (orderId: string, { status, notes, teamNotes }: { status: string, notes?: string, teamNotes?: string }) => {
       try {
+        console.log('API call: updateOrderStatus', { orderId, status, notes, teamNotes });
         const response = await api.patch(`/api/pos/orders/${orderId}/status`, {
           status,
           notes: notes || '',
@@ -687,9 +688,10 @@ export const apiMethods = {
         return response.data;
       } catch (error: any) {
         console.error('Error updating order status:', error);
+        console.error('Response data:', error.response?.data);
         return {
           success: false,
-          message: error.response?.data?.message || 'Failed to update order status'
+          message: error.response?.data?.message || error.response?.data?.error?.message || 'Failed to update order status'
         };
       }
     },

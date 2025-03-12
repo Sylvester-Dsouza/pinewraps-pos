@@ -15,6 +15,17 @@ import { CartItem, CustomImage } from '@/types/cart';
 
 import { Search, X, Minus, Plus } from 'lucide-react';
 
+const sanitizeImageUrl = (url: string | undefined) => {
+  if (!url) return null;
+  try {
+    const urlObject = new URL(url);
+    if (urlObject.protocol && urlObject.host) return url;
+    return null;
+  } catch (error) {
+    return null;
+  }
+};
+
 export default function POSPage() {
   const { user, loading: authLoading, refreshToken } = useAuth();
   const router = useRouter();
@@ -572,7 +583,7 @@ export default function POSPage() {
                     {product.images && product.images.length > 0 ? (
                       <div className="relative w-full aspect-square mb-4 rounded-xl overflow-hidden bg-gray-50">
                         <Image
-                          src={product.images[0]?.url || '/placeholder.jpg'}
+                          src={sanitizeImageUrl(product.images[0]?.url) || '/placeholder.jpg'}
                           alt={product.name}
                           fill
                           priority
@@ -580,10 +591,10 @@ export default function POSPage() {
                           sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
                           onError={(e) => {
                             const target = e.target as HTMLImageElement;
+                            console.error(`Image load error for: ${target.src}`);
                             if (target.parentElement) {
                               target.parentElement.innerHTML = '<span class="text-gray-400">No image</span>';
                             } else {
-                              // If no parent element, just hide the image
                               target.style.display = 'none';
                             }
                           }}

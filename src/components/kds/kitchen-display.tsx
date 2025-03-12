@@ -25,6 +25,9 @@ type KitchenOrderStatus =
   | "DESIGN_QUEUE"
   | "DESIGN_PROCESSING"
   | "DESIGN_READY"
+  | "FINAL_CHECK_QUEUE"
+  | "FINAL_CHECK_PROCESSING"
+  | "FINAL_CHECK_READY"
   | "COMPLETED";
 
 interface KitchenOrder {
@@ -51,6 +54,8 @@ interface KitchenOrder {
   kitchenEndTime?: string;
   designStartTime?: string;
   designEndTime?: string;
+  finalCheckStartTime?: string;
+  finalCheckEndTime?: string;
   requiresKitchen: boolean;
   requiresDesign: boolean;
   deliveryMethod?: 'PICKUP' | 'DELIVERY';
@@ -250,6 +255,9 @@ export default function KitchenDisplay() {
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [currentImages, setCurrentImages] = useState<CustomSlide[]>([]);
+  const [selectedOrder, setSelectedOrder] = useState<KitchenOrder | null>(null);
+  const [showNotesInput, setShowNotesInput] = useState(false);
+  const [teamNotes, setTeamNotes] = useState('');
 
   // Fetch initial orders
   useEffect(() => {
@@ -301,7 +309,9 @@ export default function KitchenDisplay() {
               ...(data.kitchenStartTime && { kitchenStartTime: data.kitchenStartTime }),
               ...(data.kitchenEndTime && { kitchenEndTime: data.kitchenEndTime }),
               ...(data.designStartTime && { designStartTime: data.designStartTime }),
-              ...(data.designEndTime && { designEndTime: data.designEndTime })
+              ...(data.designEndTime && { designEndTime: data.designEndTime }),
+              ...(data.finalCheckStartTime && { finalCheckStartTime: data.finalCheckStartTime }),
+              ...(data.finalCheckEndTime && { finalCheckEndTime: data.finalCheckEndTime })
             };
           }
           return order;
@@ -347,17 +357,17 @@ export default function KitchenDisplay() {
     }
   };
 
+  // Function to update order status
   const updateOrderStatus = async (orderId: string, newStatus: KitchenOrderStatus, teamNotes?: string) => {
     try {
-      const payload: UpdateOrderStatusPayload = {
+      console.log('Updating order status:', { orderId, newStatus, teamNotes });
+      const response = await apiMethods.updateOrderStatus(orderId, {
         status: newStatus,
-        teamNotes: teamNotes || "",
-        notes: ""
-      };
-      
-      const response = await apiMethods.pos.updateOrderStatus(orderId, payload);
+        teamNotes: teamNotes || ''
+      });
 
       if (response.success) {
+        // Update local state
         setOrders(prevOrders =>
           prevOrders.map(order =>
             order.id === orderId
@@ -370,6 +380,9 @@ export default function KitchenDisplay() {
           )
         );
         toast.success('Order status updated');
+      } else {
+        console.error('Error updating order status:', response.message);
+        toast.error(`Failed to update order status: ${response.message}`);
       }
     } catch (error) {
       console.error('Error updating order status:', error);
@@ -379,6 +392,10 @@ export default function KitchenDisplay() {
 
   const handleSendToDesign = async (orderId: string, notes?: string) => {
     await updateOrderStatus(orderId, 'DESIGN_QUEUE', notes);
+  };
+
+  const handleSendToFinalCheck = async (orderId: string, notes?: string) => {
+    await updateOrderStatus(orderId, 'FINAL_CHECK_QUEUE', notes);
   };
 
   const handleMarkCompleted = async (orderId: string) => {
@@ -391,8 +408,8 @@ export default function KitchenDisplay() {
         await handleSendToDesign(orderId);
       }
     } else {
-      // For kitchen-only orders
-      await updateOrderStatus(orderId, 'COMPLETED');
+      // For kitchen-only orders, send to final check
+      await handleSendToFinalCheck(orderId);
     }
   };
 
@@ -400,6 +417,31 @@ export default function KitchenDisplay() {
     return orders
       .filter(order => order.status === status)
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  };
+
+  const handleStatusUpdate = async (newStatus: KitchenOrderStatus) => {
+    if (!selectedOrder) {
+      toast.error('No order selected');
+      return;
+    }
+
+    try {
+      if (newStatus === 'DESIGN_QUEUE') {
+        await handleSendToDesign(selectedOrder.id, teamNotes);
+      } else if (newStatus === 'FINAL_CHECK_QUEUE') {
+        await handleSendToFinalCheck(selectedOrder.id, teamNotes);
+      } else {
+        await updateOrderStatus(selectedOrder.id, newStatus, teamNotes);
+      }
+      
+      // Reset UI state
+      setTeamNotes('');
+      setShowNotesInput(false);
+      setSelectedOrder(null);
+    } catch (error) {
+      console.error('Error updating status:', error);
+      toast.error('Failed to update order status');
+    }
   };
 
   if (loading) {
@@ -414,9 +456,6 @@ export default function KitchenDisplay() {
   }
 
   const OrderCard = ({ order }: { order: KitchenOrder }) => {
-    const [showNotesInput, setShowNotesInput] = useState(false);
-    const [teamNotes, setTeamNotes] = useState('');
-
     const handleImageClick = (images: CustomImage[], index: number) => {
       const slides = images.map(img => ({
         src: img.url,
@@ -427,23 +466,32 @@ export default function KitchenDisplay() {
       setLightboxOpen(true);
     };
 
-    const handleStatusUpdate = async (newStatus: KitchenOrderStatus) => {
-      if (showNotesInput) {
-        await updateOrderStatus(order.id, newStatus, teamNotes);
-        setShowNotesInput(false);
-        setTeamNotes("");
-      } else {
-        await updateOrderStatus(order.id, newStatus);
-      }
-    };
-
-    const handleReadyClick = () => {
-      if (order.requiresDesign && !order.designEndTime) {
-        // If design work is still needed, show notes input
+    const handleOrderAction = (action: 'process' | 'ready' | 'finalCheck' | 'design') => {
+      // Set the selected order for the parent component
+      setSelectedOrder(order);
+      
+      // Check current status to avoid invalid transitions
+      console.log('Current order status:', order.status);
+      
+      if (action === 'process') {
+        if (order.status !== 'KITCHEN_PROCESSING') {
+          updateOrderStatus(order.id, 'KITCHEN_PROCESSING');
+        }
+      } else if (action === 'ready') {
+        if (order.status !== 'KITCHEN_READY') {
+          updateOrderStatus(order.id, 'KITCHEN_READY');
+        }
+      } else if (action === 'finalCheck') {
+        // Only send to final check if not already there
+        if (order.status !== 'FINAL_CHECK_QUEUE' && 
+            order.status !== 'FINAL_CHECK_PROCESSING' && 
+            order.status !== 'FINAL_CHECK_READY') {
+          updateOrderStatus(order.id, 'FINAL_CHECK_QUEUE');
+        } else {
+          toast.info('Order is already in final check');
+        }
+      } else if (action === 'design') {
         setShowNotesInput(true);
-      } else {
-        // Otherwise, just mark as completed
-        handleStatusUpdate('COMPLETED');
       }
     };
 
@@ -567,7 +615,7 @@ export default function KitchenDisplay() {
         <div className="bg-gray-50 border-t">
           {order.status === 'PENDING' && (
             <button
-              onClick={() => handleStatusUpdate('KITCHEN_PROCESSING')}
+              onClick={() => handleOrderAction('process')}
               className="w-full py-4 px-4 bg-blue-500 hover:bg-blue-600 text-white text-lg font-medium rounded-lg flex items-center justify-center gap-2 transition-colors active:bg-blue-700 touch-manipulation"
             >
               <ChefHat className="w-6 h-6" />
@@ -576,7 +624,7 @@ export default function KitchenDisplay() {
           )}
           {order.status === 'KITCHEN_QUEUE' && (
             <button
-              onClick={() => handleStatusUpdate('KITCHEN_PROCESSING')}
+              onClick={() => handleOrderAction('process')}
               className="w-full py-4 px-4 bg-yellow-500 hover:bg-yellow-600 text-white text-lg font-medium flex items-center justify-center gap-2 transition-colors active:bg-yellow-700 touch-manipulation"
             >
               <Bell className="w-6 h-6" />
@@ -585,7 +633,7 @@ export default function KitchenDisplay() {
           )}
           {order.status === 'KITCHEN_PROCESSING' && (
             <button
-              onClick={() => handleStatusUpdate('KITCHEN_READY')}
+              onClick={() => handleOrderAction('ready')}
               className="w-full py-4 px-4 bg-green-500 hover:bg-green-600 text-white text-lg font-medium flex items-center justify-center gap-2 transition-colors active:bg-green-700 touch-manipulation"
             >
               <CheckCircle2 className="w-6 h-6" />
@@ -597,7 +645,7 @@ export default function KitchenDisplay() {
               {order.requiresDesign && !order.designEndTime ? (
                 <>
                   <button
-                    onClick={() => setShowNotesInput(true)}
+                    onClick={() => handleOrderAction('design')}
                     className="w-full py-3 px-4 bg-purple-500 hover:bg-purple-600 text-white font-medium rounded-lg flex items-center justify-center gap-2"
                   >
                     <Bell className="w-5 h-5" />
@@ -605,7 +653,7 @@ export default function KitchenDisplay() {
                   </button>
                   {showNotesInput && (
                     <button
-                      onClick={() => handleStatusUpdate('DESIGN_QUEUE')}
+                      onClick={() => handleOrderAction('design')}
                       className="w-full py-3 px-4 bg-green-500 hover:bg-green-600 text-white font-medium rounded-lg flex items-center justify-center gap-2"
                     >
                       <CheckCircle2 className="w-5 h-5" />
@@ -615,11 +663,11 @@ export default function KitchenDisplay() {
                 </>
               ) : (
                 <button
-                  onClick={() => handleStatusUpdate('COMPLETED')}
+                  onClick={() => handleOrderAction('finalCheck')}
                   className="w-full py-3 px-4 bg-green-500 hover:bg-green-600 text-white font-medium rounded-lg flex items-center justify-center gap-2"
                 >
                   <CheckCircle2 className="w-5 h-5" />
-                  Mark Completed
+                  Send to Final Check
                 </button>
               )}
             </div>
