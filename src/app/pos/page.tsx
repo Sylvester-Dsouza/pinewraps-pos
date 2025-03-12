@@ -337,6 +337,12 @@ export default function POSPage() {
       return;
     }
 
+    // Calculate unit price (same as in handleAddToCart)
+    const unitPrice = product.basePrice;
+    
+    // Calculate total price (price * quantity)
+    const totalPrice = unitPrice * 1; // Quantity is 1 for quick add
+
     const cartItem: CartItem = {
       id: nanoid(),
       product: {
@@ -352,11 +358,11 @@ export default function POSPage() {
       },
       quantity: 1,
       selectedVariations: [],
-      totalPrice: product.basePrice,
+      totalPrice: totalPrice,
       customImages: [],
       name: product.name,
-      unitPrice: product.basePrice,
-      price: product.basePrice
+      unitPrice: unitPrice,
+      price: totalPrice
     };
 
     setCart(prevCart => [...prevCart, cartItem]);

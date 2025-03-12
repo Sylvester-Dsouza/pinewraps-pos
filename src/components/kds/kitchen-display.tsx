@@ -361,7 +361,7 @@ export default function KitchenDisplay() {
   const updateOrderStatus = async (orderId: string, newStatus: KitchenOrderStatus, teamNotes?: string) => {
     try {
       console.log('Updating order status:', { orderId, newStatus, teamNotes });
-      const response = await apiMethods.updateOrderStatus(orderId, {
+      const response = await apiMethods.pos.updateOrderStatus(orderId, {
         status: newStatus,
         teamNotes: teamNotes || ''
       });
