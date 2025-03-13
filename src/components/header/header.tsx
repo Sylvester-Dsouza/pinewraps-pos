@@ -68,19 +68,19 @@ export default function Header({ title }: HeaderProps) {
                 }`}
               >
                 <ListOrdered className="w-4 h-4" />
-                Parked Orders
+                Hold Orders
               </Link>
-              {/* <Link
-                href="/drawer"
+              <Link
+                href="/pos/till"
                 className={`text-sm font-medium flex items-center gap-1 ${
-                  pathname === "/drawer"
+                  pathname === "/pos/till"
                     ? "text-primary"
                     : "text-muted-foreground hover:text-primary"
                 }`}
               >
                 <DollarSign className="w-4 h-4" />
-                Cash Drawer
-              </Link> */}
+                Till Management
+              </Link>
               <Link
                 href="/orders"
                 className={`text-sm font-medium ${

@@ -17,6 +17,8 @@ import { CartItem, CustomImage } from "@/types/cart";
 import Cookies from 'js-cookie';
 import { useRouter } from 'next/navigation';
 import crypto from 'crypto';
+import { drawerService } from '@/services/drawer.service';
+import { handleCashDrawerForOrder } from '@/utils/cash-drawer-helper';
 
 interface CheckoutModalProps {
   isOpen: boolean;
@@ -95,7 +97,7 @@ export default function CheckoutModal({
     charge: deliveryDetails?.charge || 0,
   });
   const [pickupDetailsState, setPickupDetailsState] = useState<PickupDetails>({
-    date: pickupDetails?.date || "",
+    date: pickupDetails?.date || (new Date().toISOString().split('T')[0]),
     timeSlot: pickupDetails?.timeSlot || "",
   });
   const [orderItems, setOrderItems] = useState<Array<{
@@ -140,20 +142,41 @@ export default function CheckoutModal({
 
   // Get the payment method for API
   const getApiPaymentMethod = () => {
+    // Check if there are any payments already made
+    if (paymentsState.length > 0) {
+      // Check for partial payments
+      const hasPartialPayment = paymentsState.some(p => p.isPartialPayment || p.status === POSPaymentStatus.PARTIALLY_PAID);
+      if (hasPartialPayment) {
+        return POSPaymentMethod.PARTIAL;
+      }
+      
+      // Check for split payments
+      if (isSplitPaymentState || paymentsState.some(p => p.method === POSPaymentMethod.SPLIT)) {
+        return POSPaymentMethod.SPLIT;
+      }
+      
+      // If multiple payment methods are used
+      const methods = new Set(paymentsState.map(p => p.method));
+      if (methods.size > 1) {
+        // Multiple different payment methods used
+        return 'MULTIPLE';
+      }
+      
+      // Return the payment method of the first payment
+      return paymentsState[0].method;
+    }
+    
     // If split payment is active, always return SPLIT
     if (isSplitPaymentState) {
       return POSPaymentMethod.SPLIT;
     }
+    
     // Otherwise use the current payment method
     return currentPaymentMethodState;
   };
 
   // Prepare order data for API
   const preparePOSOrderData = useCallback(() => {
-    if (!selectedRoute) {
-      throw new Error('Please select an order route (Kitchen, Design, or Both) to determine the initial queue and assigned team for the order');
-    }
-
     const sanitizedCustomerDetails = sanitizeCustomerDetails();
     const totalWithDelivery = deliveryMethodState === DeliveryMethod.DELIVERY ? cartTotal + (deliveryDetailsState?.charge || 0) : cartTotal;
 
@@ -190,39 +213,17 @@ export default function CheckoutModal({
       return itemData;
     });
 
-    // Use the manually selected route to determine initial queue and assigned team
-    let initialQueue: string;
-    let assignedTeam: string;
-    let processingFlow: string[];
-
-    // Set routing based on the manually selected route
-    switch (selectedRoute) {
-      case 'KITCHEN':
-        initialQueue = 'KITCHEN_QUEUE';
-        assignedTeam = 'KITCHEN';
-        processingFlow = ['KITCHEN_QUEUE', 'KITCHEN_PROCESSING', 'KITCHEN_READY', 'FINAL_CHECK_QUEUE'];
-        break;
-      case 'DESIGN':
-        initialQueue = 'DESIGN_QUEUE';
-        assignedTeam = 'DESIGN';
-        processingFlow = ['DESIGN_QUEUE', 'DESIGN_PROCESSING', 'DESIGN_READY', 'FINAL_CHECK_QUEUE'];
-        break;
-      case 'BOTH':
-        initialQueue = 'DESIGN_QUEUE';
-        assignedTeam = 'DESIGN';
-        processingFlow = ['DESIGN_QUEUE', 'DESIGN_PROCESSING', 'DESIGN_READY', 'KITCHEN_QUEUE', 'KITCHEN_PROCESSING', 'KITCHEN_READY', 'FINAL_CHECK_QUEUE'];
-        break;
-      default:
-        throw new Error('Invalid route selected');
-    }
-
-    // Check if any products require kitchen or design for validation purposes only
+    // Let the backend handle routing based on product categories
     const hasKitchenProducts = cart.some(item => item.product.requiresKitchen);
     const hasDesignProducts = cart.some(item => item.product.requiresDesign);
-    const requiresKitchen = selectedRoute === 'KITCHEN' || selectedRoute === 'BOTH';
-    const requiresDesign = selectedRoute === 'DESIGN' || selectedRoute === 'BOTH';
-
-    const requiresSequentialProcessing = selectedRoute === 'BOTH';
+    const requiresKitchen = hasKitchenProducts;
+    const requiresDesign = hasDesignProducts;
+    const requiresSequentialProcessing = hasKitchenProducts && hasDesignProducts;
+    
+    // Default values for routing metadata - the backend will override these based on product categories
+    let initialQueue = POSOrderStatus.PENDING;
+    let assignedTeam = null;
+    let processingFlow = [];
 
     // Ensure we have at least one payment in the payments array
     let payments = [...paymentsState];
@@ -259,6 +260,13 @@ export default function CheckoutModal({
       payments = [defaultPayment];
     }
 
+    // Check if this is a partial payment order
+    const hasPartialPayment = payments.some(p => p.isPartialPayment || p.status === POSPaymentStatus.PARTIALLY_PAID);
+    const finalTotal = calculateFinalTotal();
+    
+    // Calculate the total amount actually being paid (important for partial payments)
+    const totalPaidAmount = payments.reduce((sum, payment) => sum + payment.amount, 0);
+
     const orderData: POSOrderData = {
       // Order metadata
       status: POSOrderStatus.PENDING,
@@ -285,16 +293,21 @@ export default function CheckoutModal({
           paymentData.cashPortion = p.cashPortion || p.amount / 2;
           paymentData.cardPortion = p.cardPortion || p.amount / 2;
           paymentData.cardReference = p.cardReference || null;
-        } else if (p.method === POSPaymentMethod.PARTIAL) {
+        } else if (p.method === POSPaymentMethod.PARTIAL || p.isPartialPayment) {
           paymentData.isPartialPayment = true;
-          paymentData.remainingAmount = cartTotal - p.amount;
+          paymentData.remainingAmount = finalTotal - p.amount;
           paymentData.futurePaymentMethod = p.futurePaymentMethod || POSPaymentMethod.CARD;
         }
 
         return paymentData;
       }),
-      total: totalWithDelivery,
+      // Use the actual amount paid for the total when it's a partial payment
+      // This ensures the backend validation passes (payment amount matches order total)
+      total: hasPartialPayment ? totalPaidAmount : totalWithDelivery,
       subtotal: cartTotal,
+      allowPartialPayment: hasPartialPayment, // Flag to tell backend this order allows partial payment
+      // Store the real total for reference
+      actualTotal: totalWithDelivery,
       
       // Payment details
       paymentMethod: getApiPaymentMethod(),
@@ -367,7 +380,6 @@ export default function CheckoutModal({
     pickupDetailsState,
     giftDetailsState,
     paymentsState,
-    selectedRoute,
     cart,
     cartTotal,
     currentPaymentMethodState,
@@ -415,13 +427,8 @@ export default function CheckoutModal({
       throw new Error('Payment method is required');
     }
 
-    // Validate route selection
-    if (!selectedRoute) {
-      throw new Error('Please select an order route (Kitchen/Design/Both)');
-    }
-
     return true;
-  }, [cart, customerDetailsState, deliveryMethodState, deliveryDetailsState, pickupDetailsState, giftDetailsState, currentPaymentMethodState, selectedRoute]);
+  }, [cart, customerDetailsState, deliveryMethodState, deliveryDetailsState, pickupDetailsState, giftDetailsState, currentPaymentMethodState]);
 
   // Sanitize functions for checkout details
   const sanitizeCustomerDetails = () => ({
@@ -490,7 +497,6 @@ export default function CheckoutModal({
       payments: paymentsState,
       paymentMethod: currentPaymentMethodState,
       paymentReference: currentPaymentReferenceState || '',
-      route: selectedRoute,
       cartItems: cart.map(item => ({
         productId: item.product.id,
         quantity: item.quantity,
@@ -532,7 +538,6 @@ export default function CheckoutModal({
     sanitizeGiftDetails,
     deliveryMethodState,
     paymentsState,
-    selectedRoute,
     cart,
     cartTotal,
     currentPaymentMethodState,
@@ -544,10 +549,28 @@ export default function CheckoutModal({
     return paymentsState.reduce((total, payment) => total + payment.amount, 0);
   }, [paymentsState]);
 
+  // Calculate final total including discounts and delivery
+  const calculateFinalTotal = useCallback(() => {
+    let total = cartTotal;
+
+    // Apply coupon discount if available
+    if (appliedCoupon) {
+      total -= appliedCoupon.discount;
+    }
+
+    // Add delivery charge if applicable
+    if (deliveryMethodState === DeliveryMethod.DELIVERY && deliveryDetailsState?.emirate) {
+      total += deliveryDetailsState.charge || 0;
+    }
+
+    return Math.max(0, total); // Ensure total is not negative
+  }, [cartTotal, appliedCoupon, deliveryMethodState, deliveryDetailsState]);
+
   const calculateRemainingAmount = useCallback(() => {
     const totalPaid = calculateTotalPaid();
-    return Math.max(0, cartTotal - totalPaid);
-  }, [cartTotal, calculateTotalPaid]);
+    const finalTotal = calculateFinalTotal();
+    return Math.max(0, finalTotal - totalPaid);
+  }, [calculateTotalPaid, calculateFinalTotal]);
 
   // Handle adding a payment
   const handleAddPayment = useCallback((payment: Payment) => {
@@ -561,6 +584,9 @@ export default function CheckoutModal({
 
   // Handle partial payment
   const handlePartialPayment = useCallback((amount: number, method: POSPaymentMethod, reference?: string) => {
+    // Use the final total that includes delivery charges and discounts
+    const finalTotal = calculateFinalTotal();
+    
     const payment: Payment = {
       id: nanoid(),
       amount,
@@ -568,7 +594,7 @@ export default function CheckoutModal({
       reference: method === POSPaymentMethod.CARD ? reference || null : null,
       status: POSPaymentStatus.PARTIALLY_PAID,
       isPartialPayment: true,
-      remainingAmount: cartTotal - amount,
+      remainingAmount: finalTotal - amount,
       futurePaymentMethod: POSPaymentMethod.CARD
     };
 
@@ -625,6 +651,15 @@ export default function CheckoutModal({
 
       if (!response.success) {
         throw new Error(response.message || 'Failed to create order');
+      }
+
+      // Handle cash drawer operations for cash payments
+      try {
+        // Use the helper function to handle cash drawer operations
+        await handleCashDrawerForOrder(paymentsState, response.data?.orderNumber);
+      } catch (drawerError) {
+        console.error('Error handling cash drawer operations:', drawerError);
+        // Don't block order completion if drawer fails to open
       }
 
       // Reset cart and state
@@ -705,7 +740,6 @@ export default function CheckoutModal({
     setSplitCashAmount,
     setSplitCardAmount,
     setSplitCardReference,
-    setSelectedRoute,
     currentPaymentMethodState,
     currentPaymentAmountState,
     partialPaymentMethod,
@@ -880,7 +914,8 @@ export default function CheckoutModal({
     }
 
     const totalPaid = calculateTotalPaid();
-    const isComplete = Math.abs((totalPaid + amount) - cartTotal) < 0.01;
+    const finalTotal = calculateFinalTotal();
+    const isComplete = Math.abs((totalPaid + amount) - finalTotal) < 0.01;
 
     // Handle partial payment
     if (!isComplete) {
@@ -915,56 +950,77 @@ export default function CheckoutModal({
     if (isComplete) {
       handleCreateOrder();
     }
-  }, [currentPaymentAmountState, currentPaymentMethodState, currentPaymentReferenceState, cartTotal, calculateTotalPaid, handleCreateOrder, handleAddPayment, handlePartialPayment]);
+  }, [currentPaymentAmountState, currentPaymentMethodState, currentPaymentReferenceState, calculateFinalTotal, calculateTotalPaid, handleCreateOrder, handleAddPayment, handlePartialPayment]);
 
-  // Calculate final total including discounts and delivery
-  const calculateFinalTotal = useCallback(() => {
-    let total = cartTotal;
-
-    // Apply coupon discount if available
-    if (appliedCoupon) {
-      total -= appliedCoupon.discount;
-    }
-
-    // Add delivery charge if applicable
-    if (deliveryMethodState === DeliveryMethod.DELIVERY && deliveryDetailsState?.emirate) {
-      total += deliveryDetailsState.charge || 0;
-    }
-
-    return Math.max(0, total); // Ensure total is not negative
-  }, [cartTotal, appliedCoupon, deliveryMethodState, deliveryDetailsState]);
+  // This section was moved up before calculateRemainingAmount
 
   // Calculate delivery charge based on emirate
   const calculateDeliveryCharge = (emirate: string) => {
     return emirate === 'DUBAI' ? 30 : 50;
   };
 
-  // Time slots based on emirate
-  const getTimeSlots = (emirate: string) => {
-    if (emirate === 'DUBAI') {
-      return [
-        "10:00 AM - 12:00 PM",
-        "12:00 PM - 02:00 PM",
-        "02:00 PM - 04:00 PM",
-        "04:00 PM - 06:00 PM",
-        "06:00 PM - 08:00 PM"
-      ];
-    }
-    // Other emirates have limited slots
-    return [
-      "10:00 AM - 02:00 PM",
-      "02:00 PM - 06:00 PM"
+  // Time slots based on emirate and current time (for pickup)
+  const getTimeSlots = (emirate: string, forDate?: string) => {
+    // Individual time slots from 10 AM to 8 PM
+    const defaultSlots = [
+      "10:00 AM",
+      "11:00 AM",
+      "12:00 PM",
+      "1:00 PM",
+      "2:00 PM",
+      "3:00 PM",
+      "4:00 PM",
+      "5:00 PM",
+      "6:00 PM",
+      "7:00 PM",
+      "8:00 PM"
     ];
+
+    // If this is for pickup and the date is today, apply the 3-hour buffer
+    if (deliveryMethodState === DeliveryMethod.PICKUP && forDate) {
+      const selectedDate = new Date(forDate);
+      const today = new Date();
+      
+      // Check if the selected date is today
+      if (selectedDate.toDateString() === today.toDateString()) {
+        const currentHour = today.getHours();
+        const currentMinutes = today.getMinutes();
+        
+        // Add 3-hour buffer
+        let bufferHour = currentHour + 3;
+        
+        // Filter out time slots that are within the 3-hour buffer
+        return defaultSlots.filter(slot => {
+          // Parse the time slot
+          let hour;
+          if (slot.includes('AM')) {
+            hour = parseInt(slot.split(':')[0]);
+            // Handle 12 AM as 0 in 24-hour format
+            if (hour === 12) hour = 0;
+          } else { // PM
+            hour = parseInt(slot.split(':')[0]);
+            // Convert to 24-hour format, but keep 12 PM as 12
+            if (hour !== 12) hour += 12;
+          }
+          
+          // Return true if the slot's time is after the buffer
+          return hour >= bufferHour;
+        });
+      }
+    }
+    
+    return defaultSlots;
   };
 
-  // Get available dates based on emirate
+  // Get available dates based on emirate and delivery method
   const getAvailableDates = (emirate: string) => {
     const dates = [];
     const today = new Date();
     
-    // Dubai: Next day delivery
-    // Other emirates: 2 days advance delivery
-    const startDays = emirate === 'DUBAI' ? 1 : 2;
+    // For pickup, include today and next 7 days
+    // For delivery - Dubai: Next day delivery, Other emirates: 2 days advance delivery
+    const startDays = deliveryMethodState === DeliveryMethod.PICKUP ? 0 : 
+                      (emirate === 'DUBAI' ? 1 : 2);
     
     for (let i = startDays; i < startDays + 7; i++) {
       const date = new Date(today);
@@ -1227,10 +1283,10 @@ export default function CheckoutModal({
     setCurrentPaymentReferenceState('');
 
     // If payment is complete, proceed with checkout
-    if (calculateTotalPaid() >= cartTotal) {
+    if (calculateTotalPaid() >= calculateFinalTotal()) {
       handleCreateOrder();
     }
-  }, [cartTotal, calculateTotalPaid, handleCreateOrder]);
+  }, [calculateFinalTotal, calculateTotalPaid, handleCreateOrder]);
 
   const handlePaymentMethodSelect = (method: POSPaymentMethod) => {
     if (method === POSPaymentMethod.SPLIT) {
@@ -1667,7 +1723,7 @@ export default function CheckoutModal({
                           <div className="grid grid-cols-1 gap-4 pt-8">
                             <select
                               value={pickupDetailsState.date}
-                              onChange={(e) => setPickupDetailsState((prev) => ({ ...prev, date: e.target.value }))}
+                              onChange={(e) => setPickupDetailsState((prev) => ({ ...prev, date: e.target.value, timeSlot: '' }))}
                               className="block w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4"
                             >
                               <option value="">Select Pickup Date *</option>
@@ -1686,9 +1742,10 @@ export default function CheckoutModal({
                               value={pickupDetailsState.timeSlot}
                               onChange={(e) => setPickupDetailsState((prev) => ({ ...prev, timeSlot: e.target.value }))}
                               className="block w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4"
+                              disabled={!pickupDetailsState.date}
                             >
                               <option value="">Select Pickup Time *</option>
-                              {getTimeSlots('DUBAI').map((slot) => (
+                              {pickupDetailsState.date && getTimeSlots('DUBAI', pickupDetailsState.date).map((slot) => (
                                 <option key={slot} value={slot}>{slot}</option>
                               ))}
                             </select>
@@ -2194,46 +2251,6 @@ export default function CheckoutModal({
                           </div>
 
                           <div className="mt-8">
-                            {/* Order Routing Selection */}
-                            <div className="mb-6">
-                              <h4 className="text-xl font-medium mb-4">Select Order Route</h4>
-                              <div className="grid grid-cols-3 gap-4">
-                                <button
-                                  type="button"
-                                  onClick={() => setSelectedRoute('KITCHEN')}
-                                  className={`p-4 text-lg font-medium rounded-xl border-2 transition-all ${
-                                    selectedRoute === 'KITCHEN'
-                                      ? "bg-black text-white border-black"
-                                      : "bg-white text-gray-700 border-gray-200 hover:border-black"
-                                  }`}
-                                >
-                                  To Kitchen
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setSelectedRoute('DESIGN')}
-                                  className={`p-4 text-lg font-medium rounded-xl border-2 transition-all ${
-                                    selectedRoute === 'DESIGN'
-                                      ? "bg-black text-white border-black"
-                                      : "bg-white text-gray-700 border-gray-200 hover:border-black"
-                                  }`}
-                                >
-                                  To Design
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setSelectedRoute('BOTH')}
-                                  className={`p-4 text-lg font-medium rounded-xl border-2 transition-all ${
-                                    selectedRoute === 'BOTH'
-                                      ? "bg-black text-white border-black"
-                                      : "bg-white text-gray-700 border-gray-200 hover:border-black"
-                                  }`}
-                                >
-                                  Design + Kitchen
-                                </button>
-                              </div>
-                            </div>
-
                             {/* Action Buttons */}
                             <div className="flex gap-4">
                               <button
@@ -2267,3 +2284,4 @@ export default function CheckoutModal({
     </Transition.Root>
   );
 }
+

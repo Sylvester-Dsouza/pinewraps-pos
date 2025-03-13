@@ -12,6 +12,7 @@ import { useQuery } from '@tanstack/react-query';
 import Image from 'next/image';
 import { nanoid } from 'nanoid';
 import { CartItem, CustomImage } from '@/types/cart';
+import { useDrawerStatus } from '@/providers/drawer-status-provider';
 
 import { Search, X, Minus, Plus } from 'lucide-react';
 
@@ -31,6 +32,7 @@ export default function POSPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [, setIsFullscreen] = useState(false);
+  const { isDrawerOpen, checkDrawerStatus, loading: drawerStatusLoading } = useDrawerStatus();
 
   // State for UI
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -331,6 +333,11 @@ export default function POSPage() {
 
   // Handle quick add to cart (without opening modal)
   const handleQuickAddToCart = (product: Product) => {
+    if (!isDrawerOpen) {
+      toast.error('Cash drawer is not open. Please open the till before adding products to the cart.');
+      router.push('/pos/till');
+      return;
+    }
     // Only allow quick add for products that don't need customization
     if (product.allowCustomImages || product.allowCustomPrice || (product.options && product.options.length > 0)) {
       setSelectedProduct(product);
@@ -360,17 +367,24 @@ export default function POSPage() {
       selectedVariations: [],
       totalPrice: totalPrice,
       customImages: [],
-      name: product.name,
-      unitPrice: unitPrice,
-      price: totalPrice
+      notes: ''
     };
 
-    setCart(prevCart => [...prevCart, cartItem]);
+    setCart(prevCart => {
+      const updatedCart = [...prevCart, cartItem];
+      localStorage.setItem('pos-cart', JSON.stringify(updatedCart));
+      return updatedCart;
+    });
     toast.success('Added to cart');
   };
 
   // Handle adding product to cart
   const handleAddToCart = (product: Product, quantity: number, selectedVariations: any[], customPrice: number | null, notes: string, customImages: CustomImage[]) => {
+    if (!isDrawerOpen) {
+      toast.error('Cash drawer is not open. Please open the till before adding products to the cart.');
+      router.push('/pos/till');
+      return;
+    }
     // Calculate total price
     let totalPrice = customPrice !== null ? customPrice : product.basePrice;
     
@@ -403,7 +417,11 @@ export default function POSPage() {
       price: totalPrice
     };
     
-    setCart(prevCart => [...prevCart, cartItem]);
+    setCart(prevCart => {
+      const updatedCart = [...prevCart, cartItem];
+      localStorage.setItem('pos-cart', JSON.stringify(updatedCart));
+      return updatedCart;
+    });
     toast.success('Added to cart');
   };
 
@@ -497,6 +515,13 @@ export default function POSPage() {
     <div className="min-h-screen bg-white text-black">
       <Header title="Point of Sale" />
       
+      {/* Drawer Status Warning */}
+      {!isDrawerOpen && !drawerStatusLoading && (
+        <div className="bg-amber-100 text-amber-800 p-4 text-center">
+          <p className="font-medium">Cash drawer is not open. <a href="/pos/till" className="underline">Open the till</a> to enable adding products to cart.</p>
+        </div>
+      )}
+
       <div className="flex h-[calc(100vh-3.5rem)]">
         {/* Left side - Products */}
         <div className="flex-1 flex flex-col">
@@ -582,9 +607,10 @@ export default function POSPage() {
                 {filteredProducts?.map((product) => (
                   <button
                     key={product.id}
-                    onClick={() => setSelectedProduct(product)}
-                    className="group bg-white rounded-xl p-4 border border-gray-100 hover:border-gray-300 transition-all hover:shadow-lg text-left"
-                    style={{ order: product.position || 0 }}
+                    onClick={() => handleQuickAddToCart(product)}
+                    className={`bg-white rounded-xl shadow-sm overflow-hidden cursor-pointer transition-all hover:shadow-md ${
+                      !isDrawerOpen ? 'opacity-60 pointer-events-none' : ''
+                    }`}
                   >
                     {product.images && product.images.length > 0 ? (
                       <div className="relative w-full aspect-square mb-4 rounded-xl overflow-hidden bg-gray-50">

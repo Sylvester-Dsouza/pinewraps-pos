@@ -14,6 +14,7 @@ import Cookies from 'js-cookie';
 import { nanoid } from 'nanoid';
 import { invoiceService } from '@/services/invoice.service';
 import { Order, OrderItem, OrderPayment, POSPaymentMethod, POSPaymentStatus } from '@/types/order';
+import { getPaymentMethodDisplay } from '@/utils/payment-utils';
 import RemainingPaymentModal from '@/components/pos/RemainingPaymentModal';
 
 const statusColors = {
@@ -449,7 +450,7 @@ const OrdersPage = () => {
                           <p className="font-medium text-gray-700">Payment Details:</p>
                           <p>Total Amount: AED {order.totalAmount?.toFixed(2) || '0.00'}</p>
                           <p>Paid Amount: AED {typeof order.paidAmount === 'number' ? order.paidAmount.toFixed(2) : '0.00'}</p>
-                          <p>Payment Method: {order.paymentMethod === 'SPLIT' ? 'Split Payment' : order.paymentMethod}</p>
+                          <p>Payment Method: {getPaymentMethodDisplay(order)}</p>
                           {order.payments && order.payments.length > 0 && (
                             <div className="ml-2 mt-1">
                               {order.payments.map((payment, idx) => (

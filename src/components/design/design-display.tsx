@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Timer, CheckCircle2, Clock, ChefHat, Bell, RotateCw, Maximize2, Minimize2 } from "lucide-react";
+import { Timer, CheckCircle2, Clock, ChefHat, Bell, RotateCw, Maximize2, Minimize2, AlertCircle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { apiMethods } from "@/services/api";
 import { wsService } from "@/services/websocket";
@@ -60,6 +60,11 @@ interface DesignOrder {
   designEndTime?: string;
   requiresKitchen: boolean;
   requiresDesign: boolean;
+  qualityControl?: {
+    returnedFromFinalCheck?: boolean;
+    returnReason?: string;
+    returnedAt?: string;
+  };
 }
 
 interface CustomSlide {
@@ -467,118 +472,188 @@ export default function DesignDisplay() {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: -20 }}
-        className="bg-white rounded-xl shadow-sm mb-4 overflow-hidden"
+        className="bg-white rounded-xl shadow-lg p-4 mb-6 border-l-4 overflow-hidden relative"
+        style={{
+          borderLeftColor: 
+            order.status === 'DESIGN_QUEUE' ? '#8B5CF6' : 
+            order.status === 'DESIGN_PROCESSING' ? '#EC4899' : 
+            order.status === 'DESIGN_READY' ? '#10B981' : '#6B7280'
+        }}
       >
-        <div className="p-4">
-          <div className="flex items-center justify-between">
+        {/* Status Badge */}
+        <div className="absolute top-3 right-3 z-10">
+          <span className={`px-3 py-1 text-xs font-medium rounded-full ${
+            order.status === 'DESIGN_QUEUE' ? 'bg-purple-100 text-purple-800' : 
+            order.status === 'DESIGN_PROCESSING' ? 'bg-pink-100 text-pink-800' : 
+            'bg-green-100 text-green-800'
+          }`}>
+            {order.status === 'DESIGN_QUEUE' ? 'New' : 
+             order.status === 'DESIGN_PROCESSING' ? 'Processing' : 
+             'Ready'}
+          </span>
+        </div>
+
+        {/* Return Badge - Show when order was returned from Final Check */}
+        {order.qualityControl?.returnedFromFinalCheck && (
+          <div className="absolute top-10 right-3 z-10 mt-2">
+            <span className="px-3 py-1 text-xs font-medium rounded-full bg-red-100 text-red-800 flex items-center">
+              <AlertCircle className="w-3 h-3 mr-1" />
+              Returned from Final Check
+            </span>
+          </div>
+        )}
+        
+        <div className="space-y-5">
+          {/* Header Section */}
+          <div className="flex justify-between items-start pb-3 border-b border-gray-100">
             <div>
-              <h3 className="font-medium">#{order.orderNumber}</h3>
-              <p className="text-sm text-gray-500">{order.customerName}</p>
+              <h3 className="text-xl font-bold">Order #{order.orderNumber}</h3>
+              <div className="flex items-center mt-1 space-x-2">
+                <p className="text-sm font-medium text-gray-600">Customer: {order.customerName}</p>
+                <span className="text-gray-300 text-sm">|</span>
+                <OrderTimer2 createdAt={new Date(order.createdAt)} />
+              </div>
+              
+              {/* Design Start Time - Prominent display with time info */}
+              {order.designStartTime && (
+                <div className="mt-3 py-2 px-3 rounded-lg bg-gray-50 border border-gray-100">
+                  <div className="flex items-center">
+                    <div className="mr-3">
+                      <Clock className="w-5 h-5 text-purple-500" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-gray-700">
+                        Design Time
+                      </p>
+                      <p className="text-sm font-medium text-purple-600">
+                        Started {formatDistanceToNow(new Date(order.designStartTime), { addSuffix: true })}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
-            <div className={`px-2 py-1 rounded-full text-xs font-medium flex items-center gap-1 ${
-              order.status === 'COMPLETED' ? 'bg-green-100 text-green-800' :
-              order.status === 'DESIGN_READY' ? 'bg-yellow-100 text-yellow-800' :
-              order.status === 'DESIGN_PROCESSING' ? 'bg-purple-100 text-purple-800' :
-              order.status === 'DESIGN_QUEUE' ? 'bg-purple-100 text-purple-800' :
-              order.status === 'KITCHEN_QUEUE' ? 'bg-blue-100 text-blue-800' :
-              order.status === 'KITCHEN_PROCESSING' ? 'bg-blue-100 text-blue-800' :
-              order.status === 'KITCHEN_READY' ? 'bg-blue-100 text-blue-800' :
-              'bg-gray-100 text-gray-800'
-            }`}>
-              {order.status === 'COMPLETED' ? (
-                <>
-                  <CheckCircle2 className="w-3 h-3" />
-                  <span>Completed</span>
-                </>
-              ) : order.status === 'DESIGN_READY' ? (
-                <>
-                  <Clock className="w-3 h-3" />
-                  <span>Design Ready</span>
-                </>
-              ) : order.status === 'DESIGN_PROCESSING' ? (
-                <>
-                  <ChefHat className="w-3 h-3" />
-                  <span>Design Processing</span>
-                </>
-              ) : order.status === 'DESIGN_QUEUE' ? (
-                <>
-                  <Timer className="w-3 h-3" />
-                  <span>Design Queue</span>
-                </>
-              ) : order.status === 'KITCHEN_QUEUE' ? (
-                <>
-                  <Timer className="w-3 h-3" />
-                  <span>Kitchen Queue</span>
-                </>
-              ) : order.status === 'KITCHEN_PROCESSING' ? (
-                <>
-                  <ChefHat className="w-3 h-3" />
-                  <span>Kitchen Processing</span>
-                </>
-              ) : order.status === 'KITCHEN_READY' ? (
-                <>
-                  <Clock className="w-3 h-3" />
-                  <span>Kitchen Ready</span>
-                </>
-              ) : (
-                <>
-                  <Timer className="w-3 h-3" />
-                  <span>Pending</span>
-                </>
+            
+            {/* Timer Display */}
+            <div className="flex-shrink-0 mr-4">
+              {order.designStartTime && (
+                <OrderTimer 
+                  startTime={order.designStartTime} 
+                  endTime={order.designEndTime} 
+                  status={order.status} 
+                />
               )}
             </div>
           </div>
 
-          {/* Show kitchen notes if available */}
-          {order.kitchenNotes && (
-            <div className="mt-2 p-2 bg-blue-50 rounded-lg">
-              <p className="text-sm text-blue-800">
-                <span className="font-medium">Kitchen Notes:</span> {order.kitchenNotes}
-              </p>
-            </div>
-          )}
-
-          {/* Show design notes if available */}
-          {order.designNotes && (
-            <div className="mt-2 p-2 bg-purple-50 rounded-lg">
-              <p className="text-sm text-purple-800">
-                <span className="font-medium">Design Notes:</span> {order.designNotes}
-              </p>
-            </div>
-          )}
-
-          {/* Notes input for team handoff */}
-          {showNotesInput && (
-            <div className="mt-4">
-              <textarea
-                value={teamNotes}
-                onChange={(e) => setTeamNotes(e.target.value)}
-                placeholder="Add notes for the kitchen team..."
-                className="w-full p-2 border rounded-lg"
-                rows={3}
-              />
-            </div>
-          )}
-
-          {/* Rest of the order card content */}
+          {/* Order Notes Section */}
           <div className="space-y-3">
-            {order.items.map((item) => (
-              <div key={item.id} className="flex justify-between items-start pb-2 border-b border-gray-100 last:border-0">
-                <div className="flex-1 space-y-4">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <h4 className="font-medium">{item.name}</h4>
-                      <p className="text-sm text-gray-500">Quantity: {item.quantity}</p>
+            {/* Kitchen notes with improved styling */}
+            {order.kitchenNotes && (
+              <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
+                <div className="flex items-start">
+                  <div className="p-1 bg-blue-100 rounded mr-2">
+                    <ChefHat className="w-4 h-4 text-blue-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-blue-800">Kitchen Notes:</p>
+                    <p className="text-sm text-blue-700">{order.kitchenNotes}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Design notes if available */}
+            {order.designNotes && (
+              <div className="p-3 bg-purple-50 rounded-lg border border-purple-100">
+                <div className="flex items-start">
+                  <div className="p-1 bg-purple-100 rounded mr-2">
+                    <span className="w-4 h-4 text-purple-600 flex items-center justify-center">D</span>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-purple-800">Design Notes:</p>
+                    <p className="text-sm text-purple-700">{order.designNotes}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            {/* Return reason highlighted */}
+            {order.qualityControl?.returnedFromFinalCheck && order.qualityControl?.returnReason && (
+              <div className="p-3 bg-red-50 rounded-lg border border-red-200">
+                <p className="text-sm text-red-700">
+                  <span className="font-bold flex items-center gap-1">
+                    <AlertCircle className="w-4 h-4" /> Return Reason:
+                  </span> 
+                  {order.qualityControl.returnReason}
+                </p>
+                {order.qualityControl.returnedAt && (
+                  <p className="text-xs text-red-500 mt-1">
+                    Returned on {format(new Date(order.qualityControl.returnedAt), 'MMM d, h:mm a')}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Items Section with improved visuals */}
+          <div className="space-y-4">
+            <h4 className="font-semibold text-gray-700 flex items-center gap-2">
+              <span>Order Items</span>
+              <span className="bg-gray-200 text-gray-700 px-2 py-0.5 rounded-full text-xs">
+                {order.items.reduce((total, item) => total + item.quantity, 0)} items
+              </span>
+            </h4>
+            
+            <div className="divide-y divide-gray-100 rounded-lg border border-gray-200 overflow-hidden">
+              {order.items.map((item, idx) => (
+                <div key={item.id} className="p-3 bg-white hover:bg-gray-50 transition-colors">
+                  <div className="flex justify-between items-start gap-4">
+                    {/* Item number circle */}
+                    <div className="flex-shrink-0 w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center text-xs font-bold text-gray-600">
+                      {idx + 1}
+                    </div>
+                    
+                    <div className="flex-1">
+                      <div className="flex justify-between">
+                        <div>
+                          <h4 className="font-medium text-gray-800">{item.name}</h4>
+                          <div className="flex items-center mt-1">
+                            <span className="text-sm font-medium text-gray-700 mr-2">Qty: {item.quantity}</span>
+                            {item.isCustom && (
+                              <span className="px-2 py-0.5 text-xs bg-yellow-100 text-yellow-800 rounded-full">Custom</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* Variations displayed as pills */}
+                      {item.variations && Object.entries(item.variations).length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {Object.entries(item.variations).map(([type, variation]) => (
+                            <span key={type} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                              {type}: {typeof variation === 'object' ? variation.value : variation}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      
+                      {/* Item specific notes */}
+                      {item.designNotes && (
+                        <div className="mt-2 text-sm text-gray-600 bg-gray-50 p-2 rounded border-l-2 border-purple-400">
+                          <span className="font-medium">Notes:</span> {item.designNotes}
+                        </div>
+                      )}
                     </div>
                   </div>
-
-                  {/* Design Images */}
+                  
+                  {/* Design Images with improved gallery */}
                   {item.designImages && item.designImages.length > 0 && (
-                    <div className="mt-3 flex gap-2 overflow-x-auto pb-2">
+                    <div className="mt-3 grid grid-cols-3 gap-2">
                       {item.designImages.map((image, index) => (
                         <div 
                           key={index} 
-                          className="relative min-w-[120px] h-[120px] rounded-lg overflow-hidden border border-gray-200 group cursor-pointer"
+                          className="relative aspect-square rounded-lg overflow-hidden border border-gray-200 group cursor-pointer shadow-sm hover:shadow-md transition-all"
                           onClick={() => {
                             const slides = item.designImages?.map(img => ({
                               src: img.url || img.imageUrl || '',
@@ -593,126 +668,82 @@ export default function DesignDisplay() {
                             src={image.url || image.imageUrl || ''}
                             alt={`Design ${index + 1}`}
                             fill
-                            className="object-cover"
+                            className="object-cover group-hover:opacity-90 transition-opacity"
                           />
+                          <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-all flex items-center justify-center">
+                            <Maximize2 className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                          </div>
                           {image.comment && (
-                            <div className="absolute inset-0 bg-black bg-opacity-50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center p-2">
-                              <p className="text-white text-sm text-center">{image.comment}</p>
+                            <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-60 text-white p-1.5 text-xs">
+                              {image.comment}
                             </div>
                           )}
                         </div>
                       ))}
                     </div>
                   )}
-
-                  {/* Variations */}
-                  {item.variations && (
-                    Array.isArray(item.variations) ? 
-                      item.variations.length > 0 && (
-                        <div className="mt-2">
-                          <h4 className="text-sm font-medium text-gray-700">Variations:</h4>
-                          <ul className="mt-1 space-y-1">
-                            {item.variations.map((variation, index) => {
-                              let displayValue: string;
-                              if (typeof variation === 'object') {
-                                const variationItem = variation as VariationItem;
-                                displayValue = variationItem.value;
-                                if (variationItem.type) {
-                                  displayValue = `${variationItem.type}: ${displayValue}`;
-                                }
-                                if (variationItem.priceAdjustment) {
-                                  displayValue += ` (${variationItem.priceAdjustment > 0 ? '+' : ''}${variationItem.priceAdjustment})`;
-                                }
-                              } else {
-                                displayValue = String(variation);
-                              }
-                              
-                              return (
-                                <li key={index} className="text-sm text-gray-600">
-                                  {displayValue}
-                                </li>
-                              );
-                            })}
-                          </ul>
-                        </div>
-                      )
-                    : Object.keys(item.variations).length > 0 && (
-                        <div className="mt-2">
-                          <h4 className="text-sm font-medium text-gray-700">Variations:</h4>
-                          <ul className="mt-1 space-y-1">
-                            {Object.entries(item.variations).map(([key, value]) => {
-                              let displayValue: string;
-                              if (value && typeof value === 'object') {
-                                const variationValue = value as VariationValue;
-                                displayValue = variationValue.name || variationValue.value || JSON.stringify(value);
-                              } else {
-                                displayValue = String(value);
-                              }
-                              
-                              return (
-                                <li key={key} className="text-sm text-gray-600">
-                                  <span className="font-medium">{key}:</span> {displayValue}
-                                </li>
-                              );
-                            })}
-                          </ul>
-                        </div>
-                      )
-                  )}
-                
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
 
-        <div className="bg-gray-50 border-t">
-          {order.status === 'DESIGN_QUEUE' && (
-            <button
-              onClick={() => handleStatusUpdate('DESIGN_PROCESSING')}
-              className="w-full py-4 px-4 bg-purple-500 hover:bg-purple-600 text-white text-lg font-medium rounded-lg flex items-center justify-center gap-2 transition-colors active:bg-purple-700 touch-manipulation"
-            >
-              <ChefHat className="w-6 h-6" />
-              Start Design
-            </button>
-          )}
-          {order.status === 'DESIGN_PROCESSING' && (
-            <button
-              onClick={() => handleStatusUpdate('DESIGN_READY')}
-              className="w-full py-4 px-4 bg-yellow-500 hover:bg-yellow-600 text-white text-lg font-medium flex items-center justify-center gap-2 transition-colors active:bg-yellow-700 touch-manipulation"
-            >
-              <Bell className="w-6 h-6" />
-              Mark Ready
-            </button>
-          )}
-          {order.status === 'DESIGN_READY' && (
-            <div className="grid grid-cols-1 gap-2 p-2">
-              {order.requiresKitchen && !order.kitchenEndTime ? (
-                <>
-                  <button
-                    onClick={() => setShowNotesInput(true)}
-                    className="w-full py-3 px-4 bg-blue-500 hover:bg-blue-600 text-white font-medium rounded-lg flex items-center justify-center gap-2"
-                  >
-                    <Bell className="w-5 h-5" />
-                    Send to Kitchen
-                  </button>
-                  {showNotesInput && (
-                    <button
-                      onClick={() => handleStatusUpdate('KITCHEN_QUEUE')}
-                      className="w-full py-3 px-4 bg-green-500 hover:bg-green-600 text-white font-medium rounded-lg flex items-center justify-center gap-2"
-                    >
-                      <CheckCircle2 className="w-5 h-5" />
-                      Confirm & Send
-                    </button>
-                  )}
-                </>
-              ) : (
+          {/* Notes input for team handoff with improved styling */}
+          {showNotesInput && (
+            <div className="mt-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Add notes for handoff</label>
+              <textarea
+                value={teamNotes}
+                onChange={(e) => setTeamNotes(e.target.value)}
+                placeholder="Add notes for the kitchen team..."
+                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                rows={3}
+              />
+              <div className="mt-2 flex justify-end space-x-2">
                 <button
-                  onClick={() => handleStatusUpdate('COMPLETED')}
-                  className="w-full py-3 px-4 bg-green-500 hover:bg-green-600 text-white font-medium rounded-lg flex items-center justify-center gap-2"
+                  onClick={() => setShowNotesInput(false)}
+                  className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
                 >
-                  <CheckCircle2 className="w-5 h-5" />
-                  Mark Completed
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    handleStatusUpdate('KITCHEN_QUEUE');
+                  }}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  Send to Kitchen
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Action buttons */}
+          {!showNotesInput && (
+            <div className="flex justify-end space-x-2 mt-4">
+              {order.status === 'DESIGN_QUEUE' && (
+                <button
+                  onClick={() => handleStatusUpdate('DESIGN_PROCESSING')}
+                  className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+                >
+                  Start Design
+                </button>
+              )}
+              
+              {order.status === 'DESIGN_PROCESSING' && (
+                <button
+                  onClick={() => handleStatusUpdate('DESIGN_READY')}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                >
+                  Mark Ready
+                </button>
+              )}
+              
+              {order.status === 'DESIGN_READY' && (
+                <button
+                  onClick={handleReadyClick}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  {order.requiresKitchen && !order.kitchenEndTime ? 'Send to Kitchen' : 'Complete Order'}
                 </button>
               )}
             </div>
@@ -756,13 +787,13 @@ export default function DesignDisplay() {
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900"></div>
           </div>
         ) : (
-          <div className="grid grid-cols-4 gap-4">
-            {/* Design Queue Column */}
+          <div className="grid grid-cols-3 gap-4">
+            {/* 1. New - Design Queue Orders */}
             <div className="bg-gray-50 rounded-xl p-4 overflow-y-auto">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="font-semibold text-lg flex items-center">
                   <div className="w-3 h-3 rounded-full bg-purple-500 mr-2" />
-                  Design Queue
+                  New
                 </h2>
                 <span className="text-sm text-gray-500">{getOrdersByStatus("DESIGN_QUEUE").length}</span>
               </div>

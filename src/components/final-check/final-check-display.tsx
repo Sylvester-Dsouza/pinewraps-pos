@@ -48,6 +48,12 @@ export interface FinalCheckOrder {
   pickupTimeSlot?: string;
   deliveryDate?: string;
   deliveryTimeSlot?: string;
+  qualityControl?: {
+    returnedFromFinalCheck?: boolean;
+    returnReason?: string;
+    returnDestination?: 'KITCHEN' | 'DESIGN';
+    returnedAt?: string;
+  };
 }
 
 export interface UpdateOrderStatusPayload {
@@ -256,9 +262,19 @@ export default function FinalCheckDisplay() {
   const updateOrderStatus = async (orderId: string, newStatus: FinalCheckOrderStatus, teamNotes?: string) => {
     try {
       console.log('Updating order status:', { orderId, newStatus, teamNotes });
-      const response = await apiMethods.updateOrderStatus(orderId, {
+      
+      // If sending back to Kitchen or Design, add returnedFromFinalCheck flag
+      const isReturnToKitchenOrDesign = newStatus === 'KITCHEN_QUEUE' || newStatus === 'DESIGN_QUEUE';
+      
+      const response = await apiMethods.pos.updateOrderStatus(orderId, {
         status: newStatus,
-        teamNotes: teamNotes || ''
+        teamNotes: teamNotes || '',
+        qualityControl: isReturnToKitchenOrDesign ? {
+          returnedFromFinalCheck: true,
+          returnReason: teamNotes || 'Returned from Final Check',
+          returnDestination: newStatus === 'KITCHEN_QUEUE' ? 'KITCHEN' : 'DESIGN',
+          returnedAt: new Date().toISOString()
+        } : undefined
       });
 
       if (response.success) {
@@ -268,12 +284,21 @@ export default function FinalCheckDisplay() {
               ? { 
                   ...order, 
                   status: newStatus,
-                  finalCheckNotes: teamNotes || order.finalCheckNotes 
+                  finalCheckNotes: teamNotes || order.finalCheckNotes,
+                  qualityControl: isReturnToKitchenOrDesign ? {
+                    ...order.qualityControl,
+                    returnedFromFinalCheck: true,
+                    returnReason: teamNotes || 'Returned from Final Check',
+                    returnDestination: newStatus === 'KITCHEN_QUEUE' ? 'KITCHEN' : 'DESIGN',
+                    returnedAt: new Date().toISOString()
+                  } : order.qualityControl
                 }
               : order
           )
         );
-        toast.success('Order status updated');
+        toast.success(isReturnToKitchenOrDesign 
+          ? `Order sent back to ${newStatus === 'KITCHEN_QUEUE' ? 'Kitchen' : 'Design'}`
+          : 'Order status updated');
       } else {
         console.error('Error updating order status:', response.message);
         toast.error(`Failed to update order status: ${response.message}`);
@@ -301,16 +326,20 @@ export default function FinalCheckDisplay() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      <div className="p-4">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold">Final Check Display</h1>
-          <div className="flex items-center gap-4">
+    <div className="min-h-screen bg-gray-100 p-6">
+      <div className="w-full">
+        {/* Header */}
+        <div className="flex justify-between items-center mb-8">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Final Check Display</h1>
+            <p className="text-gray-500 mt-1">Review orders and ensure quality before completion</p>
+          </div>
+          <div className="flex items-center gap-3">
             <button
               onClick={handleRefresh}
-              className="flex items-center px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
+              className="flex items-center px-4 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm"
             >
-              <RotateCw className="w-4 h-4 mr-2" />
+              <RotateCw className="w-4 h-4 mr-2 text-gray-500" />
               Refresh
             </button>
             <button
@@ -321,83 +350,148 @@ export default function FinalCheckDisplay() {
                   document.exitFullscreen();
                 }
               }}
-              className="flex items-center px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
+              className="flex items-center px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all shadow-sm"
             >
-              {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-              <span className="ml-2">Toggle Fullscreen</span>
+              {isFullscreen ? <Minimize2 className="w-4 h-4 mr-2" /> : <Maximize2 className="w-4 h-4 mr-2" />}
+              {isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
             </button>
           </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-4">
+        {/* Dashboard Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {/* Queue Column */}
-          <div className="bg-gray-50 rounded-xl p-4 overflow-y-auto max-h-[calc(100vh-120px)]">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="font-semibold text-lg flex items-center">
-                <div className="w-3 h-3 rounded-full bg-amber-500 mr-2" />
-                Final Check Queue
-              </h2>
-              <span className="text-sm text-gray-500">
-                {getOrdersByStatus("FINAL_CHECK_QUEUE").length}
-              </span>
+          <div className="bg-white rounded-xl shadow-md overflow-hidden">
+            <div className="border-b border-gray-100 bg-gradient-to-r from-amber-50 to-white">
+              <div className="p-4 flex items-center justify-between">
+                <h2 className="font-bold text-lg flex items-center text-amber-800">
+                  <div className="w-3 h-3 rounded-full bg-amber-500 mr-2" />
+                  Final Check Queue
+                </h2>
+                <span className="px-2.5 py-1 bg-amber-100 text-amber-800 text-sm font-medium rounded-full">
+                  {getOrdersByStatus("FINAL_CHECK_QUEUE").length}
+                </span>
+              </div>
             </div>
-            <div className="space-y-4">
-              <AnimatePresence>
-                {getOrdersByStatus("FINAL_CHECK_QUEUE").map(order => (
-                  <OrderCard 
-                    key={order.id} 
-                    order={order} 
-                    onUpdateStatus={updateOrderStatus}
-                  />
-                ))}
-              </AnimatePresence>
+            <div className="p-4 overflow-y-auto max-h-[calc(100vh-200px)]">
+              <div className="space-y-4">
+                <AnimatePresence>
+                  {getOrdersByStatus("FINAL_CHECK_QUEUE").length === 0 ? (
+                    <div className="text-center py-8 text-gray-500">
+                      <p>No orders in queue</p>
+                    </div>
+                  ) : (
+                    getOrdersByStatus("FINAL_CHECK_QUEUE").map(order => (
+                      <OrderCard 
+                        key={order.id} 
+                        order={order} 
+                        onUpdateStatus={updateOrderStatus}
+                      />
+                    ))
+                  )}
+                </AnimatePresence>
+              </div>
             </div>
           </div>
 
           {/* Processing Column */}
-          <div className="bg-gray-50 rounded-xl p-4 overflow-y-auto max-h-[calc(100vh-120px)]">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="font-semibold text-lg flex items-center">
-                <div className="w-3 h-3 rounded-full bg-amber-500 mr-2" />
-                Processing
-              </h2>
-              <span className="text-sm text-gray-500">
-                {getOrdersByStatus("FINAL_CHECK_PROCESSING").length}
-              </span>
+          <div className="bg-white rounded-xl shadow-md overflow-hidden">
+            <div className="border-b border-gray-100 bg-gradient-to-r from-blue-50 to-white">
+              <div className="p-4 flex items-center justify-between">
+                <h2 className="font-bold text-lg flex items-center text-blue-800">
+                  <div className="w-3 h-3 rounded-full bg-blue-500 mr-2" />
+                  Processing
+                </h2>
+                <span className="px-2.5 py-1 bg-blue-100 text-blue-800 text-sm font-medium rounded-full">
+                  {getOrdersByStatus("FINAL_CHECK_PROCESSING").length}
+                </span>
+              </div>
             </div>
-            <div className="space-y-4">
-              <AnimatePresence>
-                {getOrdersByStatus("FINAL_CHECK_PROCESSING").map(order => (
-                  <OrderCard 
-                    key={order.id} 
-                    order={order} 
-                    onUpdateStatus={updateOrderStatus}
-                  />
-                ))}
-              </AnimatePresence>
+            <div className="p-4 overflow-y-auto max-h-[calc(100vh-200px)]">
+              <div className="space-y-4">
+                <AnimatePresence>
+                  {getOrdersByStatus("FINAL_CHECK_PROCESSING").length === 0 ? (
+                    <div className="text-center py-8 text-gray-500">
+                      <p>No orders being processed</p>
+                    </div>
+                  ) : (
+                    getOrdersByStatus("FINAL_CHECK_PROCESSING").map(order => (
+                      <OrderCard 
+                        key={order.id} 
+                        order={order} 
+                        onUpdateStatus={updateOrderStatus}
+                      />
+                    ))
+                  )}
+                </AnimatePresence>
+              </div>
             </div>
           </div>
 
           {/* Completed Column */}
-          <div className="bg-gray-50 rounded-xl p-4 overflow-y-auto max-h-[calc(100vh-120px)]">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="font-semibold text-lg flex items-center">
-                <div className="w-3 h-3 rounded-full bg-green-500 mr-2" />
-                Completed
-              </h2>
-              <span className="text-sm text-gray-500">
-                {getOrdersByStatus("FINAL_CHECK_COMPLETE").length}
-              </span>
+          <div className="bg-white rounded-xl shadow-md overflow-hidden">
+            <div className="border-b border-gray-100 bg-gradient-to-r from-green-50 to-white">
+              <div className="p-4 flex items-center justify-between">
+                <h2 className="font-bold text-lg flex items-center text-green-800">
+                  <div className="w-3 h-3 rounded-full bg-green-500 mr-2" />
+                  Ready for Pickup
+                </h2>
+                <span className="px-2.5 py-1 bg-green-100 text-green-800 text-sm font-medium rounded-full">
+                  {getOrdersByStatus("FINAL_CHECK_COMPLETE").length}
+                </span>
+              </div>
             </div>
+            <div className="p-4 overflow-y-auto max-h-[calc(100vh-200px)]">
+              <div className="space-y-4">
+                <AnimatePresence>
+                  {getOrdersByStatus("FINAL_CHECK_COMPLETE").length === 0 ? (
+                    <div className="text-center py-8 text-gray-500">
+                      <p>No completed orders</p>
+                    </div>
+                  ) : (
+                    getOrdersByStatus("FINAL_CHECK_COMPLETE").map(order => (
+                      <OrderCard 
+                        key={order.id} 
+                        order={order} 
+                        onUpdateStatus={updateOrderStatus}
+                      />
+                    ))
+                  )}
+                </AnimatePresence>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Send Back Section */}
+        <div className="mt-8 bg-white rounded-xl shadow-md overflow-hidden">
+          <div className="border-b border-gray-100 bg-gradient-to-r from-purple-50 to-white">
+            <div className="p-4">
+              <h2 className="font-bold text-lg text-purple-800">Returned Items</h2>
+              <p className="text-sm text-gray-500">Orders sent back to Kitchen or Design for revision</p>
+            </div>
+          </div>
+          <div className="p-4 overflow-y-auto max-h-[calc(100vh-200px)]">
             <div className="space-y-4">
               <AnimatePresence>
-                {getOrdersByStatus("FINAL_CHECK_COMPLETE").map(order => (
-                  <OrderCard 
-                    key={order.id} 
-                    order={order} 
-                    onUpdateStatus={updateOrderStatus}
-                  />
-                ))}
+                {orders.filter(order => 
+                  order.status === "KITCHEN_QUEUE" || 
+                  order.status === "DESIGN_QUEUE"
+                ).length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">
+                    <p>No returned orders</p>
+                  </div>
+                ) : (
+                  orders
+                    .filter(order => order.status === "KITCHEN_QUEUE" || order.status === "DESIGN_QUEUE")
+                    .map(order => (
+                      <OrderCard 
+                        key={order.id} 
+                        order={order} 
+                        onUpdateStatus={updateOrderStatus}
+                      />
+                    ))
+                )}
               </AnimatePresence>
             </div>
           </div>

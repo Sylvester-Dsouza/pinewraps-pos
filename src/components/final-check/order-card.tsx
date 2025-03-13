@@ -95,13 +95,33 @@ export default function OrderCard({ order, onUpdateStatus }: OrderCardProps) {
     }
   };
 
+  // Get the status badge color and text
+  const getStatusBadge = () => {
+    switch (order.status) {
+      case "FINAL_CHECK_QUEUE":
+        return { color: "bg-amber-100 text-amber-800 border-amber-300", text: "In Queue" };
+      case "FINAL_CHECK_PROCESSING":
+        return { color: "bg-blue-100 text-blue-800 border-blue-300", text: "Processing" };
+      case "FINAL_CHECK_COMPLETE":
+        return { color: "bg-green-100 text-green-800 border-green-300", text: "Ready" };
+      case "COMPLETED":
+        return { color: "bg-green-100 text-green-800 border-green-300", text: "Completed" };
+      case "KITCHEN_QUEUE":
+        return { color: "bg-orange-100 text-orange-800 border-orange-300", text: "Kitchen Queue" };
+      case "DESIGN_QUEUE":
+        return { color: "bg-purple-100 text-purple-800 border-purple-300", text: "Design Queue" };
+      default:
+        return { color: "bg-gray-100 text-gray-800 border-gray-300", text: "Unknown" };
+    }
+  };
+
   const getStatusActions = () => {
     switch (order.status) {
       case "FINAL_CHECK_QUEUE":
         return (
           <button
             onClick={() => handleStatusUpdate("FINAL_CHECK_PROCESSING")}
-            className="w-full py-3 px-4 bg-amber-500 hover:bg-amber-600 text-white font-medium rounded-lg flex items-center justify-center gap-2"
+            className="w-full py-3 px-4 bg-amber-500 hover:bg-amber-600 text-white font-medium rounded-lg flex items-center justify-center gap-2 transition-colors"
           >
             <FileCheck className="w-5 h-5" />
             Start Final Check
@@ -114,14 +134,14 @@ export default function OrderCard({ order, onUpdateStatus }: OrderCardProps) {
             <div className="grid grid-cols-2 gap-2">
               <button
                 onClick={() => handleSendBack('KITCHEN')}
-                className="py-3 px-4 bg-blue-500 hover:bg-blue-600 text-white font-medium rounded-lg flex items-center justify-center gap-2"
+                className="py-3 px-4 bg-blue-500 hover:bg-blue-600 text-white font-medium rounded-lg flex items-center justify-center gap-2 transition-colors"
               >
                 <Clock className="w-5 h-5" />
                 Send to Kitchen
               </button>
               <button
                 onClick={() => handleSendBack('DESIGN')}
-                className="py-3 px-4 bg-purple-500 hover:bg-purple-600 text-white font-medium rounded-lg flex items-center justify-center gap-2"
+                className="py-3 px-4 bg-purple-500 hover:bg-purple-600 text-white font-medium rounded-lg flex items-center justify-center gap-2 transition-colors"
               >
                 <Clock className="w-5 h-5" />
                 Send to Design
@@ -131,7 +151,7 @@ export default function OrderCard({ order, onUpdateStatus }: OrderCardProps) {
             {/* Complete button */}
             <button
               onClick={() => handleStatusUpdate("COMPLETED")}
-              className="w-full py-3 px-4 bg-green-500 hover:bg-green-600 text-white font-medium rounded-lg flex items-center justify-center gap-2"
+              className="w-full py-3 px-4 bg-green-500 hover:bg-green-600 text-white font-medium rounded-lg flex items-center justify-center gap-2 transition-colors"
             >
               <CheckCircle2 className="w-5 h-5" />
               Complete Order
@@ -142,7 +162,7 @@ export default function OrderCard({ order, onUpdateStatus }: OrderCardProps) {
         return (
           <button
             onClick={() => handleStatusUpdate("COMPLETED")}
-            className="w-full py-3 px-4 bg-green-500 hover:bg-green-600 text-white font-medium rounded-lg flex items-center justify-center gap-2"
+            className="w-full py-3 px-4 bg-green-500 hover:bg-green-600 text-white font-medium rounded-lg flex items-center justify-center gap-2 transition-colors"
           >
             <CheckCircle2 className="w-5 h-5" />
             Mark Order Completed
@@ -153,22 +173,64 @@ export default function OrderCard({ order, onUpdateStatus }: OrderCardProps) {
     }
   };
 
+  const statusBadge = getStatusBadge();
+  const finalCheckStartTime = order.finalCheckStartTime ? new Date(order.finalCheckStartTime) : null;
+
   return (
     <motion.div
       layout
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
-      className="bg-white rounded-lg shadow-md p-4 mb-4"
+      className={`bg-white rounded-xl shadow-lg p-4 mb-6 border-l-4 overflow-hidden relative ${
+        order.status === "FINAL_CHECK_QUEUE" 
+          ? "border-l-amber-500" 
+          : order.status === "FINAL_CHECK_PROCESSING" 
+            ? "border-l-blue-500" 
+            : order.status === "FINAL_CHECK_COMPLETE" || order.status === "COMPLETED"
+              ? "border-l-green-500"
+              : order.status === "KITCHEN_QUEUE"
+                ? "border-l-orange-500"
+                : "border-l-purple-500"
+      }`}
     >
+      {/* Status Badge */}
+      <div className="absolute top-4 right-4">
+        <span className={`text-xs font-medium px-2.5 py-1 rounded-full border ${statusBadge.color}`}>
+          {statusBadge.text}
+        </span>
+      </div>
+
       <div className="space-y-4">
-        <div className="flex justify-between items-start">
-          <div>
-            <h3 className="text-lg font-semibold">Order #{order.orderNumber}</h3>
-            <p className="text-sm text-gray-500">Customer: {order.customerName}</p>
-            <OrderTimer createdAt={new Date(order.createdAt)} />
-            {order.deliveryMethod && (
-              <div className="mt-2 text-sm">
+        {/* Header Section */}
+        <div className="pb-3 border-b border-gray-100">
+          <div className="flex justify-between items-start">
+            <div>
+              <h3 className="text-lg font-semibold">Order #{order.orderNumber}</h3>
+              <p className="text-sm text-gray-500">Customer: {order.customerName}</p>
+              <div className="flex items-center space-x-2 mt-1">
+                <OrderTimer createdAt={new Date(order.createdAt)} />
+                {finalCheckStartTime && (
+                  <span className="text-xs text-gray-500">
+                    Final Check Started: {format(finalCheckStartTime, 'MMM d, h:mm a')}
+                  </span>
+                )}
+              </div>
+            </div>
+            <a 
+              href={`/orders/${order.id}`} 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="text-blue-600 hover:text-blue-800 transition-colors p-1 rounded-full hover:bg-blue-50"
+            >
+              <ExternalLink className="w-5 h-5" />
+            </a>
+          </div>
+
+          {/* Delivery Information */}
+          {order.deliveryMethod && (
+            <div className="mt-2 p-2 bg-gray-50 rounded-lg">
+              <p className="text-sm">
                 <span className="font-medium">{order.deliveryMethod === 'PICKUP' ? 'Pickup' : 'Delivery'}: </span>
                 {order.deliveryMethod === 'PICKUP' ? (
                   <span className="text-blue-600">
@@ -181,67 +243,110 @@ export default function OrderCard({ order, onUpdateStatus }: OrderCardProps) {
                     {order.deliveryTimeSlot && ` at ${order.deliveryTimeSlot}`}
                   </span>
                 )}
-              </div>
-            )}
-          </div>
-          <a 
-            href={`/orders/${order.id}`} 
-            target="_blank" 
-            rel="noopener noreferrer"
-            className="text-blue-600 hover:text-blue-800 transition-colors"
-          >
-            <ExternalLink className="w-5 h-5" />
-          </a>
+              </p>
+            </div>
+          )}
         </div>
 
-        {/* Notes */}
-        {order.kitchenNotes && (
-          <div className="mt-2 p-2 bg-blue-50 rounded-lg">
-            <p className="text-sm text-blue-800">
-              <span className="font-medium">Kitchen Notes:</span> {order.kitchenNotes}
-            </p>
-          </div>
-        )}
-        
-        {order.designNotes && (
-          <div className="mt-2 p-2 bg-purple-50 rounded-lg">
-            <p className="text-sm text-purple-800">
-              <span className="font-medium">Design Notes:</span> {order.designNotes}
-            </p>
-          </div>
-        )}
+        {/* Notes Section */}
+        <div className="space-y-2">
+          {order.kitchenNotes && (
+            <div className="p-2.5 bg-blue-50 rounded-lg border border-blue-100">
+              <p className="text-sm text-blue-800">
+                <span className="font-medium">Kitchen Notes:</span> {order.kitchenNotes}
+              </p>
+            </div>
+          )}
+          
+          {order.designNotes && (
+            <div className="p-2.5 bg-purple-50 rounded-lg border border-purple-100">
+              <p className="text-sm text-purple-800">
+                <span className="font-medium">Design Notes:</span> {order.designNotes}
+              </p>
+            </div>
+          )}
 
-        {/* Item list */}
-        <div className="space-y-3">
-          {order.items.map((item) => (
-            <div key={item.id} className="flex justify-between items-start pb-2 border-b border-gray-100 last:border-0">
-              <div className="flex-1 space-y-2">
-                <div>
-                  <h4 className="font-medium">{item.name}</h4>
-                  <p className="text-sm text-gray-500">Quantity: {item.quantity}</p>
-                  
-                  {/* Variations */}
-                  {Object.entries(item.variations || {}).map(([type, variation]: [string, any]) => (
-                    <p key={type} className="text-sm text-gray-500">
-                      {variation.name} - {variation.value}
-                    </p>
-                  ))}
-                  
-                  {/* Item notes */}
-                  {item.kitchenNotes && (
-                    <p className="text-sm text-gray-600 mt-2">
-                      Notes: {item.kitchenNotes}
-                    </p>
+          {order.finalCheckNotes && (
+            <div className="p-2.5 bg-amber-50 rounded-lg border border-amber-100">
+              <p className="text-sm text-amber-800">
+                <span className="font-medium">Final Check Notes:</span> {order.finalCheckNotes}
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Items Section */}
+        <div>
+          <div className="flex justify-between items-center mb-2">
+            <h4 className="font-medium text-gray-700">Items</h4>
+            <button 
+              onClick={toggleExpand} 
+              className="text-gray-500 hover:text-gray-700 p-1"
+            >
+              {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+            </button>
+          </div>
+          
+          <div className={`space-y-3 ${expanded ? 'block' : 'max-h-60 overflow-hidden'}`}>
+            {order.items.map((item) => (
+              <div key={item.id} className="p-3 bg-gray-50 rounded-lg">
+                <div className="flex justify-between items-start">
+                  <div className="flex-1">
+                    <div className="flex items-center">
+                      <span className="bg-gray-200 text-gray-800 text-xs font-medium w-6 h-6 rounded-full flex items-center justify-center mr-2">
+                        {item.quantity}
+                      </span>
+                      <h4 className="font-medium">{item.name}</h4>
+                    </div>
+                    
+                    {/* Variations */}
+                    {Object.entries(item.variations || {}).length > 0 && (
+                      <div className="mt-2 ml-8 space-y-1">
+                        {Object.entries(item.variations || {}).map(([type, variation]: [string, any]) => (
+                          <p key={type} className="text-sm text-gray-600">
+                            <span className="font-medium">{type}:</span> {variation.name || variation.value}
+                          </p>
+                        ))}
+                      </div>
+                    )}
+                    
+                    {/* Item notes */}
+                    {item.kitchenNotes && (
+                      <div className="mt-2 ml-8 p-2 bg-blue-50 rounded border border-blue-100">
+                        <p className="text-sm text-blue-700">
+                          <span className="font-medium">Notes:</span> {item.kitchenNotes}
+                        </p>
+                      </div>
+                    )}
+
+                    {item.designNotes && (
+                      <div className="mt-2 ml-8 p-2 bg-purple-50 rounded border border-purple-100">
+                        <p className="text-sm text-purple-700">
+                          <span className="font-medium">Design Notes:</span> {item.designNotes}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                  {item.category && (
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded ${
+                      item.category.toLowerCase().includes('cake') 
+                        ? 'bg-blue-100 text-blue-800' 
+                        : item.category.toLowerCase().includes('flower')
+                          ? 'bg-purple-100 text-purple-800'
+                          : 'bg-gray-100 text-gray-800'
+                    }`}>
+                      {item.category}
+                    </span>
                   )}
                 </div>
 
                 {/* Images */}
                 {item.customImages && item.customImages.length > 0 && (
-                  <div className="mt-3 flex gap-2 overflow-x-auto pb-2">
+                  <div className="mt-3 flex gap-2 overflow-x-auto pb-2 ml-8">
                     {item.customImages.map((image, index) => (
                       <div 
                         key={index} 
-                        className="relative min-w-[80px] h-[80px] rounded-lg overflow-hidden border border-gray-200 group cursor-pointer"
+                        className="relative min-w-[80px] h-[80px] rounded-lg overflow-hidden border border-gray-200 group cursor-pointer shadow-sm hover:shadow-md transition-shadow"
                       >
                         <Image
                           src={image.url}
@@ -259,8 +364,8 @@ export default function OrderCard({ order, onUpdateStatus }: OrderCardProps) {
                   </div>
                 )}
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
 
         {/* Notes input for final check */}
@@ -270,14 +375,14 @@ export default function OrderCard({ order, onUpdateStatus }: OrderCardProps) {
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Add final check notes..."
-              className="w-full p-2 border rounded-lg"
+              className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
               rows={3}
             />
           </div>
         )}
 
         {/* Action buttons based on status */}
-        <div className="bg-gray-50 p-3 rounded-lg">
+        <div className="bg-gray-50 p-4 rounded-lg">
           {getStatusActions()}
         </div>
       </div>
@@ -296,7 +401,7 @@ export default function OrderCard({ order, onUpdateStatus }: OrderCardProps) {
               value={teamNotes}
               onChange={(e) => setTeamNotes(e.target.value)}
               rows={4}
-              className="w-full p-2 border rounded-lg"
+              className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
             />
           </div>
           <DialogFooter>

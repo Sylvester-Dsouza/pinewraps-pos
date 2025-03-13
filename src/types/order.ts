@@ -117,6 +117,8 @@ export interface POSOrderData {
   payments: OrderPayment[];
   total: number;
   subtotal?: number;
+  allowPartialPayment?: boolean; // Flag to indicate if this order allows partial payments
+  actualTotal?: number; // The real total amount when using partial payments
 
   // Customer details
   customerName: string;

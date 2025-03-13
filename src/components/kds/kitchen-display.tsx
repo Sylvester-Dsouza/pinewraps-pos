@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Timer, CheckCircle2, Clock, ChefHat, Bell, RotateCw, Maximize2, Minimize2 } from "lucide-react";
+import { Timer, CheckCircle2, Clock, ChefHat, Bell, RotateCw, Maximize2, Minimize2, AlertCircle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { apiMethods } from "@/services/api";
 import { wsService } from "@/services/websocket";
@@ -63,6 +63,11 @@ interface KitchenOrder {
   pickupTimeSlot?: string;
   deliveryDate?: string;
   deliveryTimeSlot?: string;
+  qualityControl?: {
+    returnedFromFinalCheck?: boolean;
+    returnReason?: string;
+    returnedAt?: string;
+  };
 }
 
 interface OrderTimerProps {
@@ -280,20 +285,22 @@ export default function KitchenDisplay() {
   // Subscribe to WebSocket updates
   useEffect(() => {
     if (wsService) {
-      const unsubscribeNew = wsService.subscribe('NEW_ORDER', (data) => {
+      // Subscribe to 'new_order' event from backend
+      const unsubscribeNew = wsService.subscribe('new_order', (data) => {
+        console.log('Received new order:', data);
         setOrders(prev => {
           // Check if order already exists
-          if (prev.some(order => order.id === data.order.id)) {
+          if (prev.some(order => order.id === data.id)) {
             return prev;
           }
-          return [data.order, ...prev];
+          return [data, ...prev];
         });
         toast.custom(() => (
           <div className="bg-white rounded-lg shadow-lg p-4 flex items-center space-x-3">
             <Bell className="w-5 h-5 text-blue-500" />
             <div>
-              <p className="font-medium">New Order #{data.order.orderNumber}</p>
-              <p className="text-sm text-gray-500">{data.order.customerName}</p>
+              <p className="font-medium">New Order #{data.orderNumber}</p>
+              <p className="text-sm text-gray-500">{data.customerName}</p>
             </div>
           </div>
         ));
@@ -332,9 +339,9 @@ export default function KitchenDisplay() {
       if (response.success) {
         // Filter for kitchen-relevant orders only
         const kitchenOrders = response.data.filter((order: any) => 
-          order.requiresKitchen || // Orders that need kitchen work
-          order.status === 'PENDING' || // Include pending orders
-          (order.requiresDesign && order.status === 'DESIGN_READY') // Design-ready orders waiting for kitchen
+          order.status === 'KITCHEN_QUEUE' ||
+          order.status === 'KITCHEN_PROCESSING' ||
+          order.status === 'KITCHEN_READY'
         );
 
         const ordersWithImages = kitchenOrders.map((order: any) => ({
@@ -501,92 +508,204 @@ export default function KitchenDisplay() {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
-      className="bg-white rounded-lg shadow-md p-4 mb-4"
+      className="bg-white rounded-xl shadow-lg p-4 mb-6 border-l-4 overflow-hidden relative"
+      style={{
+        borderLeftColor: 
+          order.status === 'KITCHEN_QUEUE' ? '#3B82F6' : 
+          order.status === 'KITCHEN_PROCESSING' ? '#F59E0B' : 
+          order.status === 'KITCHEN_READY' ? '#10B981' : '#6B7280'
+      }}
     >
-      <div className="space-y-4">
-        <div className="flex justify-between items-start">
+      {/* Status Badge */}
+      <div className="absolute top-3 right-3 z-10">
+        <span className={`px-3 py-1 text-xs font-medium rounded-full ${order.status === 'KITCHEN_QUEUE' ? 'bg-blue-100 text-blue-800' : order.status === 'KITCHEN_PROCESSING' ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'}`}>
+          {order.status === 'KITCHEN_QUEUE' ? 'New' : 
+           order.status === 'KITCHEN_PROCESSING' ? 'Processing' : 
+           'Ready'}
+        </span>
+      </div>
+
+      {/* Return Badge - Show when order was returned from Final Check */}
+      {order.qualityControl?.returnedFromFinalCheck && (
+        <div className="absolute top-10 right-3 z-10 mt-2">
+          <span className="px-3 py-1 text-xs font-medium rounded-full bg-red-100 text-red-800 flex items-center">
+            <AlertCircle className="w-3 h-3 mr-1" />
+            Returned from Final Check
+          </span>
+        </div>
+      )}
+
+      <div className="space-y-5">
+        {/* Header Section */}
+        <div className="flex justify-between items-start pb-3 border-b border-gray-100">
           <div>
-            <h3 className="text-lg font-semibold">Order #{order.orderNumber}</h3>
-            <p className="text-sm text-gray-500">Customer: {order.customerName}</p>
-            <OrderTimer2 createdAt={new Date(order.createdAt)} />
+            <h3 className="text-xl font-bold text-gray-800">Order #{order.orderNumber}</h3>
+            <div className="flex items-center mt-1 space-x-2">
+              <p className="text-sm font-medium text-gray-600">Customer: {order.customerName}</p>
+              <span className="text-gray-300 text-sm">|</span>
+              <OrderTimer2 createdAt={new Date(order.createdAt)} />
+            </div>
+            
+            {/* Delivery/Pickup Time - Prominent display with countdown */}
             {order.deliveryMethod && (
-              <div className="mt-2 text-sm">
-                <span className="font-medium">{order.deliveryMethod === 'PICKUP' ? 'Pickup' : 'Delivery'}: </span>
-                {order.deliveryMethod === 'PICKUP' ? (
-                  <span className="text-blue-600">
-                    {order.pickupDate && format(new Date(order.pickupDate), 'MMM d, yyyy')}
-                    {order.pickupTimeSlot && ` at ${order.pickupTimeSlot}`}
-                  </span>
-                ) : (
-                  <span className="text-green-600">
-                    {order.deliveryDate && format(new Date(order.deliveryDate), 'MMM d, yyyy')}
-                    {order.deliveryTimeSlot && ` at ${order.deliveryTimeSlot}`}
-                  </span>
-                )}
+              <div className="mt-3 py-2 px-3 rounded-lg bg-gray-50 border border-gray-100">
+                <div className="flex items-center">
+                  <div className="mr-3">
+                    <Clock className={`w-5 h-5 ${order.deliveryMethod === 'PICKUP' ? 'text-blue-500' : 'text-green-500'}`} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-gray-700">
+                      {order.deliveryMethod === 'PICKUP' ? 'Pickup' : 'Delivery'} Time
+                    </p>
+                    <p className="text-sm font-bold">
+                      {order.deliveryMethod === 'PICKUP' ? (
+                        <span className="text-blue-600">
+                          {order.pickupDate && format(new Date(order.pickupDate), 'EEE, MMM d')}
+                          {order.pickupTimeSlot && ` at ${order.pickupTimeSlot}`}
+                        </span>
+                      ) : (
+                        <span className="text-green-600">
+                          {order.deliveryDate && format(new Date(order.deliveryDate), 'EEE, MMM d')}
+                          {order.deliveryTimeSlot && ` at ${order.deliveryTimeSlot}`}
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                </div>
               </div>
+            )}
+          </div>
+          
+          {/* Timer Display */}
+          <div className="flex-shrink-0 mr-4">
+            {order.kitchenStartTime && (
+              <OrderTimer 
+                startTime={order.kitchenStartTime} 
+                endTime={order.kitchenEndTime} 
+                status={order.status} 
+              />
             )}
           </div>
         </div>
 
-        {/* Show design notes if available */}
-        {order.designNotes && (
-          <div className="mt-2 p-2 bg-purple-50 rounded-lg">
-            <p className="text-sm text-purple-800">
-              <span className="font-medium">Design Notes:</span> {order.designNotes}
-            </p>
-          </div>
-        )}
-
-        {/* Show kitchen notes if available */}
-        {order.kitchenNotes && (
-          <div className="mt-2 p-2 bg-blue-50 rounded-lg">
-            <p className="text-sm text-blue-800">
-              <span className="font-medium">Kitchen Notes:</span> {order.kitchenNotes}
-            </p>
-          </div>
-        )}
-
-        {/* Rest of the order card content */}
+        {/* Notes Section - With return reason highlighted */}
         <div className="space-y-3">
-          {order.items.map((item) => (
-            <div key={item.id} className="flex justify-between items-start pb-2 border-b border-gray-100 last:border-0">
-              <div className="flex-1 space-y-4">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <h4 className="font-medium">{item.name}</h4>
-                    <p className="text-sm text-gray-500">Quantity: {item.quantity}</p>
-                    {/* Show variations */}
-                    {Object.entries(item.variations || {}).map(([type, variation]) => (
-                      <p key={type} className="text-sm text-gray-500">
-                        {variation.name} - {variation.value}
-                      </p>
-                    ))}
-                    {/* Show notes */}
+          {order.qualityControl?.returnedFromFinalCheck && order.qualityControl?.returnReason && (
+            <div className="p-3 bg-red-50 rounded-lg border border-red-200">
+              <p className="text-sm text-red-700">
+                <span className="font-bold flex items-center gap-1">
+                  <AlertCircle className="w-4 h-4" /> Return Reason:
+                </span> 
+                {order.qualityControl.returnReason}
+              </p>
+              {order.qualityControl.returnedAt && (
+                <p className="text-xs text-red-500 mt-1">
+                  Returned on {format(new Date(order.qualityControl.returnedAt), 'MMM d, h:mm a')}
+                </p>
+              )}
+            </div>
+          )}
+
+          {order.kitchenNotes && (
+            <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
+              <div className="flex items-start">
+                <div className="p-1 bg-blue-100 rounded mr-2">
+                  <ChefHat className="w-4 h-4 text-blue-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-blue-800">Kitchen Notes:</p>
+                  <p className="text-sm text-blue-700">{order.kitchenNotes}</p>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {order.designNotes && (
+            <div className="p-3 bg-purple-50 rounded-lg border border-purple-100">
+              <div className="flex items-start">
+                <div className="p-1 bg-purple-100 rounded mr-2">
+                  <span className="w-4 h-4 text-purple-600 flex items-center justify-center">D</span>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-purple-800">Design Notes:</p>
+                  <p className="text-sm text-purple-700">{order.designNotes}</p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Items Section with improved visuals */}
+        <div className="space-y-4">
+          <h4 className="font-semibold text-gray-700 flex items-center gap-2">
+            <span>Order Items</span>
+            <span className="bg-gray-200 text-gray-700 px-2 py-0.5 rounded-full text-xs">
+              {order.items.reduce((total, item) => total + item.quantity, 0)} items
+            </span>
+          </h4>
+          
+          <div className="divide-y divide-gray-100 rounded-lg border border-gray-200 overflow-hidden">
+            {order.items.map((item, idx) => (
+              <div key={item.id} className="p-3 bg-white hover:bg-gray-50 transition-colors">
+                <div className="flex justify-between items-start gap-4">
+                  {/* Item number circle */}
+                  <div className="flex-shrink-0 w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center text-xs font-bold text-gray-600">
+                    {idx + 1}
+                  </div>
+                  
+                  <div className="flex-1">
+                    <div className="flex justify-between">
+                      <div>
+                        <h4 className="font-medium text-gray-800">{item.name}</h4>
+                        <div className="flex items-center mt-1">
+                          <span className="text-sm font-medium text-gray-700 mr-2">Qty: {item.quantity}</span>
+                          {item.isCustom && (
+                            <span className="px-2 py-0.5 text-xs bg-yellow-100 text-yellow-800 rounded-full">Custom</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Variations displayed as pills */}
+                    {Object.entries(item.variations || {}).length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {Object.entries(item.variations || {}).map(([type, variation]) => (
+                          <span key={type} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                            {variation.name}: {variation.value}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    
+                    {/* Item specific notes */}
                     {item.kitchenNotes && (
-                      <p className="text-sm text-gray-600 mt-2">
-                        Notes: {item.kitchenNotes}
-                      </p>
+                      <div className="mt-2 text-sm text-gray-600 bg-gray-50 p-2 rounded border-l-2 border-blue-400">
+                        <span className="font-medium">Notes:</span> {item.kitchenNotes}
+                      </div>
                     )}
                   </div>
                 </div>
-
-                {/* Design Images */}
+                
+                {/* Design Images with improved gallery */}
                 {item.customImages && item.customImages.length > 0 && (
-                  <div className="mt-3 flex gap-2 overflow-x-auto pb-2">
+                  <div className="mt-3 grid grid-cols-3 gap-2">
                     {item.customImages.map((image, index) => (
                       <div 
                         key={index} 
-                        className="relative min-w-[120px] h-[120px] rounded-lg overflow-hidden border border-gray-200 group cursor-pointer"
+                        className="relative aspect-square rounded-lg overflow-hidden border border-gray-200 group cursor-pointer shadow-sm hover:shadow-md transition-all"
                         onClick={() => handleImageClick(item.customImages || [], index)}
                       >
                         <Image
                           src={image.url}
                           alt={`Design ${index + 1}`}
                           fill
-                          className="object-cover group-hover:opacity-75 transition-opacity"
+                          className="object-cover group-hover:opacity-90 transition-opacity"
                         />
+                        <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-all flex items-center justify-center">
+                          <Maximize2 className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                        </div>
                         {image.comment && (
-                          <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-50 text-white p-1 text-xs">
+                          <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-60 text-white p-1.5 text-xs">
                             {image.comment}
                           </div>
                         )}
@@ -595,76 +714,66 @@ export default function KitchenDisplay() {
                   </div>
                 )}
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
 
-        {/* Notes input for team handoff */}
+        {/* Notes input for team handoff with improved styling */}
         {showNotesInput && (
           <div className="mt-4">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Add notes for handoff</label>
             <textarea
               value={teamNotes}
               onChange={(e) => setTeamNotes(e.target.value)}
-              placeholder="Add notes for the design team..."
-              className="w-full p-2 border rounded-lg"
+              placeholder="Add notes for the next team..."
+              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
               rows={3}
             />
           </div>
         )}
 
-        <div className="bg-gray-50 border-t">
-          {order.status === 'PENDING' && (
-            <button
-              onClick={() => handleOrderAction('process')}
-              className="w-full py-4 px-4 bg-blue-500 hover:bg-blue-600 text-white text-lg font-medium rounded-lg flex items-center justify-center gap-2 transition-colors active:bg-blue-700 touch-manipulation"
-            >
-              <ChefHat className="w-6 h-6" />
-              Accept Order
-            </button>
-          )}
+        {/* Action Buttons Section */}
+        <div className="pt-3 border-t border-gray-200">
           {order.status === 'KITCHEN_QUEUE' && (
             <button
               onClick={() => handleOrderAction('process')}
-              className="w-full py-4 px-4 bg-yellow-500 hover:bg-yellow-600 text-white text-lg font-medium flex items-center justify-center gap-2 transition-colors active:bg-yellow-700 touch-manipulation"
+              className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white text-lg font-medium rounded-lg flex items-center justify-center gap-2 transition-colors shadow-sm hover:shadow active:bg-blue-800"
             >
-              <Bell className="w-6 h-6" />
+              <ChefHat className="w-5 h-5" />
               Start Processing
             </button>
           )}
           {order.status === 'KITCHEN_PROCESSING' && (
             <button
               onClick={() => handleOrderAction('ready')}
-              className="w-full py-4 px-4 bg-green-500 hover:bg-green-600 text-white text-lg font-medium flex items-center justify-center gap-2 transition-colors active:bg-green-700 touch-manipulation"
+              className="w-full py-3 px-4 bg-yellow-500 hover:bg-yellow-600 text-white text-lg font-medium rounded-lg flex items-center justify-center gap-2 transition-colors shadow-sm hover:shadow active:bg-yellow-700"
             >
-              <CheckCircle2 className="w-6 h-6" />
-              Mark Ready
+              <CheckCircle2 className="w-5 h-5" />
+              Mark as Ready
             </button>
           )}
           {order.status === 'KITCHEN_READY' && (
-            <div className="grid grid-cols-1 gap-2 p-2">
+            <div className="grid grid-cols-1 gap-3">
               {order.requiresDesign && !order.designEndTime ? (
                 <>
                   <button
+                    onClick={() => setShowNotesInput(!showNotesInput)}
+                    className="w-full py-3 px-4 bg-gray-100 hover:bg-gray-200 text-gray-800 font-medium rounded-lg flex items-center justify-center gap-2 transition-colors"
+                  >
+                    {showNotesInput ? 'Cancel Notes' : 'Add Handoff Notes'}
+                  </button>
+                  <button
                     onClick={() => handleOrderAction('design')}
-                    className="w-full py-3 px-4 bg-purple-500 hover:bg-purple-600 text-white font-medium rounded-lg flex items-center justify-center gap-2"
+                    className="w-full py-3 px-4 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg flex items-center justify-center gap-2 shadow-sm hover:shadow transition-all"
                   >
                     <Bell className="w-5 h-5" />
-                    Send to Design
+                    {showNotesInput ? 'Save Notes & Send to Design' : 'Send to Design'}
                   </button>
-                  {showNotesInput && (
-                    <button
-                      onClick={() => handleOrderAction('design')}
-                      className="w-full py-3 px-4 bg-green-500 hover:bg-green-600 text-white font-medium rounded-lg flex items-center justify-center gap-2"
-                    >
-                      <CheckCircle2 className="w-5 h-5" />
-                      Confirm & Send
-                    </button>
-                  )}
                 </>
               ) : (
                 <button
                   onClick={() => handleOrderAction('finalCheck')}
-                  className="w-full py-3 px-4 bg-green-500 hover:bg-green-600 text-white font-medium rounded-lg flex items-center justify-center gap-2"
+                  className="w-full py-3 px-4 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg flex items-center justify-center gap-2 shadow-sm hover:shadow transition-all"
                 >
                   <CheckCircle2 className="w-5 h-5" />
                   Send to Final Check
@@ -712,13 +821,13 @@ export default function KitchenDisplay() {
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900"></div>
           </div>
         ) : (
-          <div className="grid grid-cols-4 gap-4">
-            {/* New Orders & Kitchen Queue Column */}
+          <div className="grid grid-cols-3 gap-4">
+            {/* 1. New Order - Kitchen Queue Orders */}
             <div className="bg-gray-50 rounded-xl p-4 overflow-y-auto">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="font-semibold text-lg flex items-center">
                   <div className="w-3 h-3 rounded-full bg-blue-500 mr-2" />
-                  New & Kitchen Queue
+                  New Order
                 </h2>
                 <span className="text-sm text-gray-500">
                   {getOrdersByStatus("PENDING").length + getOrdersByStatus("KITCHEN_QUEUE").length}
@@ -731,7 +840,7 @@ export default function KitchenDisplay() {
               </AnimatePresence>
             </div>
 
-            {/* Processing Column */}
+            {/* 2. Processing - All Kitchen Processing Orders */}
             <div className="bg-gray-50 rounded-xl p-4 overflow-y-auto">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="font-semibold text-lg flex items-center">
@@ -747,7 +856,7 @@ export default function KitchenDisplay() {
               </AnimatePresence>
             </div>
 
-            {/* Ready Column */}
+            {/* 3. Ready - All Kitchen Ready Orders */}
             <div className="bg-gray-50 rounded-xl p-4 overflow-y-auto">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="font-semibold text-lg flex items-center">
@@ -758,22 +867,6 @@ export default function KitchenDisplay() {
               </div>
               <AnimatePresence>
                 {getOrdersByStatus("KITCHEN_READY").map(order => (
-                  <OrderCard key={order.id} order={order} />
-                ))}
-              </AnimatePresence>
-            </div>
-
-            {/* Completed Column */}
-            <div className="bg-gray-50 rounded-xl p-4 overflow-y-auto">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="font-semibold text-lg flex items-center">
-                  <div className="w-3 h-3 rounded-full bg-gray-500 mr-2" />
-                  Completed
-                </h2>
-                <span className="text-sm text-gray-500">{getOrdersByStatus("COMPLETED").length}</span>
-              </div>
-              <AnimatePresence>
-                {getOrdersByStatus("COMPLETED").map(order => (
                   <OrderCard key={order.id} order={order} />
                 ))}
               </AnimatePresence>

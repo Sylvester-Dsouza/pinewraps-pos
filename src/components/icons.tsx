@@ -1,6 +1,6 @@
 import {
   Laptop,
-  QuestionMarkCircled,
+  HelpCircle as QuestionMarkCircled,
   Printer,
   Settings,
   User,
@@ -15,13 +15,22 @@ import {
   X,
   AlertCircle,
   ArrowRight,
+  ArrowLeft,
   CircleAlert,
   CheckCircle,
   ChevronDown,
   ChevronUp,
   HelpCircle,
   Info,
-  Trash
+  Trash,
+  LockKeyhole as LockClosed,
+  UnlockKeyhole as LockOpen,
+  Plus,
+  Minus,
+  Clock,
+  Receipt,
+  PlusCircle,
+  MinusCircle
 } from "lucide-react";
 
 // Re-export icons with consistent naming
@@ -39,6 +48,7 @@ export const CheckIcon = Check;
 export const XIcon = X;
 export const AlertCircleIcon = AlertCircle;
 export const ArrowRightIcon = ArrowRight;
+export const ArrowLeftIcon = ArrowLeft;
 export const CircleAlertIcon = CircleAlert;
 export const CheckCircleIcon = CheckCircle;
 export const ChevronDownIcon = ChevronDown;
@@ -48,3 +58,11 @@ export const InfoIcon = Info;
 export const TrashIcon = Trash;
 export const LaptopIcon = Laptop;
 export const QuestionMarkCircledIcon = QuestionMarkCircled;
+export const LockClosedIcon = LockClosed;
+export const LockOpenIcon = LockOpen;
+export const PlusIcon = Plus;
+export const MinusIcon = Minus;
+export const ClockIcon = Clock;
+export const ReceiptIcon = Receipt;
+export const PlusCircleIcon = PlusCircle;
+export const MinusCircleIcon = MinusCircle;
