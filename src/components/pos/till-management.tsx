@@ -205,17 +205,24 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
 
   // Calculate session summary
   const calculateSessionSummary = () => {
-    if (!currentSession) return { total: 0, payIns: 0, payOuts: 0 };
+    if (!currentSession) return { total: 0, payIns: 0, payOuts: 0, sales: 0 };
     
     let payIns = 0;
     let payOuts = 0;
+    let sales = 0;
     
     if (transactions && transactions.length > 0) {
       transactions.forEach(tx => {
-        if (tx.type === 'ADD') {
-          payIns += parseFloat(tx.amount);
-        } else if (tx.type === 'REMOVE') {
-          payOuts += parseFloat(tx.amount);
+        const amount = parseFloat(tx.amount) || 0;
+        
+        if (tx.type === 'ADD' || tx.type === 'ADD_CASH') {
+          payIns += amount;
+        } else if (tx.type === 'REMOVE' || tx.type === 'REMOVE_CASH') {
+          payOuts += amount;
+        } else if (tx.type === 'SALE') {
+          // Cash sales are incoming cash, so they increase the balance
+          sales += amount;
+          payIns += amount; // Include sales in total pay ins for balance calculation
         }
       });
     }
@@ -223,7 +230,7 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
     const openAmount = parseFloat(currentSession.openingAmount) || 0;
     const total = openAmount + payIns - payOuts;
     
-    return { total, payIns, payOuts, openAmount };
+    return { total, payIns, payOuts, openAmount, sales };
   };
   
   const summary = calculateSessionSummary();
@@ -265,9 +272,14 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
                   <div className="bg-slate-50 dark:bg-slate-800 p-4 rounded-lg min-w-[180px]">
                     <div className="text-sm text-muted-foreground mb-1">Net Transactions</div>
                     <div className="text-lg font-bold truncate">{formatCurrency(summary.payIns - summary.payOuts)}</div>
-                    <div className="text-xs text-muted-foreground mt-1">
-                      <span className="text-green-500">+{formatCurrency(summary.payIns)}</span> / 
-                      <span className="text-red-500">-{formatCurrency(summary.payOuts)}</span>
+                    <div className="text-xs text-muted-foreground mt-1 space-y-1">
+                      <div>
+                        <span className="text-green-500">+{formatCurrency(summary.payIns - summary.sales)}</span> / 
+                        <span className="text-red-500">-{formatCurrency(summary.payOuts)}</span>
+                      </div>
+                      <div>
+                        <span className="text-blue-500">Sales: +{formatCurrency(summary.sales)}</span>
+                      </div>
                     </div>
                   </div>
                   <div className="bg-slate-50 dark:bg-slate-800 p-4 rounded-lg min-w-[180px]">

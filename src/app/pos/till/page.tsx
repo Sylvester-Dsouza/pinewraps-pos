@@ -43,6 +43,8 @@ export default function TillPage() {
 
   const getOperationTypeLabel = (type: string) => {
     switch (type) {
+      case 'OPENING_BALANCE':
+        return <Badge variant="outline" className="bg-green-100">Opening Balance</Badge>;
       case 'OPEN':
         return <Badge variant="outline" className="bg-green-100">Open</Badge>;
       case 'CLOSE':
@@ -51,6 +53,8 @@ export default function TillPage() {
         return <Badge variant="outline" className="bg-blue-100">Add Cash</Badge>;
       case 'TAKE_CASH':
         return <Badge variant="outline" className="bg-yellow-100">Take Cash</Badge>;
+      case 'SALE':
+        return <Badge variant="outline" className="bg-blue-100">Cash Sale</Badge>;
       default:
         return <Badge variant="outline">{type}</Badge>;
     }
@@ -179,12 +183,14 @@ export default function TillPage() {
                                 <Badge variant="outline" className="bg-green-100 text-green-800">Pay In</Badge>
                               ) : transaction.type === 'REMOVE' ? (
                                 <Badge variant="outline" className="bg-red-100 text-red-800">Pay Out</Badge>
+                              ) : transaction.type === 'SALE' ? (
+                                <Badge variant="outline" className="bg-blue-100 text-blue-800">Cash Sale</Badge>
                               ) : (
                                 <Badge variant="outline">{transaction.type}</Badge>
                               )}
                             </TableCell>
-                            <TableCell className={transaction.type === 'ADD' ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
-                              {transaction.type === 'ADD' ? '+' : '-'}{formatCurrency(transaction.amount)}
+                            <TableCell className={transaction.type === 'ADD' || transaction.type === 'SALE' ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
+                              {transaction.type === 'ADD' || transaction.type === 'SALE' ? '+' : '-'}{formatCurrency(transaction.amount)}
                             </TableCell>
                             <TableCell className="max-w-xs truncate">{transaction.notes || '-'}</TableCell>
                           </TableRow>

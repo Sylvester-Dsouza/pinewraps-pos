@@ -5,7 +5,7 @@ import { toast } from '@/lib/toast-utils';
 export interface DrawerOperation {
   id: string;
   amount: number;
-  type: 'ADD' | 'REMOVE';
+  type: 'ADD' | 'REMOVE' | 'SALE';
   notes?: string;
   sessionId: string;
   userId: string;
@@ -329,8 +329,13 @@ export class DrawerService {
         return { transactions: [], totalCount: 0 };
       }
       
+      console.log('Fetching transactions for session:', currentSession.data.id);
+      
       // Get the transactions for the session
       const response = await api.get(`/api/pos/drawer-session/${currentSession.data.id}/operations?limit=${limit}&offset=${offset}`);
+      
+      // Log the response for debugging
+      console.log('Transaction history response:', response.data);
       
       return {
         transactions: response.data.operations || [],
@@ -338,6 +343,10 @@ export class DrawerService {
       };
     } catch (error) {
       console.error('Error getting transaction history:', error);
+      if (error.response) {
+        console.error('Response error data:', error.response.data);
+        console.error('Response status:', error.response.status);
+      }
       return { transactions: [], totalCount: 0 };
     }
   }

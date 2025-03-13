@@ -55,21 +55,38 @@ export async function handleCashDrawerForOrder(
     
     console.log('Opening cash drawer for payment with total cash amount:', totalCashAmount);
     
-    // Open the drawer for the cash transaction
-    const drawerResult = await drawerService.openDrawer();
-    console.log('Cash drawer open result:', drawerResult);
-    
-    // Record the cash sale in the drawer session
-    if (totalCashAmount > 0) {
-      await drawerService.recordCashSale(
-        totalCashAmount, 
-        `Cash payment for order ${orderNumber || 'unknown'}`,
-        orderNumber
-      );
-      console.log('Cash sale recorded in drawer session');
+    try {
+      // First, check if there's an active drawer session
+      const currentSession = await drawerService.getCurrentSession();
+      if (!currentSession || !currentSession.data || currentSession.data.status !== 'OPEN') {
+        console.error('No active drawer session found. Cannot record cash sale.');
+        return false;
+      }
+      
+      // Open the drawer for the cash transaction
+      const drawerResult = await drawerService.openDrawer();
+      console.log('Cash drawer open result:', drawerResult);
+      
+      // Record the cash sale in the drawer session
+      if (totalCashAmount > 0) {
+        const saleResult = await drawerService.recordCashSale(
+          totalCashAmount, 
+          `Cash payment for order ${orderNumber || 'unknown'}`,
+          orderNumber
+        );
+        
+        console.log('Cash sale recorded in drawer session:', saleResult);
+        
+        if (!saleResult) {
+          console.error('Failed to record cash sale in drawer session');
+        }
+      }
+      
+      return true;
+    } catch (drawerError) {
+      console.error('Error in drawer operations:', drawerError);
+      return false;
     }
-    
-    return true;
   } catch (error) {
     console.error('Error handling cash drawer operations:', error);
     // Don't block order completion if drawer fails to open

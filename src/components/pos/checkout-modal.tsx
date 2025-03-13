@@ -233,7 +233,7 @@ export default function CheckoutModal({
         id: nanoid(),
         amount: totalWithDelivery,
         method: currentPaymentMethodState,
-        reference: currentPaymentReferenceState || null,
+        reference: currentPaymentMethodState === POSPaymentMethod.CARD ? currentPaymentReferenceState || null : null,
         status: POSPaymentStatus.FULLY_PAID
       };
       
@@ -245,16 +245,25 @@ export default function CheckoutModal({
         defaultPayment.reference = currentPaymentReferenceState || null;
       } else if (currentPaymentMethodState === POSPaymentMethod.SPLIT) {
         defaultPayment.isSplitPayment = true;
-        // Default to 50/50 split if no specific amounts provided
-        defaultPayment.cashPortion = totalWithDelivery / 2;
-        defaultPayment.cardPortion = totalWithDelivery / 2;
-        defaultPayment.cardReference = currentPaymentReferenceState || null;
+        // Use the actual entered values instead of defaulting to 50/50
+        const cashAmount = parseFloat(splitCashAmount) || 0;
+        const cardAmount = parseFloat(splitCardAmount) || 0;
+        
+        // If both amounts are 0, then use the total amount (backward compatibility)
+        if (cashAmount === 0 && cardAmount === 0) {
+          defaultPayment.cashPortion = totalWithDelivery / 2;
+          defaultPayment.cardPortion = totalWithDelivery / 2;
+        } else {
+          defaultPayment.cashPortion = cashAmount;
+          defaultPayment.cardPortion = cardAmount;
+        }
+        defaultPayment.cardReference = splitCardReference || currentPaymentReferenceState || null;
       } else if (currentPaymentMethodState === POSPaymentMethod.PARTIAL) {
         defaultPayment.isPartialPayment = true;
         // Default to half now, half later
         defaultPayment.amount = totalWithDelivery / 2;
         defaultPayment.remainingAmount = totalWithDelivery / 2;
-        defaultPayment.futurePaymentMethod = POSPaymentMethod.CARD;
+        defaultPayment.futurePaymentMethod = POSPaymentMethod.CARD
       }
       
       payments = [defaultPayment];
@@ -290,9 +299,24 @@ export default function CheckoutModal({
             parseFloat(p.changeAmount as unknown as string || '0');
         } else if (p.method === POSPaymentMethod.SPLIT) {
           paymentData.isSplitPayment = true;
-          paymentData.cashPortion = p.cashPortion || p.amount / 2;
-          paymentData.cardPortion = p.cardPortion || p.amount / 2;
-          paymentData.cardReference = p.cardReference || null;
+          // Use the actual cash and card portions from the payment object
+          // Only use the 50/50 split as a fallback if no values are provided
+          if (p.cashPortion !== undefined && p.cashPortion !== null) {
+            paymentData.cashPortion = p.cashPortion;
+          } else {
+            // Fallback to entered values, but never default to 50/50 split
+            const cashAmount = parseFloat(splitCashAmount) || 0;
+            paymentData.cashPortion = cashAmount;
+          }
+          
+          if (p.cardPortion !== undefined && p.cardPortion !== null) {
+            paymentData.cardPortion = p.cardPortion;
+          } else {
+            // Fallback to entered values, but never default to 50/50 split
+            const cardAmount = parseFloat(splitCardAmount) || 0;
+            paymentData.cardPortion = cardAmount;
+          }
+          paymentData.cardReference = p.cardReference || splitCardReference || null;
         } else if (p.method === POSPaymentMethod.PARTIAL || p.isPartialPayment) {
           paymentData.isPartialPayment = true;
           paymentData.remainingAmount = finalTotal - p.amount;
@@ -1292,6 +1316,14 @@ export default function CheckoutModal({
     if (method === POSPaymentMethod.SPLIT) {
       setIsSplitPaymentState(true);
       setCurrentPaymentMethodState(method);
+      
+      // If split amounts are not already set, initialize with reasonable defaults
+      if (!splitCashAmount && !splitCardAmount) {
+        const total = calculateFinalTotal();
+        // Initialize with the full amount as cash by default
+        setSplitCashAmount(total.toString());
+        setSplitCardAmount('0');
+      }
     } else {
       setIsSplitPaymentState(false);
       setCurrentPaymentMethodState(method);
@@ -1304,7 +1336,47 @@ export default function CheckoutModal({
   };
 
   function handleSplitPayment(event: React.MouseEvent<HTMLButtonElement>): void {
-    throw new Error("Function not implemented.");
+    event.preventDefault();
+    
+    // Parse the cash and card amounts
+    const cashAmount = parseFloat(splitCashAmount) || 0;
+    const cardAmount = parseFloat(splitCardAmount) || 0;
+    
+    // Validate that the total matches the cart total
+    const totalSplitAmount = cashAmount + cardAmount;
+    const expectedTotal = deliveryMethodState === DeliveryMethod.DELIVERY 
+      ? cartTotal + (deliveryDetailsState?.charge || 0) 
+      : cartTotal;
+    
+    // Check if the total split amount matches the expected total
+    if (Math.abs(totalSplitAmount - expectedTotal) > 0.01) {
+      toast.error(`The total split amount (${totalSplitAmount.toFixed(2)}) must match the order total (${expectedTotal.toFixed(2)})`);
+      return;
+    }
+    
+    // Create a split payment
+    const payment: Payment = {
+      id: nanoid(),
+      amount: expectedTotal,
+      method: POSPaymentMethod.SPLIT,
+      reference: null,
+      status: POSPaymentStatus.FULLY_PAID,
+      isSplitPayment: true,
+      cashPortion: cashAmount,
+      cardPortion: cardAmount,
+      cardReference: splitCardReference || null
+    };
+    
+    // Add the payment to the state
+    handleAddPayment(payment);
+    
+    // Reset the split payment form
+    setSplitCashAmount('');
+    setSplitCardAmount('');
+    setSplitCardReference('');
+    
+    // Show success message
+    toast.success('Split payment applied successfully');
   }
 
   // Ensure custom images have IDs
@@ -1372,7 +1444,7 @@ export default function CheckoutModal({
         message: giftDetails.message || '',
         note: giftDetails.note || '',
         cashAmount: giftDetails.cashAmount?.toString() || '0',
-        includeCash: giftDetails.includeCash || false,
+        includeCash: giftDetails.includeCash || false
       });
     }
     
@@ -2284,4 +2356,3 @@ export default function CheckoutModal({
     </Transition.Root>
   );
 }
-
