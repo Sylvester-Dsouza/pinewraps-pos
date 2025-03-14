@@ -94,6 +94,21 @@ export default function DrawerPage() {
     };
   }, []);
 
+  useEffect(() => {
+    // Check drawer connection status every 30 seconds
+    const intervalId = setInterval(() => {
+      if (selectedDrawer) {
+        console.log('Checking drawer connection status...');
+        loadDrawers();
+      }
+    }, 30000); // 30 seconds
+    
+    // Cleanup interval on component unmount
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [selectedDrawer]);
+
   const loadPorts = async () => {
     try {
       setIsLoading(true);
@@ -134,32 +149,28 @@ export default function DrawerPage() {
   };
 
   const loadDrawers = async () => {
+    setIsLoading(true);
     try {
-      // Store the current selected drawer ID before reloading
-      const currentDrawerId = selectedDrawer?.id;
+      const drawers = await hardwareServiceInstance.getCashDrawers();
+      console.log('Loaded drawers:', drawers);
+      setDrawers(drawers);
       
-      const drawersList = await hardwareServiceInstance.listCashDrawers();
-      console.log('Loaded drawers:', drawersList);
-      setDrawers(drawersList);
+      // If there's only one drawer, select it automatically
+      if (drawers.length === 1) {
+        setSelectedDrawer(drawers[0]);
+      }
       
-      // If we had a drawer selected, try to reselect it after reloading
-      if (currentDrawerId) {
-        const updatedDrawer = drawersList.find(d => d.id === currentDrawerId);
-        if (updatedDrawer) {
-          console.log('Reselecting drawer:', updatedDrawer);
-          setSelectedDrawer(updatedDrawer);
-        } else {
-          console.log('Previously selected drawer no longer exists');
-          setSelectedDrawer(null);
-        }
+      // Check if any drawer is connected
+      const connectedDrawer = drawers.find(drawer => drawer.connected);
+      if (connectedDrawer) {
+        console.log('Found connected drawer:', connectedDrawer);
+        setSelectedDrawer(connectedDrawer);
       }
     } catch (error) {
       console.error('Error loading drawers:', error);
-      toast({
-        title: "Error",
-        description: "Failed to load cash drawers",
-        variant: "destructive"
-      });
+      setErrorMessage('Failed to load cash drawers');
+    } finally {
+      setIsLoading(false);
     }
   };
   
@@ -217,22 +228,80 @@ export default function DrawerPage() {
         return;
       }
       
-      const result = await hardwareServiceInstance.openCashDrawer(drawer.id);
+      // First, update the drawer to set it as active and connected
+      const updatedDrawer = await hardwareServiceInstance.updateCashDrawer(drawer.id, {
+        ...drawer,
+        isActive: true,
+        connected: true
+      });
       
-      if (result.success) {
-        toast({
-          title: "Success",
-          description: `Cash drawer ${drawer.name} opened successfully`,
-        });
+      if (updatedDrawer) {
+        console.log('Drawer updated successfully:', updatedDrawer);
+        
+        // Now try to open the drawer to test the connection
+        const result = await hardwareServiceInstance.openCashDrawer(drawer.id);
+        
+        if (result.success) {
+          // Refresh the drawer list to show updated status
+          loadDrawers();
+          
+          toast({
+            title: "Success",
+            description: `Cash drawer ${drawer.name} connected and opened successfully`,
+          });
+        } else {
+          // Even if opening fails, the drawer is still connected
+          // Refresh the drawer list to show updated status
+          loadDrawers();
+          
+          toast({
+            title: "Connected",
+            description: `Cash drawer ${drawer.name} connected successfully, but could not open drawer: ${result.error}`,
+          });
+        }
       } else {
         toast({
           variant: "destructive",
           title: "Connection Failed",
-          description: result.error || "Failed to connect to drawer",
+          description: "Failed to update drawer connection status",
         });
       }
     } catch (error) {
       console.error('Error connecting drawer:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "An unexpected error occurred",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDisconnectDrawer = async (drawer: CashDrawer) => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    
+    try {
+      const result = await hardwareServiceInstance.disconnectDrawer(drawer.id);
+      
+      if (result.success) {
+        // Refresh the drawer list to show updated status
+        loadDrawers();
+        
+        toast({
+          title: "Disconnected",
+          description: `Cash drawer ${drawer.name} disconnected successfully`,
+        });
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Disconnection Failed",
+          description: result.error || "Failed to disconnect drawer",
+        });
+      }
+    } catch (error) {
+      console.error('Error disconnecting drawer:', error);
       toast({
         variant: "destructive",
         title: "Error",
@@ -673,7 +742,8 @@ export default function DrawerPage() {
                       {drawers.length > 0 ? (
                         drawers.map((drawer) => (
                           <SelectItem key={drawer.id} value={drawer.id}>
-                            {drawer.name} ({drawer.connectionType})
+                            {drawer.name} ({drawer.connectionType}) 
+                            {drawer.connected && <span className="ml-2 text-green-500">● Connected</span>}
                           </SelectItem>
                         ))
                       ) : (
@@ -692,6 +762,15 @@ export default function DrawerPage() {
                     className="w-full md:w-auto"
                   >
                     {isLoading ? 'Connecting...' : 'Connect'}
+                  </Button>
+                  
+                  <Button 
+                    onClick={() => handleDisconnectDrawer(selectedDrawer)} 
+                    disabled={isLoading || !selectedDrawer}
+                    variant="destructive"
+                    className="w-full md:w-auto"
+                  >
+                    Disconnect
                   </Button>
                   
                   <Button 
@@ -748,7 +827,7 @@ export default function DrawerPage() {
                     ) : (
                       <>
                         <svg className="mr-1 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                         </svg>
                         Refresh Status
                       </>
@@ -833,6 +912,7 @@ export default function DrawerPage() {
                     <TableHead>Name</TableHead>
                     <TableHead>Type</TableHead>
                     <TableHead>Connection Details</TableHead>
+                    <TableHead>Status</TableHead>
                     <TableHead>Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -862,6 +942,13 @@ export default function DrawerPage() {
                           )}
                         </TableCell>
                         <TableCell>
+                          {drawer.connected ? (
+                            <span className="text-green-600">Connected</span>
+                          ) : (
+                            <span className="text-red-600">Disconnected</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
                           <div className="flex space-x-2">
                             <Button 
                               size="sm" 
@@ -870,13 +957,30 @@ export default function DrawerPage() {
                             >
                               Select
                             </Button>
+                            {drawer.connected ? (
+                              <Button 
+                                size="sm" 
+                                variant="destructive" 
+                                onClick={() => handleDisconnectDrawer(drawer)}
+                              >
+                                Disconnect
+                              </Button>
+                            ) : (
+                              <Button 
+                                size="sm" 
+                                variant="default" 
+                                onClick={() => handleConnectDrawer(drawer)}
+                              >
+                                Connect
+                              </Button>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>
                     ))
                   ) : (
                     <TableRow>
-                      <TableCell colSpan={4} className="text-center">
+                      <TableCell colSpan={5} className="text-center">
                         No cash drawers configured. Add one from the Printer page.
                       </TableCell>
                     </TableRow>

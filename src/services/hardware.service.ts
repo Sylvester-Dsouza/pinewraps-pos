@@ -105,6 +105,10 @@ export class HardwareService {
     }
   }
 
+  async getCashDrawers(): Promise<CashDrawer[]> {
+    return this.listCashDrawers();
+  }
+
   async saveCashDrawer(drawer: Partial<CashDrawer>): Promise<CashDrawer> {
     try {
       console.log('Saving cash drawer:', drawer);
@@ -189,15 +193,55 @@ export class HardwareService {
         // that falls out of the range of 2xx
         console.error('Error response data:', error.response.data);
         errorMessage = error.response.data.error || `Server error: ${error.response.status}`;
-      } else if (error.request) {
-        // The request was made but no response was received
-        errorMessage = 'No response from server. Check your network connection.';
-      } else {
-        // Something happened in setting up the request that triggered an Error
-        errorMessage = error.message || 'Error setting up request';
+      } else if (error.message) {
+        errorMessage = error.message;
       }
       
-      return { success: false, error: errorMessage };
+      return {
+        success: false,
+        error: errorMessage
+      };
+    }
+  }
+
+  async disconnectDrawer(drawerId: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      console.log('Disconnecting drawer:', drawerId);
+      
+      // Update the drawer to set it as disconnected
+      const updatedDrawer = await this.updateCashDrawer(drawerId, {
+        connected: false
+      });
+      
+      if (updatedDrawer) {
+        console.log('Drawer disconnected successfully:', updatedDrawer);
+        this.isConnected = false;
+        this.connectedDrawerId = null;
+        
+        return { 
+          success: true
+        };
+      } else {
+        return {
+          success: false,
+          error: 'Failed to disconnect drawer'
+        };
+      }
+    } catch (error) {
+      console.error('Error disconnecting drawer:', error);
+      let errorMessage = 'Unknown error occurred';
+      
+      if (error.response) {
+        console.error('Error response data:', error.response.data);
+        errorMessage = error.response.data.error || `Server error: ${error.response.status}`;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      return {
+        success: false,
+        error: errorMessage
+      };
     }
   }
 
