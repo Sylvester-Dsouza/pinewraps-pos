@@ -79,7 +79,7 @@ export default function Header({ title }: HeaderProps) {
                 }`}
               >
                 <DollarSign className="w-4 h-4" />
-                Till Management
+                Till
               </Link>
               <Link
                 href="/orders"
@@ -101,7 +101,7 @@ export default function Header({ title }: HeaderProps) {
               >
                 Kitchen Display
               </Link>
-              {/* <Link
+              <Link
                 href="/printer"
                 className={`text-sm font-medium ${
                   pathname === "/printer"
@@ -110,7 +110,17 @@ export default function Header({ title }: HeaderProps) {
                 }`}
               >
                 Printer
-              </Link> */}
+              </Link>
+              <Link
+                href="/drawer"
+                className={`text-sm font-medium ${
+                  pathname === "/drawer"
+                    ? "text-primary"
+                    : "text-muted-foreground hover:text-primary"
+                }`}
+              >
+                Cash Drawer
+              </Link>
               <Link
                 href="/design"
                 className={`text-sm font-medium ${
