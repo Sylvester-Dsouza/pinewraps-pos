@@ -70,27 +70,25 @@ const generateReceiptContent = (order: Order): string => `
       <p style="margin: 2px 0;">${formatLineItem('Phone:', order.customerPhone)}</p>
       ${order.customerEmail ? `<p style="margin: 2px 0;">${formatLineItem('Email:', order.customerEmail)}</p>` : ''}
       <p style="margin: 2px 0;">${formatLineItem('Status:', order.status)}</p>
-      <p style="margin: 2px 0;">${formatLineItem('Payment:', order.paymentMethod)}</p>
       
-      ${order.deliveryMethod ? `
-        <div class="divider"></div>
-        <div style="margin: 10px 0;">
-          <p style="margin: 2px 0; font-weight: bold;">${order.deliveryMethod === 'DELIVERY' ? 'Delivery Details' : 'Pickup Details'}</p>
-          ${order.deliveryMethod === 'DELIVERY' ? `
-            ${order.deliveryDate ? `<p style="margin: 2px 0;">${formatLineItem('Date:', format(new Date(order.deliveryDate), 'dd/MM/yyyy'))}</p>` : ''}
-            ${order.deliveryTimeSlot ? `<p style="margin: 2px 0;">${formatLineItem('Time:', order.deliveryTimeSlot)}</p>` : ''}
-            ${order.streetAddress ? `<p style="margin: 2px 0;">${formatLineItem('Address:', order.streetAddress)}</p>` : ''}
-            ${order.apartment ? `<p style="margin: 2px 0;">${formatLineItem('Apartment:', order.apartment)}</p>` : ''}
-            ${order.city ? `<p style="margin: 2px 0;">${formatLineItem('City:', order.city)}</p>` : ''}
-            ${order.emirate ? `<p style="margin: 2px 0;">${formatLineItem('Emirate:', order.emirate)}</p>` : ''}
-            ${order.deliveryInstructions ? `<p style="margin: 2px 0;">${formatLineItem('Instructions:', order.deliveryInstructions)}</p>` : ''}
-            ${order.deliveryCharge ? `<p style="margin: 2px 0;">${formatLineItem('Delivery Charge:', formatCurrency(order.deliveryCharge))}</p>` : ''}
-          ` : `
-            ${order.pickupDate ? `<p style="margin: 2px 0;">${formatLineItem('Date:', format(new Date(order.pickupDate), 'dd/MM/yyyy'))}</p>` : ''}
-            ${order.pickupTimeSlot ? `<p style="margin: 2px 0;">${formatLineItem('Time:', order.pickupTimeSlot)}</p>` : ''}
-          `}
-        </div>
-      ` : ''}
+      <div class="divider"></div>
+      <div style="margin: 10px 0;">
+        <p style="margin: 2px 0; font-weight: bold;">${order.deliveryMethod === 'DELIVERY' ? 'Delivery Details' : 'Pickup Details'}</p>
+        ${order.deliveryMethod === 'DELIVERY' ? `
+          ${order.deliveryDate ? `<p style="margin: 2px 0;">${formatLineItem('Date:', format(new Date(order.deliveryDate), 'dd/MM/yyyy'))}</p>` : ''}
+          ${order.deliveryTimeSlot ? `<p style="margin: 2px 0;">${formatLineItem('Time:', order.deliveryTimeSlot)}</p>` : ''}
+          ${order.streetAddress ? `<p style="margin: 2px 0;">${formatLineItem('Address:', order.streetAddress)}</p>` : ''}
+          ${order.apartment ? `<p style="margin: 2px 0;">${formatLineItem('Apartment:', order.apartment)}</p>` : ''}
+          ${order.city ? `<p style="margin: 2px 0;">${formatLineItem('City:', order.city)}</p>` : ''}
+          ${order.emirate ? `<p style="margin: 2px 0;">${formatLineItem('Emirate:', order.emirate)}</p>` : ''}
+          ${order.deliveryInstructions ? `<p style="margin: 2px 0;">${formatLineItem('Instructions:', order.deliveryInstructions)}</p>` : ''}
+          ${order.deliveryCharge ? `<p style="margin: 2px 0;">${formatLineItem('Delivery Charge:', formatCurrency(order.deliveryCharge))}</p>` : ''}
+        ` : `
+          ${order.pickupDate ? `<p style="margin: 2px 0;">${formatLineItem('Date:', format(new Date(order.pickupDate), 'dd/MM/yyyy'))}</p>` : ''}
+          ${order.pickupTimeSlot ? `<p style="margin: 2px 0;">${formatLineItem('Time:', order.pickupTimeSlot)}</p>` : ''}
+          ${order.storeLocation ? `<p style="margin: 2px 0;">${formatLineItem('Store:', order.storeLocation)}</p>` : ''}
+        `}
+      </div>
     </div>
     
     <div class="divider"></div>
@@ -137,29 +135,49 @@ const generateReceiptContent = (order: Order): string => `
     <div class="divider"></div>
     
     <div style="margin: 10px 0;">
-      <p style="margin: 2px 0;">${formatLineItem('Subtotal:', formatCurrency(order.totalAmount))}</p>
-      ${order.deliveryMethod === 'DELIVERY' ? `<p style="margin: 2px 0;">${formatLineItem('Delivery:', formatCurrency(order.deliveryCharge || 0))}</p>` : ''}
-      <p style="margin: 2px 0; font-weight: bold;">${formatLineItem('Total:', formatCurrency(order.totalAmount + (order.deliveryCharge || 0)))}</p>
-      <p style="margin: 2px 0;">${formatLineItem('Payment Method:', order.paymentMethod)}</p>
-      <p style="margin: 2px 0;">${formatLineItem('Amount Paid:', formatCurrency(order.paidAmount))}</p>
-      ${order.changeAmount ? `<p style="margin: 2px 0;">${formatLineItem('Change:', formatCurrency(order.changeAmount))}</p>` : ''}
-      ${order.payments && order.payments.length > 0 ? `
-        <div class="divider"></div>
-        <div style="margin: 10px 0;">
-          <p style="margin: 2px 0; font-weight: bold;">Payment Details:</p>
-          ${order.payments.map(payment => `
-            <p style="margin: 2px 0;">${formatLineItem(payment.method, formatCurrency(payment.amount))}</p>
-            ${payment.reference ? `<p style="margin: 2px 0;">${formatLineItem('Reference:', payment.reference)}</p>` : ''}
-            ${payment.metadata && payment.metadata.cashAmount ? `<p style="margin: 2px 0;">${formatLineItem('Cash Amount:', formatCurrency(payment.metadata.cashAmount))}</p>` : ''}
-            ${payment.metadata && payment.metadata.changeAmount ? `<p style="margin: 2px 0;">${formatLineItem('Change Amount:', formatCurrency(payment.metadata.changeAmount))}</p>` : ''}
-          `).join('')}
-        </div>
-      ` : ''}
+      <p style="margin: 2px 0;">${formatLineItem('Subtotal:', formatCurrency(order.subtotal || order.totalAmount))}</p>
+      ${order.deliveryMethod === 'DELIVERY' && order.deliveryCharge ? `<p style="margin: 2px 0;">${formatLineItem('Delivery:', formatCurrency(order.deliveryCharge))}</p>` : ''}
+      ${order.tax ? `<p style="margin: 2px 0;">${formatLineItem('Tax:', formatCurrency(order.tax))}</p>` : ''}
+      ${order.discount ? `<p style="margin: 2px 0;">${formatLineItem('Discount:', formatCurrency(-order.discount))}</p>` : ''}
+      <p style="margin: 2px 0; font-weight: bold;">${formatLineItem('Total:', formatCurrency(order.totalAmount))}</p>
     </div>
     
-    ${order.notes ? `
+    <div class="divider"></div>
+    
+    <div style="margin: 10px 0;">
+      <p style="margin: 2px 0; font-weight: bold;">Payment Information:</p>
+      ${order.payments && order.payments.length > 0 ? `
+        ${order.payments.map(payment => `
+          <p style="margin: 2px 0;">${formatLineItem(payment.method, formatCurrency(payment.amount))}</p>
+          ${payment.status ? `<p style="margin: 2px 0;">${formatLineItem('Status:', payment.status)}</p>` : ''}
+          ${payment.reference ? `<p style="margin: 2px 0;">${formatLineItem('Reference:', payment.reference)}</p>` : ''}
+          ${payment.metadata && payment.metadata.cashAmount ? `<p style="margin: 2px 0;">${formatLineItem('Cash Amount:', formatCurrency(payment.metadata.cashAmount))}</p>` : ''}
+          ${payment.metadata && payment.metadata.changeAmount ? `<p style="margin: 2px 0;">${formatLineItem('Change Amount:', formatCurrency(payment.metadata.changeAmount))}</p>` : ''}
+        `).join('<div style="margin: 5px 0;"></div>')}
+      ` : `
+        <p style="margin: 2px 0;">${formatLineItem('Payment Method:', order.paymentMethod || 'Not specified')}</p>
+        <p style="margin: 2px 0;">${formatLineItem('Amount Paid:', formatCurrency(order.paidAmount || 0))}</p>
+        ${order.changeAmount ? `<p style="margin: 2px 0;">${formatLineItem('Change:', formatCurrency(order.changeAmount))}</p>` : ''}
+      `}
+    </div>
+    
+    ${order.isGift ? `
+      <div class="divider"></div>
+      <div style="margin: 10px 0;">
+        <p style="margin: 2px 0; font-weight: bold;">Gift Information:</p>
+        ${order.giftRecipientName ? `<p style="margin: 2px 0;">${formatLineItem('Recipient:', order.giftRecipientName)}</p>` : ''}
+        ${order.giftRecipientPhone ? `<p style="margin: 2px 0;">${formatLineItem('Recipient Phone:', order.giftRecipientPhone)}</p>` : ''}
+        ${order.giftMessage ? `<p style="margin: 2px 0;">${formatLineItem('Message:', order.giftMessage)}</p>` : ''}
+        ${order.giftCashAmount ? `<p style="margin: 2px 0;">${formatLineItem('Cash Amount:', formatCurrency(order.giftCashAmount))}</p>` : ''}
+      </div>
+    ` : ''}
+    
+    ${order.notes || order.kitchenNotes || order.designNotes ? `
+      <div class="divider"></div>
       <div style="margin: 10px 0;" class="notes">
-        <strong>Order Notes:</strong> ${order.notes}
+        ${order.notes ? `<p style="margin: 2px 0;"><strong>Order Notes:</strong> ${order.notes}</p>` : ''}
+        ${order.kitchenNotes ? `<p style="margin: 2px 0;"><strong>Kitchen Notes:</strong> ${order.kitchenNotes}</p>` : ''}
+        ${order.designNotes ? `<p style="margin: 2px 0;"><strong>Design Notes:</strong> ${order.designNotes}</p>` : ''}
       </div>
     ` : ''}
     

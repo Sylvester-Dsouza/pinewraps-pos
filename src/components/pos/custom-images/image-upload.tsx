@@ -93,7 +93,7 @@ export default function ImageUpload({ onChange, value }: ImageUploadProps) {
           <div key={image.id} className="relative">
             <div className="aspect-square relative rounded-lg overflow-hidden bg-gray-100">
               <Image
-                src={image.previewUrl || image.url || ''}
+                src={image.previewUrl || image.url || null}
                 alt={`Custom image ${index + 1}`}
                 fill
                 className="object-cover"

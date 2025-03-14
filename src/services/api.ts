@@ -630,37 +630,128 @@ export const apiMethods = {
     
     createOrder: async (orderData: POSOrderData & { items: Array<POSOrderItemData & { customImages?: CustomImage[] }> }) => {
       try {
-        // Check if any items have custom images with files
-        const hasCustomImages = orderData.items.some(item => 
-          item.customImages?.some(img => 'file' in img && img.file instanceof File)
-        );
+        // Ensure all custom image URLs are properly set
+        const processedOrderData = {
+          ...orderData,
+          items: orderData.items.map(item => {
+            if (item.customImages && item.customImages.length > 0) {
+              // Log each item's custom images before processing
+              console.log(`Processing item ${item.id} with ${item.customImages.length} custom images:`, 
+                item.customImages.map(img => ({ id: img.id, url: img.url }))
+              );
+              
+              return {
+                ...item,
+                customImages: item.customImages.map(img => {
+                  // Ensure each image has a valid URL
+                  const processedImage = {
+                    id: img.id || nanoid(),
+                    url: img.url || '',
+                    type: img.type || 'reference',
+                    notes: img.notes || ''
+                  };
+                  
+                  // Log each processed image
+                  console.log(`Processed image ${processedImage.id} with URL: ${processedImage.url}`);
+                  
+                  return processedImage;
+                })
+              };
+            }
+            return item;
+          })
+        };
 
-        let response;
-        if (hasCustomImages) {
-          // Create FormData for multipart request
-          const formData = new FormData();
-          formData.append('orderData', JSON.stringify(orderData));
+        // Create FormData for multipart request
+        const formData = new FormData();
+        
+        // First, ensure all items have their customImages URLs properly set
+        const finalOrderData = {
+          ...processedOrderData,
+          items: processedOrderData.items.map(item => {
+            if (item.customImages && item.customImages.length > 0) {
+              return {
+                ...item,
+                customImages: item.customImages.map(img => ({
+                  ...img,
+                  id: img.id || nanoid(),
+                  url: img.url || '', // Ensure URL is never undefined
+                  type: img.type || 'reference',
+                  notes: img.notes || ''
+                }))
+              };
+            }
+            return item;
+          })
+        };
+        
+        // Log the full processed order data with image URLs
+        console.log('FINAL ORDER DATA WITH IMAGE URLS:', JSON.stringify({
+          orderNumber: finalOrderData.orderNumber,
+          itemCount: finalOrderData.items.length,
+          itemsWithImages: finalOrderData.items
+            .filter(item => item.customImages && item.customImages.length > 0)
+            .map(item => ({
+              id: item.id,
+              customImages: item.customImages.map(img => ({
+                id: img.id,
+                url: img.url
+              }))
+            }))
+        }));
+        
+        // Stringify the order data with verified URLs
+        const orderDataJson = JSON.stringify(finalOrderData);
+        console.log('Order data being sent in FormData:', orderDataJson.substring(0, 200) + '...');
+        
+        // Add the order data to the FormData
+        formData.append('orderData', orderDataJson);
 
-          // Append each file to FormData
-          orderData.items.forEach((item, itemIndex) => {
-            item.customImages?.forEach((image, imageIndex) => {
+        // Append each file to FormData
+        finalOrderData.items.forEach((item, itemIndex) => {
+          if (item.customImages && item.customImages.length > 0) {
+            console.log(`Processing ${item.customImages.length} custom images for item ${itemIndex} in FormData`);
+            
+            // Add a special field to indicate this item has custom images
+            formData.append(`item_${itemIndex}_has_custom_images`, 'true');
+            
+            // Add the total number of images for this item
+            formData.append(`item_${itemIndex}_image_count`, item.customImages.length.toString());
+            
+            item.customImages.forEach((image, imageIndex) => {
+              // Log each image URL to verify it's being included
+              console.log(`Image ${imageIndex} URL for item ${itemIndex}: ${image.url}`);
+              
+              // Always include the image URL, regardless of whether there's a file
+              formData.append(`item_${itemIndex}_url_${imageIndex}`, image.url || '');
+              
+              // Include image ID
+              formData.append(`item_${itemIndex}_id_${imageIndex}`, image.id || nanoid());
+              
+              // Include image type
+              formData.append(`item_${itemIndex}_type_${imageIndex}`, image.type || 'reference');
+              
+              // Include image notes
+              formData.append(`item_${itemIndex}_notes_${imageIndex}`, image.notes || '');
+              
+              // If there's a file, include it too
               if ('file' in image && image.file instanceof File) {
                 formData.append(`item_${itemIndex}_image_${imageIndex}`, image.file);
                 formData.append(`item_${itemIndex}_comment_${imageIndex}`, image.comment || '');
+                console.log(`Appended file for item ${itemIndex}, image ${imageIndex}`);
+              } else {
+                console.log(`No file to append for item ${itemIndex}, image ${imageIndex}, using URL only`);
               }
             });
-          });
+          }
+        });
 
-          // Send multipart request
-          response = await api.post<any>('/api/pos/orders', formData, {
-            headers: {
-              'Content-Type': 'multipart/form-data'
-            }
-          });
-        } else {
-          // Regular JSON request if no files
-          response = await api.post<any>('/api/pos/orders', orderData);
-        }
+        // Send multipart request
+        const response = await api.post<any>('/api/pos/orders', formData, {
+          headers: {
+            'Content-Type': 'multipart/form-data'
+          }
+        });
 
         // Process the response
         return {
@@ -887,8 +978,26 @@ export const apiMethods = {
       }
     },
     updateOrderPayment: async (orderId: string, payment: OrderPayment): Promise<APIResponse<Order>> => {
-      return api.post(`/api/pos/orders/${orderId}/payments`, payment);
+      try {
+        const response = await api.patch<APIResponse<Order>>(`/api/pos/orders/${orderId}/payment`, payment);
+        return response.data;
+      } catch (error) {
+        handleApiError(error);
+        throw error;
+      }
     },
+    
+    updatePickupDetails: async (orderId: string, pickupDetails: { pickupDate: string, pickupTimeSlot: string }): Promise<APIResponse<Order>> => {
+      try {
+        console.log('API call: updatePickupDetails', { orderId, ...pickupDetails });
+        const response = await api.patch<APIResponse<Order>>(`/api/pos/orders/${orderId}/pickup-details`, pickupDetails);
+        return response.data;
+      } catch (error) {
+        handleApiError(error);
+        throw error;
+      }
+    },
+    
     addPartialPayment: async (orderId: string, payment: OrderPayment): Promise<APIResponse<Order>> => {
       return api.post(`/api/pos/orders/${orderId}/partial-payment`, payment);
     },

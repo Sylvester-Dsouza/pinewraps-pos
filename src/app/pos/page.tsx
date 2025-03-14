@@ -105,9 +105,6 @@ export default function POSPage() {
                 notes: item.notes || '',
                 customImages,
                 totalPrice: parseFloat(String(item.totalPrice)) || 0,
-                name: item.product?.name || 'Unknown Product',
-                unitPrice: parseFloat(String(item.unitPrice)) || 0,
-                price: parseFloat(String(item.price)) || 0
               };
             }).filter(item => item !== null);
             
@@ -317,13 +314,14 @@ export default function POSPage() {
 
   // Calculate total price for variations
   const calculateTotalPrice = (basePrice: number, quantity: number, variations: Array<{ priceAdjustment?: number; price?: number }>) => {
-    const variationTotal = variations.reduce((total, variation) => {
-      // Use priceAdjustment if available, otherwise try to use price, or default to 0
-      const adjustmentValue = variation.priceAdjustment !== undefined ? variation.priceAdjustment : 
-                             (variation.price !== undefined ? variation.price : 0);
-      return total + adjustmentValue;
-    }, 0);
-    return (basePrice + variationTotal) * quantity;
+    // Sum up all price adjustments from variations
+    const variationPriceAdjustments = variations.reduce(
+      (total, variation) => total + (variation.priceAdjustment || 0), 
+      0
+    );
+    
+    // Calculate total price with variations
+    return (basePrice + variationPriceAdjustments) * quantity;
   };
 
   // Handle adding product to cart from product details modal
@@ -338,18 +336,16 @@ export default function POSPage() {
       router.push('/pos/till');
       return;
     }
-    // Only allow quick add for products that don't need customization
-    if (product.allowCustomImages || product.allowCustomPrice || (product.options && product.options.length > 0)) {
+    
+    // If product has variants or options, show the product details modal
+    if (product.options && product.options.length > 0) {
       setSelectedProduct(product);
       return;
     }
-
-    // Calculate unit price (same as in handleAddToCart)
-    const unitPrice = product.basePrice;
     
-    // Calculate total price (price * quantity)
-    const totalPrice = unitPrice * 1; // Quantity is 1 for quick add
-
+    // Otherwise, add directly to cart with no variations
+    const totalPrice = product.basePrice;
+    
     const cartItem: CartItem = {
       id: nanoid(),
       product: {
@@ -396,10 +392,6 @@ export default function POSPage() {
     // Multiply by quantity
     totalPrice *= quantity;
 
-    // Calculate unit price
-    const unitPrice = customPrice !== null ? customPrice : 
-      (product.basePrice + selectedVariations.reduce((sum, variation) => sum + (variation.priceAdjustment || 0), 0));
-    
     // Create cart item
     const cartItem: CartItem = {
       id: nanoid(),
@@ -411,10 +403,7 @@ export default function POSPage() {
       selectedVariations,
       totalPrice,
       notes,
-      customImages,
-      name: product.name,
-      unitPrice,
-      price: totalPrice
+      customImages
     };
     
     setCart(prevCart => {
@@ -683,9 +672,18 @@ export default function POSPage() {
                       <div className="flex justify-between items-start">
                         <div className="flex-1">
                           <div className="font-medium">{item.product.name}</div>
+                          <div className="text-sm text-gray-600 mt-1">
+                            AED {(item.totalPrice / item.quantity).toFixed(2)} × {item.quantity}
+                          </div>
                           {item.selectedVariations.length > 0 && (
-                            <div className="text-sm text-gray-600">
-                              {item.selectedVariations.map(v => v.value).join(', ')}
+                            <div className="mt-2 bg-blue-50 p-2 rounded-md">
+                              <p className="text-xs font-medium text-blue-700 mb-1">Options:</p>
+                              {item.selectedVariations.map((v, index) => (
+                                <div key={index} className="text-xs text-blue-700 flex justify-between">
+                                  <span>{v.type}: {v.value}</span>
+                                  {v.priceAdjustment > 0 && <span>+AED {v.priceAdjustment.toFixed(2)}</span>}
+                                </div>
+                              ))}
                             </div>
                           )}
                           {item.notes && (

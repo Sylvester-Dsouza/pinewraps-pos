@@ -16,8 +16,8 @@ interface Payment {
   cardPortion?: number;
   remainingAmount?: number;
   futurePaymentMethod?: POSPaymentMethod;
-  cashAmount?: number;
-  changeAmount?: number;
+  cashAmount?: number | string;
+  changeAmount?: number | string;
 }
 
 /**
@@ -47,7 +47,20 @@ export async function handleCashDrawerForOrder(
     
     for (const payment of payments) {
       if (payment.method === POSPaymentMethod.CASH) {
-        totalCashAmount += payment.amount;
+        // If cashAmount is provided, use it (converting to number if it's a string)
+        if (payment.cashAmount !== undefined) {
+          const cashAmount = typeof payment.cashAmount === 'string' 
+            ? parseFloat(payment.cashAmount) 
+            : payment.cashAmount;
+          
+          if (!isNaN(cashAmount)) {
+            totalCashAmount += cashAmount;
+          } else {
+            totalCashAmount += payment.amount;
+          }
+        } else {
+          totalCashAmount += payment.amount;
+        }
       } else if (payment.isSplitPayment && payment.cashPortion) {
         totalCashAmount += payment.cashPortion;
       }

@@ -19,6 +19,7 @@ import { useRouter } from 'next/navigation';
 import crypto from 'crypto';
 import { drawerService } from '@/services/drawer.service';
 import { handleCashDrawerForOrder } from '@/utils/cash-drawer-helper';
+import { uploadCustomImages } from '@/utils/firebase-storage';
 
 interface CheckoutModalProps {
   isOpen: boolean;
@@ -158,8 +159,8 @@ export default function CheckoutModal({
       // If multiple payment methods are used
       const methods = new Set(paymentsState.map(p => p.method));
       if (methods.size > 1) {
-        // Multiple different payment methods used
-        return 'MULTIPLE';
+        // Multiple different payment methods used - use SPLIT instead of 'MULTIPLE'
+        return POSPaymentMethod.SPLIT;
       }
       
       // Return the payment method of the first payment
@@ -176,19 +177,26 @@ export default function CheckoutModal({
   };
 
   // Prepare order data for API
-  const preparePOSOrderData = useCallback(() => {
+  const preparePOSOrderData = useCallback((processedCart = cart) => {
     const sanitizedCustomerDetails = sanitizeCustomerDetails();
     const totalWithDelivery = deliveryMethodState === DeliveryMethod.DELIVERY ? cartTotal + (deliveryDetailsState?.charge || 0) : cartTotal;
 
     // Create order items from cart
-    const orderItems = cart.map(item => {
+    const orderItems = processedCart.map(item => {
+      // Calculate unit price including variations
+      const variationPriceAdjustments = (item.selectedVariations || []).reduce(
+        (total, variation) => total + (variation.priceAdjustment || 0), 
+        0
+      );
+      const unitPrice = item.product.basePrice + variationPriceAdjustments;
+      
       const itemData: POSOrderItemData = {
         id: nanoid(),
         productId: item.product.id,
-        name: item.product.name,
+        productName: item.product.name,
         quantity: item.quantity,
-        unitPrice: item.product.basePrice,
-        totalPrice: item.product.basePrice * item.quantity,
+        unitPrice: unitPrice,
+        totalPrice: unitPrice * item.quantity,
         sku: item.product.sku || '',
         requiresKitchen: item.product.requiresKitchen || false,
         requiresDesign: item.product.requiresDesign || false,
@@ -196,26 +204,40 @@ export default function CheckoutModal({
           id: nanoid(),
           type: v.type,
           value: v.value,
-          priceAdjustment: v.price || 0
+          priceAdjustment: v.priceAdjustment || 0
         }))
       };
 
       // Add custom images if available
       if (item.customImages && item.customImages.length > 0) {
-        itemData.customImages = item.customImages.map(img => ({
-          id: img.id || nanoid(),
-          url: img.url,
-          type: img.type || 'reference',
-          notes: img.notes || ''
-        }));
+        // Create a new array of custom images with proper URL handling
+        itemData.customImages = item.customImages.map(img => {
+          // Ensure we have a valid URL
+          const imageUrl = img.url || '';
+          
+          // Log each image URL to verify it's being included
+          console.log(`Image URL for item ${itemData.id}: ${imageUrl}`);
+          
+          return {
+            id: img.id || nanoid(),
+            url: imageUrl,
+            type: img.type || 'reference',
+            notes: img.notes || ''
+          };
+        });
+        
+        // Log custom images being added to order
+        console.log(`Adding ${itemData.customImages.length} custom images to item ${itemData.id}:`, 
+          JSON.stringify(itemData.customImages.map(img => ({ id: img.id, url: img.url })))
+        );
       }
 
       return itemData;
     });
 
     // Let the backend handle routing based on product categories
-    const hasKitchenProducts = cart.some(item => item.product.requiresKitchen);
-    const hasDesignProducts = cart.some(item => item.product.requiresDesign);
+    const hasKitchenProducts = processedCart.some(item => item.product.requiresKitchen);
+    const hasDesignProducts = processedCart.some(item => item.product.requiresDesign);
     const requiresKitchen = hasKitchenProducts;
     const requiresDesign = hasDesignProducts;
     const requiresSequentialProcessing = hasKitchenProducts && hasDesignProducts;
@@ -404,7 +426,6 @@ export default function CheckoutModal({
     pickupDetailsState,
     giftDetailsState,
     paymentsState,
-    cart,
     cartTotal,
     currentPaymentMethodState,
     currentPaymentReferenceState
@@ -660,13 +681,81 @@ export default function CheckoutModal({
         }
       }
       
+      // Process custom images for each cart item
+      const processedCart = await Promise.all(
+        cart.map(async (item) => {
+          if (item.customImages && item.customImages.length > 0) {
+            try {
+              // Create a temporary order ID for storage path
+              const tempOrderId = nanoid();
+              
+              console.log(`Processing ${item.customImages.length} custom images for item ${item.id}`);
+              
+              // Add timeout to prevent hanging on image upload
+              const uploadPromise = uploadCustomImages(item.customImages, tempOrderId);
+              const timeoutPromise = new Promise((_, reject) => {
+                setTimeout(() => reject(new Error('Image upload timed out')), 10000);
+              });
+              
+              // Race between upload and timeout
+              const uploadedImages = await Promise.race([uploadPromise, timeoutPromise]) as CustomImage[];
+              
+              // Log the uploaded images
+              console.log('Uploaded images for item:', item.id, uploadedImages.map(img => ({ id: img.id, url: img.url })));
+              
+              // Return updated cart item with uploaded image URLs
+              return {
+                ...item,
+                customImages: uploadedImages.map(img => ({
+                  ...img,
+                  url: img.url || '' // Ensure URL is never undefined
+                }))
+              };
+            } catch (error) {
+              console.error('Error uploading images:', error);
+              // Continue with order even if image upload fails
+              return {
+                ...item,
+                customImages: item.customImages.map(img => ({
+                  ...img,
+                  url: img.url || '' // Ensure URL is never undefined
+                }))
+              };
+            }
+          }
+          return item;
+        })
+      );
+
+      // Update cart with processed images
+      setCart(processedCart);
+
       // Validate order details
       validateOrderDetails();
 
-      // Prepare order data
-      const orderData = preparePOSOrderData();
+      // Prepare order data with processed cart
+      const orderData = preparePOSOrderData(processedCart);
 
-      console.log('Sending order data:', orderData);
+      console.log('Sending order data with processed images:', orderData);
+
+      // Log detailed order data with custom images
+      console.log('Sending order data with processed images:', JSON.stringify(
+        orderData.items
+          .filter(item => item.customImages && item.customImages.length > 0)
+          .map(item => ({
+            id: item.id,
+            customImages: item.customImages
+          }))
+      ));
+
+      // Log the final order data to verify custom image URLs are included
+      console.log('Final order data being sent to API:', {
+        items: orderData.items.map(item => ({
+          id: item.id,
+          name: item.name,
+          customImages: item.customImages?.map(img => ({ id: img.id, url: img.url }))
+        }))
+      });
 
       // Create order
       const response = await apiMethods.pos.createOrder(orderData);
@@ -1960,31 +2049,36 @@ export default function CheckoutModal({
                                     <div className="flex-1">
                                       <p className="text-lg font-medium">{item.product?.name || 'Unknown Product'}</p>
                                       <p className="text-base text-gray-500 mt-2">
-                                        Quantity: {item.quantity || 0}
+                                        AED {((item.totalPrice || 0) / (item.quantity || 1)).toFixed(2)} × {item.quantity || 0}
                                       </p>
-                                      {selectedVariations.length > 0 && selectedVariations.map((variation, i) => {
-                                          // Ensure variation has the correct structure
-                                          const type = typeof variation === 'object' && variation !== null 
-                                            ? (variation.type || variation.id || '').toString()
-                                            : '';
-                                          const value = typeof variation === 'object' && variation !== null 
-                                            ? (variation.value || variation.id || '').toString()
-                                            : '';
-                                          // Handle price property for variations
-                                          const priceAdjustment = typeof variation === 'object' && variation !== null 
-                                            ? Number(variation.price || 0)
-                                            : 0;
-                                          
-                                          return (
-                                            <p
-                                              key={`${item.id}-var-${i}`}
-                                              className="text-base text-gray-500"
-                                            >
-                                              {type}: {value}
-                                              {priceAdjustment > 0 && ` (+AED ${priceAdjustment.toFixed(2)})`}
-                                            </p>
-                                          );
-                                        })}
+                                      {selectedVariations.length > 0 && (
+                                        <div className="mt-2 bg-blue-50 p-2 rounded-md">
+                                          <p className="text-sm font-medium text-blue-700 mb-1">Selected Options:</p>
+                                          {selectedVariations.map((variation, i) => {
+                                            // Ensure variation has the correct structure
+                                            const type = typeof variation === 'object' && variation !== null 
+                                              ? (variation.type || variation.id || '').toString()
+                                              : '';
+                                            const value = typeof variation === 'object' && variation !== null 
+                                              ? (variation.value || variation.id || '').toString()
+                                              : '';
+                                            // Handle price property for variations
+                                            const priceAdjustment = typeof variation === 'object' && variation !== null 
+                                              ? Number(variation.priceAdjustment || variation.price || 0)
+                                              : 0;
+                                            
+                                            return (
+                                              <p
+                                                key={`${item.id}-var-${i}`}
+                                                className="text-sm text-blue-700 flex justify-between"
+                                              >
+                                                <span>{type}: {value}</span>
+                                                {priceAdjustment > 0 && <span>+AED {priceAdjustment.toFixed(2)}</span>}
+                                              </p>
+                                            );
+                                          })}
+                                        </div>
+                                      )}
                                       {item.notes && (
                                         <p className="text-sm text-gray-600 mt-2">
                                           Notes: {item.notes}
@@ -2339,7 +2433,7 @@ export default function CheckoutModal({
                                 disabled={isSubmitting || isParkingOrder}
                                 className={`flex-1 inline-flex justify-center rounded-lg border-2 border-black px-6 py-4 bg-white text-lg font-medium text-black hover:bg-gray-50 disabled:bg-gray-100 disabled:border-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed transition-colors`}
                               >
-                                {isParkingOrder ? "Processing..." : "Park Order"}
+                                {isParkingOrder ? "Processing..." : "Hold Order"}
                               </button>
                             </div>
                           </div>

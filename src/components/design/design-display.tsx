@@ -65,6 +65,11 @@ interface DesignOrder {
     returnReason?: string;
     returnedAt?: string;
   };
+  deliveryMethod?: string;
+  pickupDate?: string;
+  pickupTimeSlot?: string;
+  deliveryDate?: string;
+  deliveryTimeSlot?: string;
 }
 
 interface CustomSlide {
@@ -399,7 +404,55 @@ export default function DesignDisplay() {
   const getOrdersByStatus = (status: DesignOrderStatus) => {
     return orders
       .filter(order => order.status === status)
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      .sort((a, b) => {
+        // Get the relevant date for each order (pickup or delivery)
+        const getOrderDate = (order: DesignOrder) => {
+          let dateStr = '';
+          let timeStr = '';
+          
+          // Determine which date and time to use based on delivery method
+          if (order.deliveryMethod === 'PICKUP' && order.pickupDate) {
+            dateStr = order.pickupDate;
+            timeStr = order.pickupTimeSlot || '';
+          } else if (order.deliveryMethod === 'DELIVERY' && order.deliveryDate) {
+            dateStr = order.deliveryDate;
+            timeStr = order.deliveryTimeSlot || '';
+          } else {
+            // If no pickup or delivery date, use created date
+            return new Date(order.createdAt);
+          }
+          
+          // Create a date object from the date string
+          const date = new Date(dateStr);
+          
+          // Extract hour from time slot if available
+          if (timeStr) {
+            const match = timeStr.match(/(\d+):(\d+)\s*(AM|PM)/i);
+            if (match) {
+              let hour = parseInt(match[1]);
+              const minute = parseInt(match[2]);
+              
+              // Convert to 24-hour format
+              if (match[3].toUpperCase() === 'PM' && hour < 12) {
+                hour += 12;
+              } else if (match[3].toUpperCase() === 'AM' && hour === 12) {
+                hour = 0;
+              }
+              
+              date.setHours(hour, minute, 0, 0);
+            }
+          }
+          
+          return date;
+        };
+        
+        // Get dates for comparison
+        const dateA = getOrderDate(a);
+        const dateB = getOrderDate(b);
+        
+        // Simple chronological sort - earlier dates first
+        return dateA.getTime() - dateB.getTime();
+      });
   };
 
   if (loading) {
@@ -461,7 +514,7 @@ export default function DesignDisplay() {
 
     const allImages = order.items.flatMap(item => 
       item.designImages?.map(img => ({
-        src: img.url || img.imageUrl || '',
+        src: img.url || img.imageUrl || null,
         comment: img.comment
       })) || []
     );
@@ -527,6 +580,35 @@ export default function DesignDisplay() {
                       </p>
                       <p className="text-sm font-medium text-purple-600">
                         Started {formatDistanceToNow(new Date(order.designStartTime), { addSuffix: true })}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              {/* Delivery/Pickup Time - Prominent display with countdown */}
+              {order.deliveryMethod && (
+                <div className="mt-3 py-2 px-3 rounded-lg bg-gray-50 border border-gray-100">
+                  <div className="flex items-center">
+                    <div className="mr-3">
+                      <Clock className={`w-5 h-5 ${order.deliveryMethod === 'PICKUP' ? 'text-blue-500' : 'text-green-500'}`} />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-gray-700">
+                        {order.deliveryMethod === 'PICKUP' ? 'Pickup' : 'Delivery'} Time
+                      </p>
+                      <p className="text-sm font-bold">
+                        {order.deliveryMethod === 'PICKUP' ? (
+                          <span className="text-blue-600">
+                            {order.pickupDate && format(new Date(order.pickupDate), 'EEE, MMM d')}
+                            {order.pickupTimeSlot && ` at ${order.pickupTimeSlot}`}
+                          </span>
+                        ) : (
+                          <span className="text-green-600">
+                            {order.deliveryDate && format(new Date(order.deliveryDate), 'EEE, MMM d')}
+                            {order.deliveryTimeSlot && ` at ${order.deliveryTimeSlot}`}
+                          </span>
+                        )}
                       </p>
                     </div>
                   </div>
@@ -656,7 +738,7 @@ export default function DesignDisplay() {
                           className="relative aspect-square rounded-lg overflow-hidden border border-gray-200 group cursor-pointer shadow-sm hover:shadow-md transition-all"
                           onClick={() => {
                             const slides = item.designImages?.map(img => ({
-                              src: img.url || img.imageUrl || '',
+                              src: img.url || img.imageUrl || null,
                               comment: img.comment
                             })) || [];
                             setCurrentImages(slides);
@@ -665,7 +747,7 @@ export default function DesignDisplay() {
                           }}
                         >
                           <Image
-                            src={image.url || image.imageUrl || ''}
+                            src={image.url || image.imageUrl || null}
                             alt={`Design ${index + 1}`}
                             fill
                             className="object-cover group-hover:opacity-90 transition-opacity"

@@ -85,6 +85,13 @@ export interface OrderPayment {
   isPartialPayment?: boolean;
   remainingAmount?: number;
   futurePaymentMethod?: POSPaymentMethod;
+
+  // Payment metadata
+  metadata?: {
+    source?: string;
+    cashAmount?: string;
+    [key: string]: any;
+  };
 }
 
 export interface POSOrderItemData {

@@ -232,7 +232,55 @@ export default function FinalCheckDisplay() {
   const getOrdersByStatus = (status: FinalCheckOrderStatus) => {
     return orders
       .filter(order => order.status === status)
-      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      .sort((a, b) => {
+        // Get the relevant date for each order (pickup or delivery)
+        const getOrderDate = (order: FinalCheckOrder) => {
+          let dateStr = '';
+          let timeStr = '';
+          
+          // Determine which date and time to use based on delivery method
+          if (order.deliveryMethod === 'PICKUP' && order.pickupDate) {
+            dateStr = order.pickupDate;
+            timeStr = order.pickupTimeSlot || '';
+          } else if (order.deliveryMethod === 'DELIVERY' && order.deliveryDate) {
+            dateStr = order.deliveryDate;
+            timeStr = order.deliveryTimeSlot || '';
+          } else {
+            // If no pickup or delivery date, use created date
+            return new Date(order.createdAt);
+          }
+          
+          // Create a date object from the date string
+          const date = new Date(dateStr);
+          
+          // Extract hour from time slot if available
+          if (timeStr) {
+            const match = timeStr.match(/(\d+):(\d+)\s*(AM|PM)/i);
+            if (match) {
+              let hour = parseInt(match[1]);
+              const minute = parseInt(match[2]);
+              
+              // Convert to 24-hour format
+              if (match[3].toUpperCase() === 'PM' && hour < 12) {
+                hour += 12;
+              } else if (match[3].toUpperCase() === 'AM' && hour === 12) {
+                hour = 0;
+              }
+              
+              date.setHours(hour, minute, 0, 0);
+            }
+          }
+          
+          return date;
+        };
+        
+        // Get dates for comparison
+        const dateA = getOrderDate(a);
+        const dateB = getOrderDate(b);
+        
+        // Simple chronological sort - earlier dates first
+        return dateA.getTime() - dateB.getTime();
+      });
   };
 
   const fetchOrders = async () => {

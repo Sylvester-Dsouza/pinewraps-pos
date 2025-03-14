@@ -200,16 +200,23 @@ export default function ProductDetailsModal({
       const optionDef = product.options?.find(o => o.id === option.optionId);
       const valueDef = optionDef?.values.find(v => v.id === option.valueId);
       
+      // Check if this value has a price adjustment
+      const priceAdjustment = valueDef?.priceAdjustment || 0;
+      
       return {
         id: option.optionId,
         type: optionDef?.name || '',
         value: valueDef?.value || '',
-        priceAdjustment: 0
+        priceAdjustment: priceAdjustment
       };
     });
 
     onAddToOrder({
-      product,
+      product: {
+        ...product,
+        // If a variant is selected, update the base price to match the variant price
+        basePrice: selectedVariant ? selectedVariant.price : product.basePrice
+      },
       quantity,
       selectedVariations: variations,
       notes,

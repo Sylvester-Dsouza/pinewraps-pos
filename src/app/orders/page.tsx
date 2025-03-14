@@ -16,6 +16,7 @@ import { invoiceService } from '@/services/invoice.service';
 import { Order, OrderItem, OrderPayment, POSPaymentMethod, POSPaymentStatus } from '@/types/order';
 import { getPaymentMethodDisplay } from '@/utils/payment-utils';
 import RemainingPaymentModal from '@/components/pos/RemainingPaymentModal';
+import UpdatePickupDetailsModal from '@/components/pos/UpdatePickupDetailsModal';
 
 const statusColors = {
   PENDING: { bg: 'bg-yellow-100', text: 'text-yellow-800', icon: Clock },
@@ -67,6 +68,7 @@ const OrdersPage = () => {
   const [downloadingInvoices, setDownloadingInvoices] = useState<Record<string, boolean>>({});
   const [showCancelConfirm, setShowCancelConfirm] = useState<string | null>(null);
   const [selectedOrderForPayment, setSelectedOrderForPayment] = useState<Order | null>(null);
+  const [selectedOrderForPickupUpdate, setSelectedOrderForPickupUpdate] = useState<Order | null>(null);
 
   // Check authentication status
   useEffect(() => {
@@ -338,6 +340,11 @@ const OrdersPage = () => {
     setSelectedOrderForPayment(null);
   };
 
+  const handlePickupDetailsUpdated = async () => {
+    await fetchOrders();
+    setSelectedOrderForPickupUpdate(null);
+  };
+
   if (!isAuthenticated) {
     return <div className="min-h-screen bg-gray-50 flex items-center justify-center">
       <div className="text-center">
@@ -500,6 +507,16 @@ const OrdersPage = () => {
                               {order.pickupDate && order.pickupTimeSlot && (
                                 <p>Date & Time: {format(new Date(order.pickupDate), 'PP')} - {order.pickupTimeSlot}</p>
                               )}
+                              {/* Add button to update pickup details */}
+                              {!['COMPLETED', 'CANCELLED'].includes(order.status) && (
+                                <button
+                                  onClick={() => setSelectedOrderForPickupUpdate(order)}
+                                  className="mt-2 px-3 py-1 text-xs font-medium text-indigo-600 bg-indigo-100 rounded-md hover:bg-indigo-200 inline-flex items-center"
+                                >
+                                  <Clock className="h-3 w-3 mr-1" />
+                                  Change Pickup Time
+                                </button>
+                              )}
                             </div>
                           </>
                         )}
@@ -643,7 +660,7 @@ const OrdersPage = () => {
         />
       )}
 
-      {/* Remaining Payment Modal */}
+      {/* Payment Modal */}
       {selectedOrderForPayment && (
         <RemainingPaymentModal
           isOpen={!!selectedOrderForPayment}
@@ -651,6 +668,16 @@ const OrdersPage = () => {
           orderId={selectedOrderForPayment.id}
           remainingAmount={calculateRemainingAmount(selectedOrderForPayment)}
           onPaymentComplete={handlePaymentComplete}
+        />
+      )}
+
+      {/* Update Pickup Details Modal */}
+      {selectedOrderForPickupUpdate && (
+        <UpdatePickupDetailsModal
+          isOpen={!!selectedOrderForPickupUpdate}
+          onClose={() => setSelectedOrderForPickupUpdate(null)}
+          order={selectedOrderForPickupUpdate}
+          onSuccess={handlePickupDetailsUpdated}
         />
       )}
     </div>
