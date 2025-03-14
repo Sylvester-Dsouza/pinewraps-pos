@@ -1039,6 +1039,133 @@ export default function DrawerPage() {
                   <p className="text-muted-foreground">No network printers found. Click "Scan Network" to search for printers or add a new printer.</p>
                 </div>
               )}
+              
+              {/* USB Printers Section */}
+              <div className="mt-8">
+                <div className="flex items-center justify-between mb-4">
+                  <h4 className="text-lg font-medium">USB Printers</h4>
+                  <div className="flex gap-2">
+                    <Button 
+                      variant="outline" 
+                      onClick={loadPrinters}
+                      size="sm"
+                    >
+                      <RefreshCcw className="h-4 w-4 mr-1" />
+                      Refresh List
+                    </Button>
+                    <Button 
+                      variant="secondary" 
+                      onClick={() => router.push('/printer')}
+                      size="sm"
+                    >
+                      <PlusCircle className="h-4 w-4 mr-1" />
+                      Add New Printer
+                    </Button>
+                  </div>
+                </div>
+                
+                {usbPrinters.length > 0 ? (
+                  <div className="border rounded-md p-4 mt-4">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-[50px]">Default</TableHead>
+                          <TableHead>Name</TableHead>
+                          <TableHead>Vendor/Product ID</TableHead>
+                          <TableHead>Type</TableHead>
+                          <TableHead className="text-right">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {usbPrinters.map((printer) => (
+                          <TableRow key={printer.id}>
+                            <TableCell>
+                              {printer.isDefault && (
+                                <span className="inline-block w-3 h-3 bg-green-500 rounded-full" title="Default Printer" />
+                              )}
+                            </TableCell>
+                            <TableCell>{printer.name}</TableCell>
+                            <TableCell>
+                              {printer.vendorId && printer.productId ? 
+                                `${printer.vendorId}:${printer.productId}` : 
+                                'Not specified'}
+                            </TableCell>
+                            <TableCell>
+                              <span className="capitalize">{printer.printerType.toLowerCase()}</span>
+                            </TableCell>
+                            <TableCell className="text-right space-x-2">
+                              <Button 
+                                variant="outline" 
+                                size="sm"
+                                onClick={() => {
+                                  // If a drawer is selected, connect the printer to it
+                                  if (selectedDrawer) {
+                                    const updatedDrawer: Partial<CashDrawer> = {
+                                      ...selectedDrawer,
+                                      printerId: printer.id,
+                                      connectionType: 'PRINTER' as const
+                                    };
+                                    
+                                    hardwareServiceInstance.updateCashDrawer(selectedDrawer.id, updatedDrawer)
+                                      .then(() => {
+                                        loadDrawers();
+                                        toast({
+                                          title: "Success",
+                                          description: `Connected printer ${printer.name} to drawer`,
+                                        });
+                                      })
+                                      .catch(error => {
+                                        console.error('Error connecting printer to drawer:', error);
+                                        toast({
+                                          title: "Error",
+                                          description: "Failed to connect printer to drawer",
+                                          variant: "destructive"
+                                        });
+                                      });
+                                  } else {
+                                    // No drawer selected, create a new one connected to this printer
+                                    const newDrawer: Partial<CashDrawer> = {
+                                      name: `Drawer for ${printer.name}`,
+                                      connectionType: 'PRINTER' as const,
+                                      printerId: printer.id,
+                                      isActive: true
+                                    };
+                                    
+                                    hardwareServiceInstance.saveCashDrawer(newDrawer)
+                                      .then(createdDrawer => {
+                                        loadDrawers();
+                                        // Select the newly created drawer
+                                        setSelectedDrawer(createdDrawer);
+                                        toast({
+                                          title: "Success",
+                                          description: `Created new drawer connected to ${printer.name}`,
+                                        });
+                                      })
+                                      .catch(error => {
+                                        console.error('Error creating drawer:', error);
+                                        toast({
+                                          title: "Error",
+                                          description: "Failed to create drawer",
+                                          variant: "destructive"
+                                        });
+                                      });
+                                  }
+                                }}
+                              >
+                                {selectedDrawer ? 'Connect to Drawer' : 'Create Drawer'}
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                ) : (
+                  <div className="border rounded-md p-6 mt-4 text-center">
+                    <p className="text-muted-foreground">No USB printers found. Make sure your printer is connected and click "Refresh List" or add a new printer.</p>
+                  </div>
+                )}
+              </div>
             </div>
           </CardContent>
         </Card>

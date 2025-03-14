@@ -68,8 +68,25 @@ export class HardwareService {
     try {
       console.log('Fetching printers...');
       const response = await api.get('/api/pos/printer');
-      console.log('Printers response:', response.data.printers);
-      return response.data.printers || [];
+      
+      // Check if we have printers in the response
+      if (response.data.printers && Array.isArray(response.data.printers)) {
+        // Log each printer for debugging
+        response.data.printers.forEach((printer: Printer) => {
+          console.log(`Found printer: ${printer.name}, Type: ${printer.connectionType}, ID: ${printer.id}`);
+          if (printer.connectionType === 'USB') {
+            console.log(`USB Printer details: VendorID: ${printer.vendorId}, ProductID: ${printer.productId}`);
+          } else if (printer.connectionType === 'NETWORK') {
+            console.log(`Network Printer details: IP: ${printer.ipAddress}, Port: ${printer.port}`);
+          }
+        });
+        
+        console.log(`Total printers found: ${response.data.printers.length}`);
+        return response.data.printers;
+      } else {
+        console.log('No printers found or invalid response format');
+        return [];
+      }
     } catch (error) {
       console.error('Error listing printers:', error);
       return [];
