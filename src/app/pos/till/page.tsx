@@ -211,7 +211,7 @@ export default function TillPage() {
                 <CardHeader>
                   <CardTitle>Till Operations Log</CardTitle>
                   <CardDescription>
-                    Recent cash drawer operations
+                    Recent cash drawer operations and events
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -222,24 +222,42 @@ export default function TillPage() {
                       <TableHeader>
                         <TableRow>
                           <TableHead>Date & Time</TableHead>
-                          <TableHead>Operation</TableHead>
-                          <TableHead>Amount</TableHead>
+                          <TableHead>Action</TableHead>
                           <TableHead>User</TableHead>
-                          <TableHead>Note</TableHead>
+                          <TableHead>Amount</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Details</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {drawerLogs.map((log) => (
                           <TableRow key={log.id}>
-                            <TableCell>{new Date(log.createdAt).toLocaleString()}</TableCell>
-                            <TableCell>{getOperationTypeLabel(log.type)}</TableCell>
-                            <TableCell>{formatCurrency(log.amount)}</TableCell>
+                            <TableCell>{new Date(log.timestamp).toLocaleString()}</TableCell>
                             <TableCell>
-                              {log.performedBy ? 
-                                `${log.performedBy.firstName} ${log.performedBy.lastName}` : 
-                                'Unknown'}
+                              <Badge variant="outline" className={
+                                log.action === 'OPEN_SESSION' ? 'bg-green-100 text-green-800' :
+                                log.action === 'CLOSE_SESSION' ? 'bg-red-100 text-red-800' :
+                                log.action === 'ADD_CASH' ? 'bg-blue-100 text-blue-800' :
+                                log.action === 'REMOVE_CASH' ? 'bg-yellow-100 text-yellow-800' :
+                                'bg-gray-100 text-gray-800'
+                              }>
+                                {log.action.split('_').map(word => word.charAt(0) + word.slice(1).toLowerCase()).join(' ')}
+                              </Badge>
                             </TableCell>
-                            <TableCell className="max-w-xs truncate">{log.note || '-'}</TableCell>
+                            <TableCell>
+                              {log.user ? `${log.user.firstName} ${log.user.lastName}` : 'Unknown'}
+                            </TableCell>
+                            <TableCell>
+                              {log.amount ? formatCurrency(log.amount) : '-'}
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant={log.success ? 'success' : 'destructive'}>
+                                {log.success ? 'Success' : 'Failed'}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="max-w-xs truncate">
+                              {log.error || log.deviceInfo || '-'}
+                            </TableCell>
                           </TableRow>
                         ))}
                       </TableBody>

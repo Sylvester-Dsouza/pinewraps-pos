@@ -255,6 +255,8 @@ const OrderTimer2 = ({ createdAt }: { createdAt: Date }) => {
 
 export default function KitchenDisplay() {
   const [orders, setOrders] = useState<KitchenOrder[]>([]);
+  const [onlineOrders, setOnlineOrders] = useState<KitchenOrder[]>([]);
+  const [activeTab, setActiveTab] = useState<'pos' | 'online'>('pos');
   const [loading, setLoading] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -267,10 +269,18 @@ export default function KitchenDisplay() {
   // Fetch initial orders
   useEffect(() => {
     fetchOrders();
+    if (activeTab === 'online') {
+      fetchOnlineOrders();
+    }
     // Set up auto-refresh every 5 minutes
-    const refreshInterval = setInterval(fetchOrders, 5 * 60 * 1000);
+    const refreshInterval = setInterval(() => {
+      fetchOrders();
+      if (activeTab === 'online') {
+        fetchOnlineOrders();
+      }
+    }, 5 * 60 * 1000);
     return () => clearInterval(refreshInterval);
-  }, []);
+  }, [activeTab]);
 
   // Fullscreen effect
   useEffect(() => {
@@ -359,6 +369,51 @@ export default function KitchenDisplay() {
     } catch (error) {
       console.error('Failed to fetch orders:', error);
       toast.error('Failed to fetch orders');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchOnlineOrders = async () => {
+    try {
+      setLoading(true);
+      const response = await apiMethods.getOrders({
+        status: ['PENDING', 'PROCESSING']
+      });
+      
+      if (response.success) {
+        // Transform online orders to match KitchenOrder format
+        const transformedOrders = response.data.results.map((order: any) => ({
+          id: order.id,
+          orderNumber: order.orderNumber,
+          customerName: `${order.customer?.firstName || ''} ${order.customer?.lastName || ''}`.trim(),
+          status: order.status,
+          createdAt: order.createdAt,
+          items: order.items.map((item: any) => ({
+            id: item.id,
+            name: item.productName,
+            quantity: item.quantity,
+            variations: item.variations || {},
+            customImages: item.customImages || [],
+            status: order.status
+          })),
+          requiresKitchen: true,
+          requiresDesign: order.items.some((item: any) => 
+            item.productName.toLowerCase().includes('flower') || 
+            item.productName.toLowerCase().includes('bouquet')
+          ),
+          deliveryMethod: order.deliveryType,
+          pickupDate: order.pickupDate,
+          pickupTimeSlot: order.pickupTimeSlot,
+          deliveryDate: order.deliveryDate,
+          deliveryTimeSlot: order.deliveryTimeSlot
+        }));
+
+        setOnlineOrders(transformedOrders);
+      }
+    } catch (error) {
+      console.error('Failed to fetch online orders:', error);
+      toast.error('Failed to fetch online orders');
     } finally {
       setLoading(false);
     }
@@ -499,7 +554,7 @@ export default function KitchenDisplay() {
     }
   };
 
-  const OrderCard = ({ order }: { order: KitchenOrder }) => {
+  const OrderCard = ({ order, isOnline }: { order: KitchenOrder, isOnline: boolean }) => {
     const handleImageClick = (images: CustomImage[], index: number) => {
       const slides = images.map(img => ({
         src: img.url,
@@ -836,94 +891,139 @@ export default function KitchenDisplay() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      <div className="p-4">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold">Kitchen Display</h1>
-          <div className="flex items-center gap-4">
-            <button
-              onClick={fetchOrders}
-              className="flex items-center px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
-            >
-              <RotateCw className="w-4 h-4 mr-2" />
-              Refresh
-            </button>
-            <button
-              onClick={() => {
-                if (!document.fullscreenElement) {
-                  document.documentElement.requestFullscreen();
-                } else {
-                  document.exitFullscreen();
-                }
-              }}
-              className="flex items-center px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
-            >
-              {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-              <span className="ml-2">Toggle Fullscreen</span>
-            </button>
+    <div className="min-h-screen bg-gray-100 p-4">
+      {/* Header with tabs */}
+      <div className="mb-6 flex items-center justify-between">
+        <div className="flex space-x-4">
+          <button
+            onClick={() => setActiveTab('pos')}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              activeTab === 'pos'
+                ? 'bg-primary text-white'
+                : 'bg-white text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            POS Orders
+          </button>
+          <button
+            onClick={() => setActiveTab('online')}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              activeTab === 'online'
+                ? 'bg-primary text-white'
+                : 'bg-white text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            Online Orders
+          </button>
+        </div>
+        
+        <div className="flex items-center space-x-4">
+          <button
+            onClick={fetchOrders}
+            className="p-2 rounded-lg bg-white hover:bg-gray-50 text-gray-600"
+            title="Refresh Orders"
+          >
+            <RotateCw className="w-5 h-5" />
+          </button>
+          <button
+            onClick={() => {
+              if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen();
+              } else {
+                document.exitFullscreen();
+              }
+            }}
+            className="p-2 rounded-lg bg-white hover:bg-gray-50 text-gray-600"
+            title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
+          >
+            {isFullscreen ? (
+              <Minimize2 className="w-5 h-5" />
+            ) : (
+              <Maximize2 className="w-5 h-5" />
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* Orders Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {/* Queue Section */}
+        <div className="bg-white rounded-lg shadow p-4">
+          <h2 className="text-lg font-semibold mb-4 flex items-center">
+            <ChefHat className="w-5 h-5 mr-2" />
+            Queue
+          </h2>
+          <div className="space-y-4">
+            <AnimatePresence>
+              {(activeTab === 'pos' ? orders : onlineOrders)
+                .filter(order => 
+                  activeTab === 'pos' 
+                    ? order.status === 'KITCHEN_QUEUE'
+                    : order.status === 'PENDING'
+                )
+                .map(order => (
+                  <OrderCard
+                    key={order.id}
+                    order={order}
+                    isOnline={activeTab === 'online'}
+                  />
+                ))}
+            </AnimatePresence>
           </div>
         </div>
 
-        {loading ? (
-          <div className="flex justify-center items-center h-64">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900"></div>
+        {/* Processing Section */}
+        <div className="bg-white rounded-lg shadow p-4">
+          <h2 className="text-lg font-semibold mb-4 flex items-center">
+            <Timer className="w-5 h-5 mr-2" />
+            Processing
+          </h2>
+          <div className="space-y-4">
+            <AnimatePresence>
+              {(activeTab === 'pos' ? orders : onlineOrders)
+                .filter(order => 
+                  activeTab === 'pos' 
+                    ? order.status === 'KITCHEN_PROCESSING'
+                    : order.status === 'PROCESSING'
+                )
+                .map(order => (
+                  <OrderCard
+                    key={order.id}
+                    order={order}
+                    isOnline={activeTab === 'online'}
+                  />
+                ))}
+            </AnimatePresence>
           </div>
-        ) : (
-          <div className="grid grid-cols-3 gap-4">
-            {/* 1. New Order - Kitchen Queue Orders */}
-            <div className="bg-gray-50 rounded-xl p-4 overflow-y-auto">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="font-semibold text-lg flex items-center">
-                  <div className="w-3 h-3 rounded-full bg-blue-500 mr-2" />
-                  New Order
-                </h2>
-                <span className="text-sm text-gray-500">
-                  {getOrdersByStatus("PENDING").length + getOrdersByStatus("KITCHEN_QUEUE").length}
-                </span>
-              </div>
-              <AnimatePresence>
-                {[...getOrdersByStatus("PENDING"), ...getOrdersByStatus("KITCHEN_QUEUE")].map(order => (
-                  <OrderCard key={order.id} order={order} />
-                ))}
-              </AnimatePresence>
-            </div>
+        </div>
 
-            {/* 2. Processing - All Kitchen Processing Orders */}
-            <div className="bg-gray-50 rounded-xl p-4 overflow-y-auto">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="font-semibold text-lg flex items-center">
-                  <div className="w-3 h-3 rounded-full bg-yellow-500 mr-2" />
-                  Processing
-                </h2>
-                <span className="text-sm text-gray-500">{getOrdersByStatus("KITCHEN_PROCESSING").length}</span>
-              </div>
-              <AnimatePresence>
-                {getOrdersByStatus("KITCHEN_PROCESSING").map(order => (
-                  <OrderCard key={order.id} order={order} />
+        {/* Ready Section */}
+        <div className="bg-white rounded-lg shadow p-4">
+          <h2 className="text-lg font-semibold mb-4 flex items-center">
+            <CheckCircle2 className="w-5 h-5 mr-2" />
+            Ready
+          </h2>
+          <div className="space-y-4">
+            <AnimatePresence>
+              {(activeTab === 'pos' ? orders : onlineOrders)
+                .filter(order => 
+                  activeTab === 'pos' 
+                    ? order.status === 'KITCHEN_READY'
+                    : order.status === 'READY_FOR_PICKUP'
+                )
+                .map(order => (
+                  <OrderCard
+                    key={order.id}
+                    order={order}
+                    isOnline={activeTab === 'online'}
+                  />
                 ))}
-              </AnimatePresence>
-            </div>
-
-            {/* 3. Ready - All Kitchen Ready Orders */}
-            <div className="bg-gray-50 rounded-xl p-4 overflow-y-auto">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="font-semibold text-lg flex items-center">
-                  <div className="w-3 h-3 rounded-full bg-green-500 mr-2" />
-                  Ready
-                </h2>
-                <span className="text-sm text-gray-500">{getOrdersByStatus("KITCHEN_READY").length}</span>
-              </div>
-              <AnimatePresence>
-                {getOrdersByStatus("KITCHEN_READY").map(order => (
-                  <OrderCard key={order.id} order={order} />
-                ))}
-              </AnimatePresence>
-            </div>
+            </AnimatePresence>
           </div>
-        )}
+        </div>
       </div>
 
-      {/* Lightbox for design images */}
+      {/* Lightbox for images */}
       <Lightbox
         open={lightboxOpen}
         close={() => setLightboxOpen(false)}

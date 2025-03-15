@@ -3,6 +3,8 @@ import { Fragment, useState } from "react";
 import { POSPaymentMethod, POSPaymentStatus, apiMethods } from "@/services/api";
 import { toast } from "@/lib/toast-utils";
 import { nanoid } from "nanoid";
+import { api } from "@/lib/axios";
+import { Order } from "@/types/order";
 
 interface RemainingPaymentModalProps {
   isOpen: boolean;
@@ -22,6 +24,26 @@ export default function RemainingPaymentModal({
   const [paymentMethod, setPaymentMethod] = useState<POSPaymentMethod>(POSPaymentMethod.CASH);
   const [paymentReference, setPaymentReference] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const printAndOpenDrawer = async (order: Order) => {
+    try {
+      // Print receipt
+      const response = await api.post('/api/pos/printer/print-and-open', { 
+        orderId: order.id,
+        type: 'receipt'
+      });
+      
+      if (response.data?.success) {
+        console.log('Receipt printed and drawer opened successfully');
+      } else {
+        console.error('Failed to print receipt and open drawer:', response.data?.error);
+        toast.error('Failed to print receipt and open drawer');
+      }
+    } catch (error) {
+      console.error('Error printing receipt and opening drawer:', error);
+      toast.error('Error printing receipt and opening drawer');
+    }
+  };
 
   const handlePayment = async () => {
     try {
@@ -45,7 +67,12 @@ export default function RemainingPaymentModal({
       };
 
       // Update the order with the new payment
-      await apiMethods.pos.updateOrderPayment(orderId, payment);
+      const response = await apiMethods.pos.updateOrderPayment(orderId, payment);
+      
+      // If it's a cash payment, print receipt and open drawer
+      if (paymentMethod === POSPaymentMethod.CASH && response.data?.success) {
+        await printAndOpenDrawer(response.data.data);
+      }
 
       toast.success("Payment completed successfully");
       onPaymentComplete?.();

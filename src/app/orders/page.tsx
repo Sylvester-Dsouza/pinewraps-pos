@@ -31,6 +31,7 @@ const statusColors = {
   FINAL_CHECK_COMPLETE: { bg: 'bg-amber-100', text: 'text-amber-800', icon: CheckCircle },
   COMPLETED: { bg: 'bg-green-100', text: 'text-green-800', icon: CheckCircle },
   CANCELLED: { bg: 'bg-red-100', text: 'text-red-800', icon: XCircle },
+  REFUNDED: { bg: 'bg-orange-100', text: 'text-orange-800', icon: RotateCcw },
   PENDING_PAYMENT: { bg: 'bg-orange-100', text: 'text-orange-800', icon: Clock }
 } as const;
 
@@ -47,6 +48,7 @@ const statusLabels = {
   FINAL_CHECK_COMPLETE: 'Final Check Complete',
   COMPLETED: 'Completed',
   CANCELLED: 'Cancelled',
+  REFUNDED: 'Refunded',
   PENDING_PAYMENT: 'Pending Payment'
 } as const;
 
@@ -308,6 +310,25 @@ const OrdersPage = () => {
     } catch (error: any) {
       console.error('Error cancelling order:', error);
       toast.error(error.message || 'Failed to cancel order');
+    }
+  };
+
+  const handleRefundOrder = async (orderId: string) => {
+    try {
+      const response = await apiMethods.pos.updateOrderStatus(orderId, {
+        status: 'REFUNDED',
+        notes: 'Order refunded by POS user'
+      });
+
+      if (response.success) {
+        toast.success('Order marked as refunded');
+        fetchOrders(); // Refresh orders list
+      } else {
+        throw new Error(response.message || 'Failed to mark order as refunded');
+      }
+    } catch (error: any) {
+      console.error('Error marking order as refunded:', error);
+      toast.error(error.message || 'Failed to mark order as refunded');
     }
   };
 
@@ -582,7 +603,7 @@ const OrdersPage = () => {
                     >
                       View Receipt
                     </button>
-                    {!['COMPLETED', 'CANCELLED'].includes(order.status) && (
+                    {!['COMPLETED', 'CANCELLED', 'REFUNDED'].includes(order.status) && (
                       <button
                         onClick={() => setShowCancelConfirm(order.id)}
                         className="px-4 py-2 text-sm font-medium text-red-700 bg-red-100 rounded-md hover:bg-red-200 flex-1"
@@ -614,6 +635,15 @@ const OrdersPage = () => {
                         className="px-4 py-2 text-sm font-medium text-indigo-600 bg-indigo-100 rounded-md hover:bg-indigo-200 flex-1"
                       >
                         Pay Remaining
+                      </button>
+                    )}
+                    {order.status === 'CANCELLED' && (
+                      <button
+                        onClick={() => handleRefundOrder(order.id)}
+                        className="text-sm text-orange-600 hover:text-orange-800 flex items-center gap-1"
+                      >
+                        <RotateCcw className="h-4 w-4" />
+                        Mark as Refunded
                       </button>
                     )}
                   </div>

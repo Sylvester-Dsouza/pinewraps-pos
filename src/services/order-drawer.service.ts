@@ -1,6 +1,7 @@
 import { api } from '@/lib/axios';
 import { drawerService } from './drawer.service';
 import { POSPaymentMethod } from '@/types/pos';
+import { toast } from '@/lib/toast-utils';
 
 // Interface for payments
 interface Payment {
@@ -29,6 +30,35 @@ export class OrderDrawerService {
       OrderDrawerService.instance = new OrderDrawerService();
     }
     return OrderDrawerService.instance;
+  }
+
+  /**
+   * Print receipt and open drawer for an order
+   * @param orderId The order ID
+   */
+  private async printAndOpenDrawer(orderId: string): Promise<boolean> {
+    try {
+      console.log('Printing receipt and opening drawer for order:', orderId);
+      
+      // Call the print-and-open endpoint
+      const response = await api.post('/api/pos/printer/print-and-open', { 
+        orderId,
+        type: 'receipt'
+      });
+      
+      if (response.data?.success) {
+        console.log('Receipt printed and drawer opened successfully');
+        return true;
+      } else {
+        console.error('Failed to print receipt and open drawer:', response.data?.error);
+        toast.error('Failed to print receipt and open drawer');
+        return false;
+      }
+    } catch (error) {
+      console.error('Error printing receipt and opening drawer:', error);
+      toast.error('Error printing receipt and opening drawer');
+      return false;
+    }
   }
 
   /**
@@ -62,14 +92,12 @@ export class OrderDrawerService {
       
       console.log('Opening cash drawer for payment with total cash amount:', totalCashAmount);
       
-      // Open the drawer for the cash transaction
-      const drawerResult = await drawerService.openDrawer();
+      // Print receipt and open drawer for cash payment
+      const printResult = await this.printAndOpenDrawer(orderNumber || '');
       
-      if (!drawerResult.success) {
-        console.error('Failed to open cash drawer:', drawerResult.error);
-        // Continue even if drawer fails to open
-      } else {
-        console.log('Cash drawer opened successfully for cash payment');
+      if (!printResult) {
+        console.error('Failed to print receipt and open drawer');
+        // Continue even if print/drawer fails
       }
       
       // Record the cash sale in the drawer session

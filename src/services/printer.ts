@@ -27,6 +27,130 @@ export const formatCurrency = (amount: number): string => {
   }).format(amount);
 };
 
+export const generateReceiptLines = (order: Order): { text: string; alignment?: 'left' | 'center' | 'right'; bold?: boolean; size?: 'normal' | 'double' }[] => {
+  const lines: { text: string; alignment?: 'left' | 'center' | 'right'; bold?: boolean; size?: 'normal' | 'double' }[] = [];
+
+  // Header
+  lines.push({ text: 'PINEWRAPS', alignment: 'center', bold: true, size: 'double' });
+  lines.push({ text: 'Your Delicious Food Partner', alignment: 'center' });
+  lines.push({ text: 'Dubai, UAE', alignment: 'center' });
+  lines.push({ text: 'Phone: +971 XXXXXXXXX', alignment: 'center' });
+  lines.push({ text: 'TRN: XXXXXXXXXXXXX', alignment: 'center' });
+  lines.push({ text: '-'.repeat(PRINTER_CONFIG.characterWidth), alignment: 'center' });
+
+  // Order Info
+  lines.push({ text: `Order #: ${order.orderNumber}`, bold: true });
+  lines.push({ text: `Date: ${format(new Date(order.createdAt), 'dd/MM/yyyy HH:mm')}` });
+  lines.push({ text: `Customer: ${order.customerName || 'Walk-in Customer'}` });
+  if (order.customerPhone) lines.push({ text: `Phone: ${order.customerPhone}` });
+  if (order.customerEmail) lines.push({ text: `Email: ${order.customerEmail}` });
+  lines.push({ text: `Status: ${order.status}` });
+
+  // Delivery/Pickup Details
+  lines.push({ text: '-'.repeat(PRINTER_CONFIG.characterWidth), alignment: 'center' });
+  lines.push({ text: order.deliveryMethod === 'DELIVERY' ? 'Delivery Details' : 'Pickup Details', bold: true });
+  
+  if (order.deliveryMethod === 'DELIVERY') {
+    if (order.deliveryDate) lines.push({ text: `Date: ${format(new Date(order.deliveryDate), 'dd/MM/yyyy')}` });
+    if (order.deliveryTimeSlot) lines.push({ text: `Time: ${order.deliveryTimeSlot}` });
+    if (order.streetAddress) lines.push({ text: `Address: ${order.streetAddress}` });
+    if (order.apartment) lines.push({ text: `Apartment: ${order.apartment}` });
+    if (order.city) lines.push({ text: `City: ${order.city}` });
+    if (order.emirate) lines.push({ text: `Emirate: ${order.emirate}` });
+    if (order.deliveryInstructions) lines.push({ text: `Instructions: ${order.deliveryInstructions}` });
+  } else {
+    if (order.pickupDate) lines.push({ text: `Date: ${format(new Date(order.pickupDate), 'dd/MM/yyyy')}` });
+    if (order.pickupTimeSlot) lines.push({ text: `Time: ${order.pickupTimeSlot}` });
+  }
+
+  // Items
+  lines.push({ text: '-'.repeat(PRINTER_CONFIG.characterWidth), alignment: 'center' });
+  lines.push({ text: 'Item                  Qty    Price', bold: true });
+  lines.push({ text: '-'.repeat(PRINTER_CONFIG.characterWidth), alignment: 'center' });
+
+  order.items.forEach(item => {
+    lines.push({ text: item.name });
+    lines.push({ text: formatLineItem(`  x${item.quantity}`, formatCurrency(item.totalPrice)), alignment: 'right' });
+    
+    if (Array.isArray(item.variations)) {
+      item.variations.forEach(variation => {
+        const type = typeof variation === 'object' && variation !== null 
+          ? (variation.type || variation.id || '').toString()
+          : '';
+        const value = typeof variation === 'object' && variation !== null 
+          ? (variation.value || variation.id || '').toString()
+          : '';
+        
+        if (type && value) {
+          lines.push({ text: `  - ${type}: ${value}` });
+        }
+      });
+    }
+    
+    if (item.notes) {
+      lines.push({ text: `  Note: ${item.notes}` });
+    }
+  });
+
+  // Totals
+  lines.push({ text: '-'.repeat(PRINTER_CONFIG.characterWidth), alignment: 'center' });
+  lines.push({ text: formatLineItem('Subtotal:', formatCurrency(order.subtotal || order.totalAmount)), alignment: 'right' });
+  if (order.deliveryMethod === 'DELIVERY' && order.deliveryCharge) {
+    lines.push({ text: formatLineItem('Delivery:', formatCurrency(order.deliveryCharge)), alignment: 'right' });
+  }
+  if (order.tax) {
+    lines.push({ text: formatLineItem('Tax:', formatCurrency(order.tax)), alignment: 'right' });
+  }
+  if (order.discount) {
+    lines.push({ text: formatLineItem('Discount:', formatCurrency(-order.discount)), alignment: 'right' });
+  }
+  lines.push({ text: formatLineItem('Total:', formatCurrency(order.totalAmount)), alignment: 'right', bold: true });
+
+  // Payment Info
+  lines.push({ text: '-'.repeat(PRINTER_CONFIG.characterWidth), alignment: 'center' });
+  lines.push({ text: 'Payment Information:', bold: true });
+
+  if (order.payments && order.payments.length > 0) {
+    order.payments.forEach(payment => {
+      lines.push({ text: formatLineItem(payment.method, formatCurrency(payment.amount)) });
+      if (payment.status) lines.push({ text: `Status: ${payment.status}` });
+      if (payment.reference) lines.push({ text: `Reference: ${payment.reference}` });
+      if (payment.metadata?.cashAmount) lines.push({ text: formatLineItem('Cash Amount:', formatCurrency(payment.metadata.cashAmount)) });
+      if (payment.metadata?.changeAmount) lines.push({ text: formatLineItem('Change:', formatCurrency(payment.metadata.changeAmount)) });
+    });
+  } else {
+    lines.push({ text: `Payment Method: ${order.paymentMethod || 'Not specified'}` });
+    lines.push({ text: formatLineItem('Amount Paid:', formatCurrency(order.paidAmount || 0)) });
+    if (order.changeAmount) lines.push({ text: formatLineItem('Change:', formatCurrency(order.changeAmount)) });
+  }
+
+  // Gift Info
+  if (order.isGift) {
+    lines.push({ text: '-'.repeat(PRINTER_CONFIG.characterWidth), alignment: 'center' });
+    lines.push({ text: 'Gift Information:', bold: true });
+    if (order.giftRecipientName) lines.push({ text: `Recipient: ${order.giftRecipientName}` });
+    if (order.giftRecipientPhone) lines.push({ text: `Recipient Phone: ${order.giftRecipientPhone}` });
+    if (order.giftMessage) lines.push({ text: `Message: ${order.giftMessage}` });
+    if (order.giftCashAmount) lines.push({ text: formatLineItem('Cash Amount:', formatCurrency(order.giftCashAmount)) });
+  }
+
+  // Notes
+  if (order.notes || order.kitchenNotes || order.designNotes) {
+    lines.push({ text: '-'.repeat(PRINTER_CONFIG.characterWidth), alignment: 'center' });
+    if (order.notes) lines.push({ text: `Order Notes: ${order.notes}` });
+    if (order.kitchenNotes) lines.push({ text: `Kitchen Notes: ${order.kitchenNotes}` });
+    if (order.designNotes) lines.push({ text: `Design Notes: ${order.designNotes}` });
+  }
+
+  // Footer
+  lines.push({ text: '-'.repeat(PRINTER_CONFIG.characterWidth), alignment: 'center' });
+  lines.push({ text: 'Thank you for choosing Pinewraps!', alignment: 'center' });
+  lines.push({ text: 'Visit us again soon', alignment: 'center' });
+  lines.push({ text: 'www.pinewraps.com', alignment: 'center' });
+
+  return lines;
+};
+
 // Base printer styles
 export const getBasePrinterStyles = () => `
   @page {
@@ -69,10 +193,11 @@ export const printContent = async (
   try {
     const printWindow = window.open('', '_blank', 'width=800,height=600');
     if (!printWindow) {
-      throw new Error('Failed to open print window');
+      throw new Error('Could not open print window');
     }
 
     printWindow.document.write(`
+      <!DOCTYPE html>
       <html>
         <head>
           <title>${title}</title>
@@ -86,110 +211,73 @@ export const printContent = async (
     `);
 
     printWindow.document.close();
+    printWindow.focus();
 
-    // Wait for content to load then print
-    await new Promise((resolve) => setTimeout(resolve, 250));
+    // Wait for content to load
+    await new Promise(resolve => setTimeout(resolve, 1000));
 
-    try {
-      printWindow.focus();
-      printWindow.print();
+    printWindow.print();
+
+    // Close window after printing
+    setTimeout(() => {
       printWindow.close();
-    } catch (error) {
-      console.error('Print operation failed:', error);
-      throw error;
-    }
+    }, 1000);
   } catch (error) {
-    console.error('Printing failed:', error);
+    console.error('Error printing:', error);
     throw error;
   }
 };
 
-// Error handling wrapper
-export const withErrorHandling = async <T>(
-  operation: () => Promise<T>,
-  errorMessage: string
-): Promise<T> => {
+export const withErrorHandling = async (fn: () => Promise<any>) => {
   try {
-    return await operation();
+    return await fn();
   } catch (error) {
-    console.error(errorMessage, error);
-    throw new Error(errorMessage);
+    console.error('Printer error:', error);
+    return false;
   }
 };
 
 interface OrderItem {
   name: string;
   quantity: number;
-  price: number;
-  modifiers?: string[];
+  totalPrice: number;
+  variations?: any[];
+  notes?: string;
 }
 
 interface Order {
   orderNumber: string;
-  timestamp: Date;
-  items: OrderItem[];
-  subtotal: number;
-  tax: number;
-  total: number;
-  table?: string;
+  createdAt: string;
   customerName?: string;
+  customerPhone?: string;
+  customerEmail?: string;
+  status: string;
+  deliveryMethod: 'DELIVERY' | 'PICKUP';
+  deliveryDate?: string;
+  deliveryTimeSlot?: string;
+  streetAddress?: string;
+  apartment?: string;
+  city?: string;
+  emirate?: string;
+  deliveryInstructions?: string;
+  pickupDate?: string;
+  pickupTimeSlot?: string;
+  items: OrderItem[];
+  subtotal?: number;
+  totalAmount: number;
+  deliveryCharge?: number;
+  tax?: number;
+  discount?: number;
+  payments?: any[];
+  paymentMethod?: string;
+  paidAmount?: number;
+  changeAmount?: number;
+  isGift?: boolean;
+  giftRecipientName?: string;
+  giftRecipientPhone?: string;
+  giftMessage?: string;
+  giftCashAmount?: number;
+  notes?: string;
+  kitchenNotes?: string;
+  designNotes?: string;
 }
-
-class ReceiptPrinter {
-  private config: typeof PRINTER_CONFIG;
-
-  constructor() {
-    this.config = PRINTER_CONFIG;
-  }
-
-  public async printReceipt(order: Order): Promise<void> {
-    const lines: string[] = [];
-    const divider = '-'.repeat(this.config.characterWidth);
-
-    // Header
-    lines.push(centerText('PINEWRAPS'));
-    lines.push(centerText('Modern Mediterranean Cuisine'));
-    lines.push(centerText('Tel: +971 123456789'));
-    lines.push(centerText('Dubai, UAE'));
-    lines.push(divider);
-
-    // Order info
-    lines.push(`Order: #${order.orderNumber}`);
-    lines.push(`Date: ${order.timestamp.toLocaleString()}`);
-    if (order.table) lines.push(`Table: ${order.table}`);
-    if (order.customerName) lines.push(`Customer: ${order.customerName}`);
-    lines.push(divider);
-
-    // Items
-    lines.push('ITEMS');
-    order.items.forEach(item => {
-      lines.push(formatLineItem(
-        `${item.quantity}x ${item.name}`,
-        formatCurrency(item.price * item.quantity)
-      ));
-      if (item.modifiers?.length) {
-        item.modifiers.forEach(mod => {
-          lines.push(`  - ${mod}`);
-        });
-      }
-    });
-    lines.push(divider);
-
-    // Totals
-    lines.push(formatLineItem('Subtotal:', formatCurrency(order.subtotal)));
-    if (order.tax) {
-      lines.push(formatLineItem('Tax:', formatCurrency(order.tax)));
-    }
-    lines.push(formatLineItem('Total:', formatCurrency(order.total)));
-    lines.push(divider);
-
-    // Footer
-    lines.push(centerText('Thank you for dining with us!'));
-    lines.push(centerText('Please visit us again'));
-    lines.push(centerText('www.pinewraps.com'));
-
-    await printContent(lines.join('\n'), 'Receipt');
-  }
-}
-
-export const printer = new ReceiptPrinter();

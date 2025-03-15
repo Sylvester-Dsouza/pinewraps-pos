@@ -1,3 +1,5 @@
+import axios from 'axios';
+import { getApiConfig } from '@/lib/api-config';
 import { api } from '@/lib/axios';
 import { toast } from '@/lib/toast-utils'; 
 
@@ -59,6 +61,9 @@ export interface DrawerLog {
     name: string;
   };
 }
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL;
+const PRINTER_PROXY_URL = process.env.NEXT_PUBLIC_PRINTER_PROXY_URL || 'http://localhost:3005';
 
 export class DrawerService {
   private static instance: DrawerService;
@@ -153,6 +158,21 @@ export class DrawerService {
           console.log('Skipping physical drawer open in development mode');
         }
         
+        // Print the opening receipt
+        try {
+          await axios.post(`${PRINTER_PROXY_URL}/print-and-open`, {
+            type: 'till_open',
+            data: {
+              amount: openingAmount,
+              sessionId: response.data.id,
+              openedAt: response.data.openedAt
+            }
+          });
+        } catch (error) {
+          console.error('Error printing till open receipt:', error);
+          // Don't throw error as the session was created successfully
+        }
+        
         return response.data;
       } catch (apiError) {
         console.error('API error in openSession:', apiError);
@@ -195,7 +215,57 @@ export class DrawerService {
         }
       }
       
-      const response = await api.post('/api/pos/drawer-session/close', { closingAmount });
+      // Calculate expected amount
+      const session = currentSession.data;
+      const transactions = session.operations || [];
+      const summary = transactions.reduce((acc: any, tx: any) => {
+        switch (tx.type) {
+          case 'SALE':
+            acc.sales += tx.amount;
+            break;
+          case 'REFUND':
+            acc.refunds += tx.amount;
+            break;
+          case 'PAY_IN':
+            acc.payIns += tx.amount;
+            break;
+          case 'PAY_OUT':
+            acc.payOuts += tx.amount;
+            break;
+        }
+        return acc;
+      }, { sales: 0, refunds: 0, payIns: 0, payOuts: 0 });
+
+      const expectedAmount = session.openingAmount + summary.sales - summary.refunds + summary.payIns - summary.payOuts;
+      const difference = closingAmount - expectedAmount;
+
+      const response = await api.post('/api/pos/drawer-session/close', { 
+        closingAmount,
+        expectedAmount,
+        difference
+      });
+      console.log('Close session response:', response.data);
+      
+      // Print the closing receipt
+      try {
+        await axios.post(`${PRINTER_PROXY_URL}/print-and-open`, {
+          type: 'till_close',
+          data: {
+            openingAmount: session.openingAmount,
+            closingAmount,
+            expectedAmount,
+            difference,
+            transactions: session.operations,
+            sessionId: session.id,
+            openedAt: session.openedAt,
+            closedAt: new Date()
+          }
+        });
+      } catch (error) {
+        console.error('Error printing till close receipt:', error);
+        // Don't throw error as the session was closed successfully
+      }
+      
       return response.data;
     } catch (error) {
       console.error('Error closing session:', error);
@@ -226,7 +296,7 @@ export class DrawerService {
   }
   
   // Alias for addCash to make the API more intuitive
-  async payIn(amount: number, notes?: string): Promise<DrawerOperation | null> {
+  async payIn(amount: number, note: string): Promise<DrawerOperation | null> {
     try {
       // First get the current session to get the drawer ID
       const currentSession = await this.getCurrentSession();
@@ -247,7 +317,28 @@ export class DrawerService {
         }
       }
       
-      return this.addCash(amount, notes || 'Pay In transaction');
+      const response = await api.post('/api/pos/drawer-session/pay-in', {
+        amount,
+        note
+      });
+
+      // Print pay-in receipt and open drawer
+      try {
+        await api.post(`${PRINTER_PROXY_URL}/print-and-open`, {
+          type: 'cash_movement',
+          data: {
+            type: 'PAY_IN',
+            amount,
+            note,
+            date: new Date(),
+            sessionId: response.data.sessionId
+          }
+        });
+      } catch (error) {
+        console.error('Error printing pay-in receipt:', error);
+      }
+
+      return response.data;
     } catch (error) {
       console.error('Error during pay-in operation:', error);
       throw error;
@@ -255,7 +346,7 @@ export class DrawerService {
   }
   
   // Alias for removeCash to make the API more intuitive
-  async payOut(amount: number, notes?: string): Promise<DrawerOperation | null> {
+  async payOut(amount: number, note: string): Promise<DrawerOperation | null> {
     try {
       // First get the current session to get the drawer ID
       const currentSession = await this.getCurrentSession();
@@ -276,7 +367,28 @@ export class DrawerService {
         }
       }
       
-      return this.removeCash(amount, notes || 'Pay Out transaction');
+      const response = await api.post('/api/pos/drawer-session/pay-out', {
+        amount,
+        note
+      });
+
+      // Print pay-out receipt and open drawer
+      try {
+        await api.post(`${PRINTER_PROXY_URL}/print-and-open`, {
+          type: 'cash_movement',
+          data: {
+            type: 'PAY_OUT',
+            amount,
+            note,
+            date: new Date(),
+            sessionId: response.data.sessionId
+          }
+        });
+      } catch (error) {
+        console.error('Error printing pay-out receipt:', error);
+      }
+
+      return response.data;
     } catch (error) {
       console.error('Error during pay-out operation:', error);
       throw error;
