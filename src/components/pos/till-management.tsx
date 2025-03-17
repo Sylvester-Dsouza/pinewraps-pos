@@ -62,6 +62,33 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
     }
   };
 
+  const handleOpenTillClick = async () => {
+    try {
+      // First send print and open command
+      const response = await fetch(`${process.env.NEXT_PUBLIC_PRINTER_PROXY_URL}/print-and-open`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          type: 'open_drawer'
+        })
+      });
+
+      if (!response.ok) {
+        console.error('Failed to open drawer:', response.statusText);
+        // Continue anyway as we want to show the dialog
+      }
+
+      // Then show the dialog
+      setIsOpenTillModalOpen(true);
+    } catch (error) {
+      console.error('Error opening drawer:', error);
+      // Show dialog anyway
+      setIsOpenTillModalOpen(true);
+    }
+  };
+
   const handleOpenTill = async () => {
     setIsLoading(true);
     try {
@@ -134,6 +161,33 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
     }
   };
 
+  const handleCloseTillClick = async () => {
+    try {
+      // First send print and open command
+      const response = await fetch(`${process.env.NEXT_PUBLIC_PRINTER_PROXY_URL}/print-and-open`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          type: 'open_drawer'
+        })
+      });
+
+      if (!response.ok) {
+        console.error('Failed to open drawer:', response.statusText);
+        // Continue anyway as we want to show the dialog
+      }
+
+      // Then show the dialog
+      setIsCloseTillModalOpen(true);
+    } catch (error) {
+      console.error('Error opening drawer:', error);
+      // Show dialog anyway
+      setIsCloseTillModalOpen(true);
+    }
+  };
+
   const handleCloseTill = async () => {
     setIsLoading(true);
     try {
@@ -152,7 +206,11 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
       toast.success('Till closed successfully');
       setIsCloseTillModalOpen(false);
       setClosingAmount('');
-      fetchCurrentSession();
+      
+      // Force refresh of session status
+      setCurrentSession(null);
+      await fetchCurrentSession();
+      
       if (onSessionChange) onSessionChange();
     } catch (error: any) {
       console.error('Error closing till:', error);
@@ -168,6 +226,21 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
       if (!payAmount || isNaN(parseFloat(payAmount))) {
         toast.error('Please enter a valid pay-in amount');
         return;
+      }
+
+      // First send print and open command
+      const response = await fetch(`${process.env.NEXT_PUBLIC_PRINTER_PROXY_URL}/print-and-open`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          type: 'open_drawer'
+        })
+      });
+
+      if (!response.ok) {
+        console.error('Failed to open drawer:', response.statusText);
       }
 
       const amount = parseFloat(payAmount);
@@ -191,6 +264,21 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
       if (!payAmount || isNaN(parseFloat(payAmount))) {
         toast.error('Please enter a valid pay-out amount');
         return;
+      }
+
+      // First send print and open command
+      const response = await fetch(`${process.env.NEXT_PUBLIC_PRINTER_PROXY_URL}/print-and-open`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          type: 'open_drawer'
+        })
+      });
+
+      if (!response.ok) {
+        console.error('Failed to open drawer:', response.statusText);
       }
 
       const amount = parseFloat(payAmount);
@@ -243,9 +331,7 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
   return (
     <div className="space-y-6">
       {isLoadingSession ? (
-        <div className="flex justify-center items-center h-40">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
-        </div>
+        <div>Loading...</div>
       ) : (
         <>
           {/* Session Status Card */}
@@ -296,11 +382,40 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
             )}
             
             <CardFooter className="flex flex-wrap gap-2 pt-2">
+              {isLoadingSession ? (
+                <div>Loading...</div>
+              ) : currentSession ? (
+                <div className="space-y-2">
+                  <Badge variant="outline" className="text-green-600">
+                    <LockOpenIcon className="w-4 h-4 mr-1" />
+                    Till Open
+                  </Badge>
+                  <div>
+                    <Label>Opening Amount</Label>
+                    <div>{formatCurrency(currentSession.openingAmount)}</div>
+                  </div>
+                  <div>
+                    <Label>Opened By</Label>
+                    <div>{currentSession.user?.firstName} {currentSession.user?.lastName}</div>
+                  </div>
+                  <div>
+                    <Label>Opened At</Label>
+                    <div>{new Date(currentSession.openedAt).toLocaleString()}</div>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <Badge variant="outline" className="text-red-600">
+                    <LockClosedIcon className="w-4 h-4 mr-1" />
+                    Till Closed
+                  </Badge>
+                </div>
+              )}
               {currentSession ? (
                 <>
                   <Button 
                     variant="destructive" 
-                    onClick={() => setIsCloseTillModalOpen(true)}
+                    onClick={handleCloseTillClick}
                     className="flex items-center gap-2"
                   >
                     <LockClosedIcon className="h-4 w-4" />
@@ -326,7 +441,7 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
               ) : (
                 <Button 
                   className="w-full flex items-center gap-2" 
-                  onClick={() => setIsOpenTillModalOpen(true)}
+                  onClick={handleOpenTillClick}
                 >
                   <LockOpenIcon className="h-4 w-4" />
                   Open Till
