@@ -95,26 +95,24 @@ export class DrawerService {
 
   async openDrawer(drawerId?: string): Promise<{ success: boolean; error?: string }> {
     try {
-      // Check if we're in development/localhost mode
-      if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-        console.log('Mock drawer open: Running in development mode - simulating drawer open');
-        // Show a toast notification to indicate the mock operation
-        toast.success('Mock drawer open: In development mode, drawer would open now');
-        return { success: true };
-      }
+      console.log('Opening drawer with ID:', drawerId);
 
-      // Normal implementation for production
-      const response = await api.post('/api/pos/drawer/open', { drawerId });
+      // Send the open command directly to the printer proxy
+      const response = await axios.post(`${PRINTER_PROXY_URL}/print-and-open`, {
+        type: 'open_drawer'
+      });
+
+      console.log('Drawer open response:', response.data);
       return { 
         success: true,
         error: undefined
       };
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error opening drawer:', error);
-      let errorMessage = 'Unknown error occurred';
+      let errorMessage = 'Failed to open drawer';
       
-      if (error.response) {
-        errorMessage = error.response.data?.error || `Server error: ${error.response.status}`;
+      if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
       } else if (error.message) {
         errorMessage = error.message;
       }
@@ -202,21 +200,10 @@ export class DrawerService {
         throw new Error('No active drawer session found');
       }
       
-      const drawerId = currentSession.data.drawerId || currentSession.data.cashDrawerId;
-      
-      // Open the drawer before closing the session
-      if (drawerId) {
-        try {
-          await this.openDrawer(drawerId);
-          console.log('Cash drawer opened for closing session');
-        } catch (drawerError) {
-          console.error('Failed to open physical drawer before closing session:', drawerError);
-          // We don't throw here because we still want to close the session
-        }
-      }
+      const session = currentSession.data;
+      const drawerId = session.drawerId || session.cashDrawerId;
       
       // Calculate expected amount
-      const session = currentSession.data;
       const transactions = session.operations || [];
       const summary = transactions.reduce((acc: any, tx: any) => {
         switch (tx.type) {
@@ -239,6 +226,7 @@ export class DrawerService {
       const expectedAmount = session.openingAmount + summary.sales - summary.refunds + summary.payIns - summary.payOuts;
       const difference = closingAmount - expectedAmount;
 
+      // Close the session first
       const response = await api.post('/api/pos/drawer-session/close', { 
         closingAmount,
         expectedAmount,
@@ -246,8 +234,20 @@ export class DrawerService {
       });
       console.log('Close session response:', response.data);
       
-      // Print the closing receipt
+      // Then print receipt and open drawer
       try {
+        // First open the drawer
+        if (drawerId) {
+          try {
+            await this.openDrawer(drawerId);
+            console.log('Cash drawer opened for closing session');
+          } catch (drawerError) {
+            console.error('Failed to open physical drawer before closing session:', drawerError);
+            // Don't throw, continue with printing
+          }
+        }
+
+        // Then print the receipt
         await axios.post(`${PRINTER_PROXY_URL}/print-and-open`, {
           type: 'till_close',
           data: {
@@ -263,13 +263,17 @@ export class DrawerService {
         });
       } catch (error) {
         console.error('Error printing till close receipt:', error);
-        // Don't throw error as the session was closed successfully
+        // Don't throw since session was closed successfully
       }
       
       return response.data;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error closing session:', error);
-      throw error;
+      if (error.response) {
+        console.error('Response error data:', error.response.data);
+        console.error('Response status:', error.response.status);
+      }
+      throw new Error(error.response?.data?.message || error.message || 'Failed to close till');
     }
   }
 
