@@ -26,6 +26,9 @@ type DesignOrderStatus =
   | "DESIGN_QUEUE"
   | "DESIGN_PROCESSING"
   | "DESIGN_READY"
+  | "FINAL_CHECK_QUEUE"
+  | "FINAL_CHECK_PROCESSING"
+  | "FINAL_CHECK_READY"
   | "COMPLETED";
 
 interface UpdateOrderStatusPayload {
@@ -70,6 +73,9 @@ interface DesignOrder {
   pickupTimeSlot?: string;
   deliveryDate?: string;
   deliveryTimeSlot?: string;
+  parallelProcessing?: {
+    designStatus: DesignOrderStatus;
+  };
 }
 
 interface CustomSlide {
@@ -267,32 +273,10 @@ export default function DesignDisplay() {
     fetchOrders();
 
     // Set up WebSocket subscription
-    const unsubscribe = wsService.subscribe('pos-order-update', (data: any) => {
+    const unsubscribe = wsService.subscribe('ORDER_STATUS_UPDATE', async (data: any) => {
       if (!data) return;
-
-      // Update order in state
-      setOrders(prevOrders => {
-        return prevOrders.map(order => {
-          if (order.id === data.orderId) {
-            return {
-              ...order,
-              status: data.status,
-              ...(data.kitchenStartTime && { kitchenStartTime: data.kitchenStartTime }),
-              ...(data.kitchenEndTime && { kitchenEndTime: data.kitchenEndTime }),
-              ...(data.designStartTime && { designStartTime: data.designStartTime }),
-              ...(data.designEndTime && { designEndTime: data.designEndTime }),
-              ...(data.kitchenNotes && { kitchenNotes: data.kitchenNotes }),
-              ...(data.designNotes && { designNotes: data.designNotes })
-            };
-          }
-          return order;
-        });
-      });
-
-      // Show toast notification
-      if (data.status) {
-        toast.success(`Order #${data.orderNumber} status updated to ${data.status}`);
-      }
+      // Refetch orders to get the latest data
+      fetchOrders();
     });
 
     // Fullscreen change listener
@@ -319,13 +303,18 @@ export default function DesignDisplay() {
       if (response.success) {
         // Filter for design-relevant orders only
         const designOrders = response.data.filter((order: any) => {
-          // Include orders that:
-          // 1. Are in design queue or processing
-          if (order.status === 'DESIGN_QUEUE' || order.status === 'DESIGN_PROCESSING') {
+          // Include orders in design queue/processing/ready
+          if (order.status === 'DESIGN_QUEUE' || 
+              order.status === 'DESIGN_PROCESSING' || 
+              order.status === 'DESIGN_READY') {
             return true;
           }
-          // 2. Require design and haven't been completed
-          if (order.requiresDesign && order.status !== 'COMPLETED') {
+          // Include parallel processing orders
+          if (order.status === 'PARALLEL_PROCESSING') {
+            return true;
+          }
+          // Include orders sent back from Final Check
+          if (order.qualityControl?.returnedFromFinalCheck && order.requiresDesign) {
             return true;
           }
           return false;
@@ -333,12 +322,13 @@ export default function DesignDisplay() {
 
         const ordersWithImages = designOrders.map((order: any) => ({
           ...order,
+          // For parallel processing orders, show as DESIGN_QUEUE
+          status: order.status === 'PARALLEL_PROCESSING' ? 'DESIGN_QUEUE' : order.status,
           items: order.items.map((item: any) => ({
             ...item,
             designImages: item.customProduct?.designImages?.map((img: any) => ({
               url: img.imageUrl,
-              comment: img.comment,
-              imageNumber: img.imageNumber
+              comment: img.comment
             })) || []
           }))
         }));
@@ -474,8 +464,16 @@ export default function DesignDisplay() {
 
     const handleStatusUpdate = async (newStatus: DesignOrderStatus) => {
       try {
+        // Determine the target status based on current state and requested status
+        let targetStatus = newStatus;
+
+        // If we're clicking "Mark Ready" in Design Processing, ensure it goes to DESIGN_READY
+        if (order.status === 'DESIGN_PROCESSING' && newStatus === 'DESIGN_READY') {
+          targetStatus = 'DESIGN_READY';
+        }
+        
         const payload: UpdateOrderStatusPayload = {
-          status: newStatus,
+          status: targetStatus,
           teamNotes: "",
           notes: ""
         };
@@ -487,7 +485,7 @@ export default function DesignDisplay() {
           setOrders(prevOrders =>
             prevOrders.map(o =>
               o.id === order.id
-                ? { ...o, status: newStatus }
+                ? { ...o, status: targetStatus }
                 : o
             )
           );
@@ -503,13 +501,8 @@ export default function DesignDisplay() {
     };
 
     const handleReadyClick = () => {
-      if (order.requiresKitchen && !order.kitchenEndTime) {
-        // If kitchen work is still needed, show notes input
-        setShowNotesInput(true);
-      } else {
-        // Otherwise, just mark as completed
-        handleStatusUpdate('COMPLETED');
-      }
+      // Send to Final Check when clicking the button in Ready state
+      handleStatusUpdate('FINAL_CHECK_QUEUE');
     };
 
     const allImages = order.items.flatMap(item => 
@@ -528,6 +521,7 @@ export default function DesignDisplay() {
         className="bg-white rounded-xl shadow-lg p-4 mb-6 border-l-4 overflow-hidden relative"
         style={{
           borderLeftColor: 
+            order.qualityControl?.returnedFromFinalCheck ? '#EF4444' : // Red border for returned orders
             order.status === 'DESIGN_QUEUE' ? '#8B5CF6' : 
             order.status === 'DESIGN_PROCESSING' ? '#EC4899' : 
             order.status === 'DESIGN_READY' ? '#10B981' : '#6B7280'
@@ -553,6 +547,15 @@ export default function DesignDisplay() {
               <AlertCircle className="w-3 h-3 mr-1" />
               Returned from Final Check
             </span>
+          </div>
+        )}
+
+        {/* Prominent Sent Back Tag - Only show for returned orders */}
+        {order.qualityControl?.returnedFromFinalCheck && (
+          <div className="absolute top-0 left-0 w-full h-full overflow-hidden">
+            <div className="absolute -top-1 -left-12 bg-red-500 text-white px-12 py-1 transform rotate-315 shadow-md">
+              SENT BACK
+            </div>
           </div>
         )}
         
@@ -801,12 +804,13 @@ export default function DesignDisplay() {
 
           {/* Action buttons */}
           {!showNotesInput && (
-            <div className="flex justify-end space-x-2 mt-4">
+            <div className="mt-4 space-y-2">
               {order.status === 'DESIGN_QUEUE' && (
                 <button
                   onClick={() => handleStatusUpdate('DESIGN_PROCESSING')}
-                  className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+                  className="w-full px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors flex items-center justify-center"
                 >
+                  <ChefHat className="w-4 h-4 mr-2" />
                   Start Design
                 </button>
               )}
@@ -814,8 +818,9 @@ export default function DesignDisplay() {
               {order.status === 'DESIGN_PROCESSING' && (
                 <button
                   onClick={() => handleStatusUpdate('DESIGN_READY')}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                  className="w-full px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center"
                 >
+                  <CheckCircle2 className="w-4 h-4 mr-2" />
                   Mark Ready
                 </button>
               )}
@@ -823,9 +828,10 @@ export default function DesignDisplay() {
               {order.status === 'DESIGN_READY' && (
                 <button
                   onClick={handleReadyClick}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center"
                 >
-                  {order.requiresKitchen && !order.kitchenEndTime ? 'Send to Kitchen' : 'Complete Order'}
+                  <CheckCircle2 className="w-4 h-4 mr-2" />
+                  Send to Final Check
                 </button>
               )}
             </div>
@@ -876,6 +882,15 @@ export default function DesignDisplay() {
                 <h2 className="font-semibold text-lg flex items-center">
                   <div className="w-3 h-3 rounded-full bg-purple-500 mr-2" />
                   New
+                  {getOrdersByStatus("DESIGN_QUEUE").filter(order => 
+                    order.qualityControl?.returnedFromFinalCheck
+                  ).length > 0 && (
+                    <span className="ml-2 px-2 py-0.5 text-xs bg-red-100 text-red-800 rounded-full">
+                      {getOrdersByStatus("DESIGN_QUEUE").filter(order => 
+                        order.qualityControl?.returnedFromFinalCheck
+                      ).length} Returned
+                    </span>
+                  )}
                 </h2>
                 <span className="text-sm text-gray-500">{getOrdersByStatus("DESIGN_QUEUE").length}</span>
               </div>
@@ -892,6 +907,15 @@ export default function DesignDisplay() {
                 <h2 className="font-semibold text-lg flex items-center">
                   <div className="w-3 h-3 rounded-full bg-purple-500 mr-2" />
                   Processing
+                  {getOrdersByStatus("DESIGN_PROCESSING").filter(order => 
+                    order.qualityControl?.returnedFromFinalCheck
+                  ).length > 0 && (
+                    <span className="ml-2 px-2 py-0.5 text-xs bg-red-100 text-red-800 rounded-full">
+                      {getOrdersByStatus("DESIGN_PROCESSING").filter(order => 
+                        order.qualityControl?.returnedFromFinalCheck
+                      ).length} Returned
+                    </span>
+                  )}
                 </h2>
                 <span className="text-sm text-gray-500">{getOrdersByStatus("DESIGN_PROCESSING").length}</span>
               </div>
@@ -908,27 +932,20 @@ export default function DesignDisplay() {
                 <h2 className="font-semibold text-lg flex items-center">
                   <div className="w-3 h-3 rounded-full bg-yellow-500 mr-2" />
                   Ready
+                  {getOrdersByStatus("DESIGN_READY").filter(order => 
+                    order.qualityControl?.returnedFromFinalCheck
+                  ).length > 0 && (
+                    <span className="ml-2 px-2 py-0.5 text-xs bg-red-100 text-red-800 rounded-full">
+                      {getOrdersByStatus("DESIGN_READY").filter(order => 
+                        order.qualityControl?.returnedFromFinalCheck
+                      ).length} Returned
+                    </span>
+                  )}
                 </h2>
                 <span className="text-sm text-gray-500">{getOrdersByStatus("DESIGN_READY").length}</span>
               </div>
               <AnimatePresence>
                 {getOrdersByStatus("DESIGN_READY").map(order => (
-                  <OrderCard key={order.id} order={order} />
-                ))}
-              </AnimatePresence>
-            </div>
-
-            {/* Kitchen Queue Column */}
-            <div className="bg-gray-50 rounded-xl p-4 overflow-y-auto">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="font-semibold text-lg flex items-center">
-                  <div className="w-3 h-3 rounded-full bg-blue-500 mr-2" />
-                  Kitchen Queue
-                </h2>
-                <span className="text-sm text-gray-500">{getOrdersByStatus("KITCHEN_QUEUE").length}</span>
-              </div>
-              <AnimatePresence>
-                {getOrdersByStatus("KITCHEN_QUEUE").map(order => (
                   <OrderCard key={order.id} order={order} />
                 ))}
               </AnimatePresence>

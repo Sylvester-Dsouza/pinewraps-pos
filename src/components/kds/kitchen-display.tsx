@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Timer, CheckCircle2, Clock, ChefHat, Bell, RotateCw, Maximize2, Minimize2, AlertCircle } from "lucide-react";
+import { CheckCircle2, Clock, ChefHat, Bell, RotateCw, Maximize2, Minimize2, AlertCircle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { apiMethods } from "@/services/api";
 import { wsService } from "@/services/websocket";
@@ -68,12 +68,9 @@ interface KitchenOrder {
     returnReason?: string;
     returnedAt?: string;
   };
-}
-
-interface OrderTimerProps {
-  startTime: string;
-  endTime?: string;
-  status: KitchenOrderStatus;
+  parallelProcessing?: {
+    kitchenStatus?: KitchenOrderStatus;
+  };
 }
 
 interface UpdateOrderStatusPayload {
@@ -95,168 +92,9 @@ interface VariationItem {
   priceAdjustment?: number;
 }
 
-const OrderTimer = ({ startTime, endTime, status }: OrderTimerProps) => {
-  const [elapsed, setElapsed] = useState(0);
-  const TARGET_TIME = 15 * 60; // 15 minutes target time
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const initialStartTime = useRef<string>(startTime);
-
-  useEffect(() => {
-    // Only update the initial start time when the component first mounts
-    // or when a new startTime is provided and the timer hasn't started yet
-    if (!initialStartTime.current || !timerRef.current) {
-      initialStartTime.current = startTime;
-    }
-
-    const updateElapsed = () => {
-      const start = new Date(initialStartTime.current).getTime();
-      const now = Date.now();
-      const elapsedSeconds = Math.floor((now - start) / 1000);
-      setElapsed(elapsedSeconds);
-    };
-
-    // Clear existing timer
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-
-    if (status === 'KITCHEN_PROCESSING') {
-      // Update immediately
-      updateElapsed();
-      // Set up interval for updates
-      timerRef.current = setInterval(updateElapsed, 1000);
-    } else if (status === 'KITCHEN_READY' && startTime && endTime) {
-      const start = new Date(startTime).getTime();
-      const end = new Date(endTime).getTime();
-      const totalTime = Math.floor((end - start) / 1000);
-      setElapsed(totalTime);
-    }
-
-    return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-      }
-    };
-  }, [status, endTime, startTime]); // Include startTime to handle new orders correctly
-
-  const formatTimer = (seconds: number) => {
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
-    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
-  };
-
-  // Determine color based on status and time
-  const getTimerColor = () => {
-    if (status === 'KITCHEN_READY' || status === 'COMPLETED') return 'text-green-600 stroke-green-600';
-    if (elapsed > 30 * 60) return 'text-red-600 stroke-red-600'; // Over 30 minutes
-    if (elapsed > 15 * 60) return 'text-orange-600 stroke-orange-600'; // Over 15 minutes
-    return 'text-yellow-600 stroke-yellow-600'; // Default
-  };
-
-  // Calculate progress percentage
-  const progress = Math.min((elapsed / TARGET_TIME) * 100, 100);
-  const radius = 20;
-  const circumference = 2 * Math.PI * radius;
-  const strokeDashoffset = circumference - (progress / 100) * circumference;
-
-  return (
-    <div className="flex items-center space-x-2">
-      {/* Circular Progress */}
-      <div className="relative w-12 h-12">
-        {/* Background circle */}
-        <svg className="w-full h-full transform -rotate-90">
-          <circle
-            cx="24"
-            cy="24"
-            r={radius}
-            stroke="currentColor"
-            strokeWidth="3"
-            fill="transparent"
-            className="opacity-10"
-          />
-          {/* Progress circle */}
-          <circle
-            cx="24"
-            cy="24"
-            r={radius}
-            stroke="currentColor"
-            strokeWidth="3"
-            fill="transparent"
-            strokeDasharray={circumference}
-            strokeDashoffset={strokeDashoffset}
-            className={`transition-all duration-500 ${getTimerColor()}`}
-          />
-        </svg>
-        {/* Timer text in the middle */}
-        <div className="absolute inset-0 flex items-center justify-center">
-          <span className={`text-xs font-medium ${getTimerColor()}`}>
-            {formatTimer(elapsed)}
-          </span>
-        </div>
-      </div>
-      {/* Status text */}
-      <div className={`flex flex-col ${getTimerColor()}`}>
-        <span className="text-sm">Prep Time</span>
-        {endTime && <span className="text-xs">(Final)</span>}
-      </div>
-    </div>
-  );
-};
-
-const OrderTimer2 = ({ createdAt }: { createdAt: Date }) => {
-  const [elapsedTime, setElapsedTime] = useState('');
-  const [timeClass, setTimeClass] = useState('text-gray-500');
-
-  useEffect(() => {
-    const updateTimer = () => {
-      const now = new Date();
-      const start = new Date(createdAt);
-      const diff = now.getTime() - start.getTime();
-      
-      const minutes = Math.floor(diff / (1000 * 60));
-      const seconds = Math.floor((diff % (1000 * 60)) / 1000);
-      const hours = Math.floor(minutes / 60);
-
-      // Update color based on elapsed time
-      if (minutes >= 30) {
-        setTimeClass('text-red-500 font-medium');
-      } else if (minutes >= 15) {
-        setTimeClass('text-orange-500');
-      } else if (minutes >= 5) {
-        setTimeClass('text-yellow-600');
-      } else {
-        setTimeClass('text-gray-500');
-      }
-
-      if (hours > 0) {
-        setElapsedTime(`${hours}h ${minutes % 60}m ${seconds}s`);
-      } else if (minutes > 0) {
-        setElapsedTime(`${minutes}m ${seconds}s`);
-      } else {
-        setElapsedTime(`${seconds}s`);
-      }
-    };
-
-    // Update immediately and then every second
-    updateTimer();
-    const interval = setInterval(updateTimer, 1000);
-
-    return () => clearInterval(interval);
-  }, [createdAt]);
-
-  return (
-    <div className={`flex items-center gap-1 text-sm mt-1 ${timeClass}`}>
-      <Clock className="w-4 h-4" />
-      <span>{elapsedTime}</span>
-    </div>
-  );
-};
-
 export default function KitchenDisplay() {
   const [orders, setOrders] = useState<KitchenOrder[]>([]);
   const [onlineOrders, setOnlineOrders] = useState<KitchenOrder[]>([]);
-  const [activeTab, setActiveTab] = useState<'pos' | 'online'>('pos');
   const [loading, setLoading] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -269,18 +107,12 @@ export default function KitchenDisplay() {
   // Fetch initial orders
   useEffect(() => {
     fetchOrders();
-    if (activeTab === 'online') {
-      fetchOnlineOrders();
-    }
     // Set up auto-refresh every 5 minutes
     const refreshInterval = setInterval(() => {
       fetchOrders();
-      if (activeTab === 'online') {
-        fetchOnlineOrders();
-      }
     }, 5 * 60 * 1000);
     return () => clearInterval(refreshInterval);
-  }, [activeTab]);
+  }, []);
 
   // Fullscreen effect
   useEffect(() => {
@@ -316,23 +148,9 @@ export default function KitchenDisplay() {
         ));
       });
 
-      const unsubscribeUpdate = wsService.subscribe('ORDER_STATUS_UPDATE', (data) => {
-        setOrders(prev => prev.map(order => {
-          if (order.id === data.id) {
-            // Only update the specific fields that changed
-            return {
-              ...order,
-              status: data.status,
-              ...(data.kitchenStartTime && { kitchenStartTime: data.kitchenStartTime }),
-              ...(data.kitchenEndTime && { kitchenEndTime: data.kitchenEndTime }),
-              ...(data.designStartTime && { designStartTime: data.designStartTime }),
-              ...(data.designEndTime && { designEndTime: data.designEndTime }),
-              ...(data.finalCheckStartTime && { finalCheckStartTime: data.finalCheckStartTime }),
-              ...(data.finalCheckEndTime && { finalCheckEndTime: data.finalCheckEndTime })
-            };
-          }
-          return order;
-        }));
+      const unsubscribeUpdate = wsService.subscribe('ORDER_STATUS_UPDATE', async (data) => {
+        // When we receive an update, refetch the orders to get the latest data
+        fetchOrders();
       });
 
       return () => {
@@ -349,13 +167,20 @@ export default function KitchenDisplay() {
       if (response.success) {
         // Filter for kitchen-relevant orders only
         const kitchenOrders = response.data.filter((order: any) => 
-          order.status === 'KITCHEN_QUEUE' ||
-          order.status === 'KITCHEN_PROCESSING' ||
-          order.status === 'KITCHEN_READY'
+          // Include orders in kitchen queue/processing/ready
+          (order.status === 'KITCHEN_QUEUE' ||
+           order.status === 'KITCHEN_PROCESSING' ||
+           order.status === 'KITCHEN_READY') ||
+          // Include parallel processing orders
+          order.status === 'PARALLEL_PROCESSING' ||
+          // Include orders sent back from Final Check
+          (order.qualityControl?.returnedFromFinalCheck && order.requiresKitchen)
         );
 
         const ordersWithImages = kitchenOrders.map((order: any) => ({
           ...order,
+          // For parallel processing orders, show as KITCHEN_QUEUE
+          status: order.status === 'PARALLEL_PROCESSING' ? 'KITCHEN_QUEUE' : order.status,
           items: order.items.map((item: any) => ({
             ...item,
             customImages: item.customImages?.map((img: any) => ({
@@ -369,51 +194,6 @@ export default function KitchenDisplay() {
     } catch (error) {
       console.error('Failed to fetch orders:', error);
       toast.error('Failed to fetch orders');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchOnlineOrders = async () => {
-    try {
-      setLoading(true);
-      const response = await apiMethods.getOrders({
-        status: ['PENDING', 'PROCESSING']
-      });
-      
-      if (response.success) {
-        // Transform online orders to match KitchenOrder format
-        const transformedOrders = response.data.results.map((order: any) => ({
-          id: order.id,
-          orderNumber: order.orderNumber,
-          customerName: `${order.customer?.firstName || ''} ${order.customer?.lastName || ''}`.trim(),
-          status: order.status,
-          createdAt: order.createdAt,
-          items: order.items.map((item: any) => ({
-            id: item.id,
-            name: item.productName,
-            quantity: item.quantity,
-            variations: item.variations || {},
-            customImages: item.customImages || [],
-            status: order.status
-          })),
-          requiresKitchen: true,
-          requiresDesign: order.items.some((item: any) => 
-            item.productName.toLowerCase().includes('flower') || 
-            item.productName.toLowerCase().includes('bouquet')
-          ),
-          deliveryMethod: order.deliveryType,
-          pickupDate: order.pickupDate,
-          pickupTimeSlot: order.pickupTimeSlot,
-          deliveryDate: order.deliveryDate,
-          deliveryTimeSlot: order.deliveryTimeSlot
-        }));
-
-        setOnlineOrders(transformedOrders);
-      }
-    } catch (error) {
-      console.error('Failed to fetch online orders:', error);
-      toast.error('Failed to fetch online orders');
     } finally {
       setLoading(false);
     }
@@ -554,7 +334,7 @@ export default function KitchenDisplay() {
     }
   };
 
-  const OrderCard = ({ order, isOnline }: { order: KitchenOrder, isOnline: boolean }) => {
+  const OrderCard = ({ order }: { order: KitchenOrder }) => {
     const handleImageClick = (images: CustomImage[], index: number) => {
       const slides = images.map(img => ({
         src: img.url,
@@ -603,6 +383,7 @@ export default function KitchenDisplay() {
       className="bg-white rounded-xl shadow-lg p-4 mb-6 border-l-4 overflow-hidden relative"
       style={{
         borderLeftColor: 
+          order.qualityControl?.returnedFromFinalCheck ? '#EF4444' : // Red border for returned orders
           order.status === 'KITCHEN_QUEUE' ? '#3B82F6' : 
           order.status === 'KITCHEN_PROCESSING' ? '#F59E0B' : 
           order.status === 'KITCHEN_READY' ? '#10B981' : '#6B7280'
@@ -610,7 +391,11 @@ export default function KitchenDisplay() {
     >
       {/* Status Badge */}
       <div className="absolute top-3 right-3 z-10">
-        <span className={`px-3 py-1 text-xs font-medium rounded-full ${order.status === 'KITCHEN_QUEUE' ? 'bg-blue-100 text-blue-800' : order.status === 'KITCHEN_PROCESSING' ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'}`}>
+        <span className={`px-3 py-1 text-xs font-medium rounded-full ${
+          order.status === 'KITCHEN_QUEUE' ? 'bg-blue-100 text-blue-800' : 
+          order.status === 'KITCHEN_PROCESSING' ? 'bg-yellow-100 text-yellow-800' : 
+          'bg-green-100 text-green-800'
+        }`}>
           {order.status === 'KITCHEN_QUEUE' ? 'New' : 
            order.status === 'KITCHEN_PROCESSING' ? 'Processing' : 
            'Ready'}
@@ -620,10 +405,18 @@ export default function KitchenDisplay() {
       {/* Return Badge - Show when order was returned from Final Check */}
       {order.qualityControl?.returnedFromFinalCheck && (
         <div className="absolute top-10 right-3 z-10 mt-2">
-          <span className="px-3 py-1 text-xs font-medium rounded-full bg-red-100 text-red-800 flex items-center">
-            <AlertCircle className="w-3 h-3 mr-1" />
-            Returned from Final Check
-          </span>
+        <span className="px-3 py-1 text-xs font-medium rounded-full bg-red-100 text-red-800 flex items-center">
+          <AlertCircle className="w-3 h-3 mr-1" /> Return from Final Check
+        </span>
+      </div>
+      )}
+
+      {/* Prominent Sent Back Tag - Only show for returned orders */}
+      {order.qualityControl?.returnedFromFinalCheck && (
+        <div className="absolute top-0 left-0 w-full h-full overflow-hidden">
+          <div className="absolute -top-1 -left-12 bg-red-500 text-white px-12 py-1 transform rotate-315 shadow-md">
+            SENT BACK
+          </div>
         </div>
       )}
 
@@ -635,7 +428,9 @@ export default function KitchenDisplay() {
             <div className="flex items-center mt-1 space-x-2">
               <p className="text-sm font-medium text-gray-600">Customer: {order.customerName}</p>
               <span className="text-gray-300 text-sm">|</span>
-              <OrderTimer2 createdAt={new Date(order.createdAt)} />
+              <p className="text-sm text-gray-500">
+                {formatDistanceToNow(new Date(order.createdAt), { addSuffix: true })}
+              </p>
             </div>
             
             {/* Delivery/Pickup Time - Prominent display with countdown */}
@@ -670,13 +465,6 @@ export default function KitchenDisplay() {
           
           {/* Timer Display */}
           <div className="flex-shrink-0 mr-4">
-            {order.kitchenStartTime && (
-              <OrderTimer 
-                startTime={order.kitchenStartTime} 
-                endTime={order.kitchenEndTime} 
-                status={order.status} 
-              />
-            )}
           </div>
         </div>
 
@@ -686,7 +474,7 @@ export default function KitchenDisplay() {
             <div className="p-3 bg-red-50 rounded-lg border border-red-200">
               <p className="text-sm text-red-700">
                 <span className="font-bold flex items-center gap-1">
-                  <AlertCircle className="w-4 h-4" /> Return Reason:
+                  <AlertCircle className="w-4 h-4 mr-1" /> Return Reason:
                 </span> 
                 {order.qualityControl.returnReason}
               </p>
@@ -892,29 +680,10 @@ export default function KitchenDisplay() {
 
   return (
     <div className="min-h-screen bg-gray-100 p-4">
-      {/* Header with tabs */}
+      {/* Header */}
       <div className="mb-6 flex items-center justify-between">
-        <div className="flex space-x-4">
-          <button
-            onClick={() => setActiveTab('pos')}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-              activeTab === 'pos'
-                ? 'bg-primary text-white'
-                : 'bg-white text-gray-600 hover:bg-gray-50'
-            }`}
-          >
-            POS Orders
-          </button>
-          <button
-            onClick={() => setActiveTab('online')}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-              activeTab === 'online'
-                ? 'bg-primary text-white'
-                : 'bg-white text-gray-600 hover:bg-gray-50'
-            }`}
-          >
-            Online Orders
-          </button>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-800">Kitchen Screen</h1>
         </div>
         
         <div className="flex items-center space-x-4">
@@ -952,20 +721,26 @@ export default function KitchenDisplay() {
           <h2 className="text-lg font-semibold mb-4 flex items-center">
             <ChefHat className="w-5 h-5 mr-2" />
             Queue
+            {orders.filter(order => 
+              order.status === 'KITCHEN_QUEUE' && 
+              order.qualityControl?.returnedFromFinalCheck
+            ).length > 0 && (
+              <span className="ml-2 px-2 py-0.5 text-xs bg-red-100 text-red-800 rounded-full">
+                {orders.filter(order => 
+                  order.status === 'KITCHEN_QUEUE' && 
+                  order.qualityControl?.returnedFromFinalCheck
+                ).length} Returned
+              </span>
+            )}
           </h2>
           <div className="space-y-4">
             <AnimatePresence>
-              {(activeTab === 'pos' ? orders : onlineOrders)
-                .filter(order => 
-                  activeTab === 'pos' 
-                    ? order.status === 'KITCHEN_QUEUE'
-                    : order.status === 'PENDING'
-                )
+              {orders
+                .filter(order => order.status === 'KITCHEN_QUEUE')
                 .map(order => (
                   <OrderCard
                     key={order.id}
                     order={order}
-                    isOnline={activeTab === 'online'}
                   />
                 ))}
             </AnimatePresence>
@@ -975,22 +750,17 @@ export default function KitchenDisplay() {
         {/* Processing Section */}
         <div className="bg-white rounded-lg shadow p-4">
           <h2 className="text-lg font-semibold mb-4 flex items-center">
-            <Timer className="w-5 h-5 mr-2" />
+            <ChefHat className="w-5 h-5 mr-2" />
             Processing
           </h2>
           <div className="space-y-4">
             <AnimatePresence>
-              {(activeTab === 'pos' ? orders : onlineOrders)
-                .filter(order => 
-                  activeTab === 'pos' 
-                    ? order.status === 'KITCHEN_PROCESSING'
-                    : order.status === 'PROCESSING'
-                )
+              {orders
+                .filter(order => order.status === 'KITCHEN_PROCESSING')
                 .map(order => (
                   <OrderCard
                     key={order.id}
                     order={order}
-                    isOnline={activeTab === 'online'}
                   />
                 ))}
             </AnimatePresence>
@@ -1005,17 +775,12 @@ export default function KitchenDisplay() {
           </h2>
           <div className="space-y-4">
             <AnimatePresence>
-              {(activeTab === 'pos' ? orders : onlineOrders)
-                .filter(order => 
-                  activeTab === 'pos' 
-                    ? order.status === 'KITCHEN_READY'
-                    : order.status === 'READY_FOR_PICKUP'
-                )
+              {orders
+                .filter(order => order.status === 'KITCHEN_READY')
                 .map(order => (
                   <OrderCard
                     key={order.id}
                     order={order}
-                    isOnline={activeTab === 'online'}
                   />
                 ))}
             </AnimatePresence>
