@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
 import Image from "next/image";
+import { toast } from "react-hot-toast";
 
 // Types for order and status
 type FinalCheckOrderStatus = 
@@ -63,6 +64,7 @@ export default function OrderCard({ order, onUpdateStatus }: OrderCardProps) {
   const [teamNotes, setTeamNotes] = useState(order.finalCheckNotes || "");
   const [nextStatus, setNextStatus] = useState<FinalCheckOrderStatus | null>(null);
   const [sendBackTarget, setSendBackTarget] = useState<'KITCHEN' | 'DESIGN' | null>(null);
+  const [returnReason, setReturnReason] = useState("");
 
   const toggleExpand = () => {
     setExpanded(!expanded);
@@ -88,10 +90,22 @@ export default function OrderCard({ order, onUpdateStatus }: OrderCardProps) {
 
   const confirmStatusUpdate = () => {
     if (nextStatus) {
-      onUpdateStatus?.(order.id, nextStatus, teamNotes);
+      if (sendBackTarget) {
+        // For send back operations, still require a reason but store it as teamNotes
+        if (!returnReason.trim()) {
+          toast.error('Please provide a return reason');
+          return;
+        }
+        // Use returnReason as teamNotes
+        onUpdateStatus?.(order.id, nextStatus, returnReason);
+      } else {
+        // For normal status updates, use teamNotes
+        onUpdateStatus?.(order.id, nextStatus, teamNotes);
+      }
       setIsDialogOpen(false);
       setNextStatus(null);
       setSendBackTarget(null);
+      setReturnReason("");
     }
   };
 
@@ -396,8 +410,23 @@ export default function OrderCard({ order, onUpdateStatus }: OrderCardProps) {
             )}
           </DialogHeader>
           <div className="py-4">
+            {sendBackTarget && (
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Return Reason <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  placeholder={`Why is this order being returned to ${sendBackTarget}?`}
+                  value={returnReason}
+                  onChange={(e) => setReturnReason(e.target.value)}
+                  rows={3}
+                  className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                  required
+                />
+              </div>
+            )}
             <textarea
-              placeholder={sendBackTarget ? `Add notes for ${sendBackTarget}` : 'Add any notes about this order (optional)'}
+              placeholder={sendBackTarget ? `Additional notes for ${sendBackTarget} (optional)` : 'Add any notes about this order (optional)'}
               value={teamNotes}
               onChange={(e) => setTeamNotes(e.target.value)}
               rows={4}

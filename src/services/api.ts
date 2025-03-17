@@ -768,13 +768,14 @@ export const apiMethods = {
       }
     },
 
-    updateOrderStatus: async (orderId: string, { status, notes, teamNotes }: { status: string, notes?: string, teamNotes?: string }) => {
+    updateOrderStatus: async (orderId: string, { status, notes, teamNotes, qualityControl }: { status: string, notes?: string, teamNotes?: string, qualityControl?: any }) => {
       try {
-        console.log('API call: updateOrderStatus', { orderId, status, notes, teamNotes });
+        console.log('API call: updateOrderStatus', { orderId, status, notes, teamNotes, qualityControl });
         const response = await api.patch(`/api/pos/orders/${orderId}/status`, {
           status,
           notes: notes || '',
-          teamNotes: teamNotes || ''
+          teamNotes: teamNotes || '',
+          qualityControl
         });
         return response.data;
       } catch (error: any) {

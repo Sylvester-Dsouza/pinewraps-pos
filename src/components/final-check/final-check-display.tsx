@@ -48,12 +48,6 @@ export interface FinalCheckOrder {
   pickupTimeSlot?: string;
   deliveryDate?: string;
   deliveryTimeSlot?: string;
-  qualityControl?: {
-    returnedFromFinalCheck?: boolean;
-    returnReason?: string;
-    returnDestination?: 'KITCHEN' | 'DESIGN';
-    returnedAt?: string;
-  };
 }
 
 export interface UpdateOrderStatusPayload {
@@ -311,18 +305,12 @@ export default function FinalCheckDisplay() {
     try {
       console.log('Updating order status:', { orderId, newStatus, teamNotes });
       
-      // If sending back to Kitchen or Design, add returnedFromFinalCheck flag
+      // Check if order is being sent back to Kitchen or Design
       const isReturnToKitchenOrDesign = newStatus === 'KITCHEN_QUEUE' || newStatus === 'DESIGN_QUEUE';
       
       const response = await apiMethods.pos.updateOrderStatus(orderId, {
         status: newStatus,
         teamNotes: teamNotes || '',
-        qualityControl: isReturnToKitchenOrDesign ? {
-          returnedFromFinalCheck: true,
-          returnReason: teamNotes || 'Returned from Final Check',
-          returnDestination: newStatus === 'KITCHEN_QUEUE' ? 'KITCHEN' : 'DESIGN',
-          returnedAt: new Date().toISOString()
-        } : undefined
       });
 
       if (response.success) {
@@ -333,13 +321,6 @@ export default function FinalCheckDisplay() {
                   ...order, 
                   status: newStatus,
                   finalCheckNotes: teamNotes || order.finalCheckNotes,
-                  qualityControl: isReturnToKitchenOrDesign ? {
-                    ...order.qualityControl,
-                    returnedFromFinalCheck: true,
-                    returnReason: teamNotes || 'Returned from Final Check',
-                    returnDestination: newStatus === 'KITCHEN_QUEUE' ? 'KITCHEN' : 'DESIGN',
-                    returnedAt: new Date().toISOString()
-                  } : order.qualityControl
                 }
               : order
           )

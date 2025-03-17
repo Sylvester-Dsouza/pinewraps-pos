@@ -26,6 +26,9 @@ type DesignOrderStatus =
   | "DESIGN_QUEUE"
   | "DESIGN_PROCESSING"
   | "DESIGN_READY"
+  | "FINAL_CHECK_QUEUE"
+  | "FINAL_CHECK_PROCESSING"
+  | "FINAL_CHECK_READY"
   | "COMPLETED";
 
 interface UpdateOrderStatusPayload {
@@ -60,16 +63,14 @@ interface DesignOrder {
   designEndTime?: string;
   requiresKitchen: boolean;
   requiresDesign: boolean;
-  qualityControl?: {
-    returnedFromFinalCheck?: boolean;
-    returnReason?: string;
-    returnedAt?: string;
-  };
   deliveryMethod?: string;
   pickupDate?: string;
   pickupTimeSlot?: string;
   deliveryDate?: string;
   deliveryTimeSlot?: string;
+  parallelProcessing?: {
+    designStatus: DesignOrderStatus;
+  };
 }
 
 interface CustomSlide {
@@ -196,11 +197,7 @@ const OrderTimer = ({ startTime, endTime, status }: OrderTimerProps) => {
           </span>
         </div>
       </div>
-      {/* Status text */}
-      <div className={`flex flex-col ${getTimerColor()}`}>
-        <span className="text-sm">Prep Time</span>
-        {endTime && <span className="text-xs">(Final)</span>}
-      </div>
+      {/* Status text completely removed as requested */}
     </div>
   );
 };
@@ -267,32 +264,10 @@ export default function DesignDisplay() {
     fetchOrders();
 
     // Set up WebSocket subscription
-    const unsubscribe = wsService.subscribe('pos-order-update', (data: any) => {
+    const unsubscribe = wsService.subscribe('ORDER_STATUS_UPDATE', async (data: any) => {
       if (!data) return;
-
-      // Update order in state
-      setOrders(prevOrders => {
-        return prevOrders.map(order => {
-          if (order.id === data.orderId) {
-            return {
-              ...order,
-              status: data.status,
-              ...(data.kitchenStartTime && { kitchenStartTime: data.kitchenStartTime }),
-              ...(data.kitchenEndTime && { kitchenEndTime: data.kitchenEndTime }),
-              ...(data.designStartTime && { designStartTime: data.designStartTime }),
-              ...(data.designEndTime && { designEndTime: data.designEndTime }),
-              ...(data.kitchenNotes && { kitchenNotes: data.kitchenNotes }),
-              ...(data.designNotes && { designNotes: data.designNotes })
-            };
-          }
-          return order;
-        });
-      });
-
-      // Show toast notification
-      if (data.status) {
-        toast.success(`Order #${data.orderNumber} status updated to ${data.status}`);
-      }
+      // Refetch orders to get the latest data
+      fetchOrders();
     });
 
     // Fullscreen change listener
@@ -319,13 +294,14 @@ export default function DesignDisplay() {
       if (response.success) {
         // Filter for design-relevant orders only
         const designOrders = response.data.filter((order: any) => {
-          // Include orders that:
-          // 1. Are in design queue or processing
-          if (order.status === 'DESIGN_QUEUE' || order.status === 'DESIGN_PROCESSING') {
+          // Include orders in design queue/processing/ready
+          if (order.status === 'DESIGN_QUEUE' || 
+              order.status === 'DESIGN_PROCESSING' || 
+              order.status === 'DESIGN_READY') {
             return true;
           }
-          // 2. Require design and haven't been completed
-          if (order.requiresDesign && order.status !== 'COMPLETED') {
+          // Include parallel processing orders
+          if (order.status === 'PARALLEL_PROCESSING') {
             return true;
           }
           return false;
@@ -333,16 +309,47 @@ export default function DesignDisplay() {
 
         const ordersWithImages = designOrders.map((order: any) => ({
           ...order,
+          // For parallel processing orders, show as DESIGN_QUEUE
+          status: order.status === 'PARALLEL_PROCESSING' ? 'DESIGN_QUEUE' : order.status,
           items: order.items.map((item: any) => ({
             ...item,
             designImages: item.customProduct?.designImages?.map((img: any) => ({
               url: img.imageUrl,
-              comment: img.comment,
-              imageNumber: img.imageNumber
+              comment: img.comment
             })) || []
           }))
         }));
-        setOrders(ordersWithImages);
+        
+        // Sort orders by pickup or delivery date (closest dates first)
+        const sortedOrders = [...ordersWithImages].sort((a, b) => {
+          // Determine the date to use for each order (pickup or delivery)
+          const getOrderDate = (order: any) => {
+            if (order.deliveryMethod === 'PICKUP' && order.pickupDate) {
+              return new Date(order.pickupDate);
+            } else if (order.deliveryMethod === 'DELIVERY' && order.deliveryDate) {
+              return new Date(order.deliveryDate);
+            }
+            // If no date is available, use a far future date to put it at the end
+            return new Date('2099-12-31');
+          };
+          
+          const dateA = getOrderDate(a);
+          const dateB = getOrderDate(b);
+          
+          // Compare dates
+          return dateA.getTime() - dateB.getTime();
+        });
+        
+        // Debug log for sorted orders
+        console.log('Design orders sorted by date:', sortedOrders.map(order => ({
+          orderNumber: order.orderNumber,
+          deliveryMethod: order.deliveryMethod,
+          pickupDate: order.pickupDate,
+          deliveryDate: order.deliveryDate,
+          date: order.deliveryMethod === 'PICKUP' ? order.pickupDate : order.deliveryDate
+        })));
+        
+        setOrders(sortedOrders);
       }
     } catch (error) {
       console.error('Failed to fetch orders:', error);
@@ -474,8 +481,16 @@ export default function DesignDisplay() {
 
     const handleStatusUpdate = async (newStatus: DesignOrderStatus) => {
       try {
+        // Determine the target status based on current state and requested status
+        let targetStatus = newStatus;
+
+        // If we're clicking "Mark Ready" in Design Processing, ensure it goes to DESIGN_READY
+        if (order.status === 'DESIGN_PROCESSING' && newStatus === 'DESIGN_READY') {
+          targetStatus = 'DESIGN_READY';
+        }
+        
         const payload: UpdateOrderStatusPayload = {
-          status: newStatus,
+          status: targetStatus,
           teamNotes: "",
           notes: ""
         };
@@ -487,7 +502,7 @@ export default function DesignDisplay() {
           setOrders(prevOrders =>
             prevOrders.map(o =>
               o.id === order.id
-                ? { ...o, status: newStatus }
+                ? { ...o, status: targetStatus }
                 : o
             )
           );
@@ -503,13 +518,8 @@ export default function DesignDisplay() {
     };
 
     const handleReadyClick = () => {
-      if (order.requiresKitchen && !order.kitchenEndTime) {
-        // If kitchen work is still needed, show notes input
-        setShowNotesInput(true);
-      } else {
-        // Otherwise, just mark as completed
-        handleStatusUpdate('COMPLETED');
-      }
+      // Send to Final Check when clicking the button in Ready state
+      handleStatusUpdate('FINAL_CHECK_QUEUE');
     };
 
     const allImages = order.items.flatMap(item => 
@@ -546,16 +556,6 @@ export default function DesignDisplay() {
           </span>
         </div>
 
-        {/* Return Badge - Show when order was returned from Final Check */}
-        {order.qualityControl?.returnedFromFinalCheck && (
-          <div className="absolute top-10 right-3 z-10 mt-2">
-            <span className="px-3 py-1 text-xs font-medium rounded-full bg-red-100 text-red-800 flex items-center">
-              <AlertCircle className="w-3 h-3 mr-1" />
-              Returned from Final Check
-            </span>
-          </div>
-        )}
-        
         <div className="space-y-5">
           {/* Header Section */}
           <div className="flex justify-between items-start pb-3 border-b border-gray-100">
@@ -567,24 +567,6 @@ export default function DesignDisplay() {
                 <OrderTimer2 createdAt={new Date(order.createdAt)} />
               </div>
               
-              {/* Design Start Time - Prominent display with time info */}
-              {order.designStartTime && (
-                <div className="mt-3 py-2 px-3 rounded-lg bg-gray-50 border border-gray-100">
-                  <div className="flex items-center">
-                    <div className="mr-3">
-                      <Clock className="w-5 h-5 text-purple-500" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-gray-700">
-                        Design Time
-                      </p>
-                      <p className="text-sm font-medium text-purple-600">
-                        Started {formatDistanceToNow(new Date(order.designStartTime), { addSuffix: true })}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
               
               {/* Delivery/Pickup Time - Prominent display with countdown */}
               {order.deliveryMethod && (
@@ -617,7 +599,7 @@ export default function DesignDisplay() {
             </div>
             
             {/* Timer Display */}
-            <div className="flex-shrink-0 mr-4">
+            {/* <div className="flex-shrink-0 mr-4">
               {order.designStartTime && (
                 <OrderTimer 
                   startTime={order.designStartTime} 
@@ -625,7 +607,7 @@ export default function DesignDisplay() {
                   status={order.status} 
                 />
               )}
-            </div>
+            </div> */}
           </div>
 
           {/* Order Notes Section */}
@@ -657,23 +639,6 @@ export default function DesignDisplay() {
                     <p className="text-sm text-purple-700">{order.designNotes}</p>
                   </div>
                 </div>
-              </div>
-            )}
-            
-            {/* Return reason highlighted */}
-            {order.qualityControl?.returnedFromFinalCheck && order.qualityControl?.returnReason && (
-              <div className="p-3 bg-red-50 rounded-lg border border-red-200">
-                <p className="text-sm text-red-700">
-                  <span className="font-bold flex items-center gap-1">
-                    <AlertCircle className="w-4 h-4" /> Return Reason:
-                  </span> 
-                  {order.qualityControl.returnReason}
-                </p>
-                {order.qualityControl.returnedAt && (
-                  <p className="text-xs text-red-500 mt-1">
-                    Returned on {format(new Date(order.qualityControl.returnedAt), 'MMM d, h:mm a')}
-                  </p>
-                )}
               </div>
             )}
           </div>
@@ -714,7 +679,9 @@ export default function DesignDisplay() {
                         <div className="mt-2 flex flex-wrap gap-1">
                           {Object.entries(item.variations).map(([type, variation]) => (
                             <span key={type} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                              {type}: {typeof variation === 'object' ? variation.value : variation}
+                              {type}: {typeof variation === 'object' && variation !== null ? 
+                                (variation as any).value || JSON.stringify(variation) : 
+                                variation}
                             </span>
                           ))}
                         </div>
@@ -801,12 +768,13 @@ export default function DesignDisplay() {
 
           {/* Action buttons */}
           {!showNotesInput && (
-            <div className="flex justify-end space-x-2 mt-4">
+            <div className="mt-4 space-y-2">
               {order.status === 'DESIGN_QUEUE' && (
                 <button
                   onClick={() => handleStatusUpdate('DESIGN_PROCESSING')}
-                  className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+                  className="w-full px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors flex items-center justify-center"
                 >
+                  <ChefHat className="w-4 h-4 mr-2" />
                   Start Design
                 </button>
               )}
@@ -814,8 +782,9 @@ export default function DesignDisplay() {
               {order.status === 'DESIGN_PROCESSING' && (
                 <button
                   onClick={() => handleStatusUpdate('DESIGN_READY')}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                  className="w-full px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center"
                 >
+                  <CheckCircle2 className="w-4 h-4 mr-2" />
                   Mark Ready
                 </button>
               )}
@@ -823,9 +792,10 @@ export default function DesignDisplay() {
               {order.status === 'DESIGN_READY' && (
                 <button
                   onClick={handleReadyClick}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center"
                 >
-                  {order.requiresKitchen && !order.kitchenEndTime ? 'Send to Kitchen' : 'Complete Order'}
+                  <CheckCircle2 className="w-4 h-4 mr-2" />
+                  Send to Final Check
                 </button>
               )}
             </div>
@@ -913,22 +883,6 @@ export default function DesignDisplay() {
               </div>
               <AnimatePresence>
                 {getOrdersByStatus("DESIGN_READY").map(order => (
-                  <OrderCard key={order.id} order={order} />
-                ))}
-              </AnimatePresence>
-            </div>
-
-            {/* Kitchen Queue Column */}
-            <div className="bg-gray-50 rounded-xl p-4 overflow-y-auto">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="font-semibold text-lg flex items-center">
-                  <div className="w-3 h-3 rounded-full bg-blue-500 mr-2" />
-                  Kitchen Queue
-                </h2>
-                <span className="text-sm text-gray-500">{getOrdersByStatus("KITCHEN_QUEUE").length}</span>
-              </div>
-              <AnimatePresence>
-                {getOrdersByStatus("KITCHEN_QUEUE").map(order => (
                   <OrderCard key={order.id} order={order} />
                 ))}
               </AnimatePresence>
