@@ -63,8 +63,30 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
   };
 
   const handleOpenTillClick = async () => {
-    // Just show the dialog, no print/open command here
-    setIsOpenTillModalOpen(true);
+    try {
+      // First send print and open command
+      const response = await fetch(`${process.env.NEXT_PUBLIC_PRINTER_PROXY_URL}/print-and-open`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          type: 'open_drawer'
+        })
+      });
+
+      if (!response.ok) {
+        console.error('Failed to open drawer:', response.statusText);
+        // Continue anyway as we want to show the dialog
+      }
+
+      // Then show the dialog
+      setIsOpenTillModalOpen(true);
+    } catch (error) {
+      console.error('Error opening drawer:', error);
+      // Show dialog anyway
+      setIsOpenTillModalOpen(true);
+    }
   };
 
   const handleOpenTill = async () => {
@@ -78,8 +100,41 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
       const amount = parseFloat(openingAmount);
       console.log('Opening till with amount:', amount);
       
+      // Check if we're in development mode
+      const isDevelopment = process.env.NODE_ENV === 'development';
+      console.log('Running in development mode:', isDevelopment);
+      
+      let drawerId = '';
+      
+      // In production, we need to get a real drawer
+      if (!isDevelopment) {
+        try {
+          // Get the first drawer (for now, we'll assume there's only one)
+          const drawers = await drawerService.getDrawers();
+          console.log('Available drawers:', drawers);
+          
+          if (!drawers || drawers.length === 0) {
+            toast.error('No cash drawers found');
+            return;
+          }
+          
+          drawerId = drawers[0].id;
+          console.log('Using drawer ID:', drawerId);
+        } catch (drawerError) {
+          console.error('Error getting drawers:', drawerError);
+          if (!isDevelopment) {
+            toast.error('Failed to get cash drawers');
+            return;
+          }
+          // In development, we can continue without a drawer
+          console.log('Continuing without a drawer in development mode');
+        }
+      } else {
+        console.log('Development mode - will use mock drawer');
+      }
+      
       try {
-        const sessionResult = await drawerService.openSession(amount);
+        const sessionResult = await drawerService.openSession(drawerId, amount);
         console.log('Session open result:', sessionResult);
         toast.success('Till opened successfully');
         setIsOpenTillModalOpen(false);
@@ -107,8 +162,30 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
   };
 
   const handleCloseTillClick = async () => {
-    // Just show the dialog, no print/open command here
-    setIsCloseTillModalOpen(true);
+    try {
+      // First send print and open command
+      const response = await fetch(`${process.env.NEXT_PUBLIC_PRINTER_PROXY_URL}/print-and-open`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          type: 'open_drawer'
+        })
+      });
+
+      if (!response.ok) {
+        console.error('Failed to open drawer:', response.statusText);
+        // Continue anyway as we want to show the dialog
+      }
+
+      // Then show the dialog
+      setIsCloseTillModalOpen(true);
+    } catch (error) {
+      console.error('Error opening drawer:', error);
+      // Show dialog anyway
+      setIsCloseTillModalOpen(true);
+    }
   };
 
   const handleCloseTill = async () => {
@@ -151,6 +228,21 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
         return;
       }
 
+      // First send print and open command
+      const response = await fetch(`${process.env.NEXT_PUBLIC_PRINTER_PROXY_URL}/print-and-open`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          type: 'open_drawer'
+        })
+      });
+
+      if (!response.ok) {
+        console.error('Failed to open drawer:', response.statusText);
+      }
+
       const amount = parseFloat(payAmount);
       await drawerService.payIn(amount, note || 'Pay In transaction');
       toast.success('Pay-in successful');
@@ -172,6 +264,21 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
       if (!payAmount || isNaN(parseFloat(payAmount))) {
         toast.error('Please enter a valid pay-out amount');
         return;
+      }
+
+      // First send print and open command
+      const response = await fetch(`${process.env.NEXT_PUBLIC_PRINTER_PROXY_URL}/print-and-open`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          type: 'open_drawer'
+        })
+      });
+
+      if (!response.ok) {
+        console.error('Failed to open drawer:', response.statusText);
       }
 
       const amount = parseFloat(payAmount);
