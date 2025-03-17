@@ -143,39 +143,34 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
     }
   };
 
-  const handleCloseTill = async () => {
-    setIsLoading(true);
+  const handleSubmitClosingAmount = async (amount: number) => {
     try {
-      if (!closingAmount || isNaN(parseFloat(closingAmount))) {
-        toast.error('Please enter a valid closing amount');
-        return;
-      }
-
-      const amount = parseFloat(closingAmount);
+      setIsLoading(true);
       console.log('Closing till with amount:', amount);
-      
-      // Close the session which will trigger the print
+
+      // Close the session in the database
       const response = await drawerService.closeSession(amount);
-      console.log('Till closed successfully:', response);
+      console.log('Session closed response:', response);
       
       // Print the closing report without opening drawer
-      await axios.post(`${PRINTER_PROXY_URL}/print-only`, {
+      const printResponse = await axios.post(`${PRINTER_PROXY_URL}/print-only`, {
         type: 'till_close',
         data: {
           sessionId: response.id,
           openingAmount: parseFloat(response.openingAmount),
           closingAmount: amount,
           closedAt: response.closedAt,
-          operations: response.operations
+          operations: response.operations,
+          user: response.user
         }
       });
+      console.log('Print response:', printResponse);
 
       toast.success('Till closed successfully');
       setIsCloseTillModalOpen(false);
       setClosingAmount('');
       
-      // Force refresh of session status
-      setCurrentSession(null);
+      // Refresh data
       await fetchCurrentSession();
       
       if (onSessionChange) onSessionChange();
@@ -482,7 +477,7 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
             <Button variant="outline" onClick={() => setIsCloseTillModalOpen(false)}>
               Cancel
             </Button>
-            <Button variant="destructive" onClick={handleCloseTill} disabled={isLoading}>
+            <Button variant="destructive" onClick={() => handleSubmitClosingAmount(parseFloat(closingAmount))} disabled={isLoading}>
               {isLoading ? 'Closing...' : 'Close Till'}
             </Button>
           </DialogFooter>
