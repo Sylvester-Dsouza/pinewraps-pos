@@ -97,6 +97,20 @@ export class DrawerService {
     try {
       console.log('Opening drawer session:', { openingAmount });
       
+      // First print the opening receipt and open drawer
+      try {
+        await axios.post(`${PRINTER_PROXY_URL}/print-and-open`, {
+          type: 'till_open',
+          data: {
+            amount: openingAmount,
+            timestamp: new Date().toISOString()
+          }
+        });
+      } catch (error) {
+        console.error('Error printing till open receipt:', error);
+        throw new Error('Failed to open cash drawer. Please check printer connection.');
+      }
+      
       const payload = {
         openingAmount
       };
@@ -106,22 +120,6 @@ export class DrawerService {
       try {
         const response = await api.post('/api/pos/drawer-session/open', payload);
         console.log('Open session response:', response.data);
-        
-        // Print the opening receipt and open drawer
-        try {
-          await axios.post(`${PRINTER_PROXY_URL}/print-and-open`, {
-            type: 'till_open',
-            data: {
-              amount: openingAmount,
-              sessionId: response.data.id,
-              openedAt: response.data.openedAt
-            }
-          });
-        } catch (error) {
-          console.error('Error printing till open receipt:', error);
-          // Don't throw error as the session was created successfully
-        }
-        
         return response.data;
       } catch (apiError) {
         console.error('API error in openSession:', apiError);
@@ -150,13 +148,8 @@ export class DrawerService {
       if (!currentSession || !currentSession.data) {
         throw new Error('No active drawer session found');
       }
-      
-      // Close the session
-      const response = await api.post('/api/pos/drawer-session/close', {
-        closingAmount
-      });
-      
-      // Print the closing receipt and open drawer
+
+      // First print the closing receipt and open drawer
       try {
         await axios.post(`${PRINTER_PROXY_URL}/print-and-open`, {
           type: 'till_close',
@@ -170,8 +163,13 @@ export class DrawerService {
         });
       } catch (error) {
         console.error('Error printing till close receipt:', error);
-        // Don't throw error as the session was closed successfully
+        throw new Error('Failed to open cash drawer. Please check printer connection.');
       }
+      
+      // Close the session
+      const response = await api.post('/api/pos/drawer-session/close', {
+        closingAmount
+      });
       
       // Ensure we return null for currentSession after closing
       await this.getCurrentSession();
@@ -184,12 +182,7 @@ export class DrawerService {
 
   async payIn(amount: number, notes?: string): Promise<any> {
     try {
-      const response = await api.post('/api/pos/drawer-session/operation/add', {
-        amount,
-        notes
-      });
-      
-      // Print the pay in receipt and open drawer
+      // First print the pay in receipt and open drawer
       try {
         await axios.post(`${PRINTER_PROXY_URL}/print-and-open`, {
           type: 'pay_in',
@@ -201,7 +194,13 @@ export class DrawerService {
         });
       } catch (error) {
         console.error('Error printing pay in receipt:', error);
+        throw new Error('Failed to open cash drawer. Please check printer connection.');
       }
+
+      const response = await api.post('/api/pos/drawer-session/operation/add', {
+        amount,
+        notes
+      });
       
       return response.data;
     } catch (error) {
@@ -212,12 +211,7 @@ export class DrawerService {
 
   async payOut(amount: number, notes?: string): Promise<any> {
     try {
-      const response = await api.post('/api/pos/drawer-session/operation/remove', {
-        amount,
-        notes
-      });
-      
-      // Print the pay out receipt and open drawer
+      // First print the pay out receipt and open drawer
       try {
         await axios.post(`${PRINTER_PROXY_URL}/print-and-open`, {
           type: 'pay_out',
@@ -229,7 +223,13 @@ export class DrawerService {
         });
       } catch (error) {
         console.error('Error printing pay out receipt:', error);
+        throw new Error('Failed to open cash drawer. Please check printer connection.');
       }
+
+      const response = await api.post('/api/pos/drawer-session/operation/remove', {
+        amount,
+        notes
+      });
       
       return response.data;
     } catch (error) {
@@ -241,6 +241,22 @@ export class DrawerService {
   async addCash(amount: number, notes?: string): Promise<DrawerOperation | null> {
     try {
       console.log('Adding cash:', { amount, notes });
+      
+      // First print the add cash receipt and open drawer
+      try {
+        await axios.post(`${PRINTER_PROXY_URL}/print-and-open`, {
+          type: 'add_cash',
+          data: {
+            amount,
+            notes,
+            timestamp: new Date().toISOString()
+          }
+        });
+      } catch (error) {
+        console.error('Error printing add cash receipt:', error);
+        throw new Error('Failed to open cash drawer. Please check printer connection.');
+      }
+      
       const response = await api.post('/api/pos/drawer-session/operation/add', { 
         amount, 
         notes,
@@ -256,6 +272,22 @@ export class DrawerService {
   async removeCash(amount: number, notes?: string): Promise<DrawerOperation | null> {
     try {
       console.log('Removing cash:', { amount, notes });
+      
+      // First print the remove cash receipt and open drawer
+      try {
+        await axios.post(`${PRINTER_PROXY_URL}/print-and-open`, {
+          type: 'remove_cash',
+          data: {
+            amount,
+            notes,
+            timestamp: new Date().toISOString()
+          }
+        });
+      } catch (error) {
+        console.error('Error printing remove cash receipt:', error);
+        throw new Error('Failed to open cash drawer. Please check printer connection.');
+      }
+      
       const response = await api.post('/api/pos/drawer-session/operation/remove', { 
         amount, 
         notes,
@@ -335,6 +367,22 @@ export class DrawerService {
   async recordCashSale(amount: number, notes?: string, orderNumber?: string): Promise<DrawerOperation | null> {
     try {
       console.log('Recording cash sale transaction:', { amount, notes, orderNumber });
+      
+      // First print the cash sale receipt and open drawer
+      try {
+        await axios.post(`${PRINTER_PROXY_URL}/print-and-open`, {
+          type: 'cash_sale',
+          data: {
+            amount,
+            notes,
+            orderNumber,
+            timestamp: new Date().toISOString()
+          }
+        });
+      } catch (error) {
+        console.error('Error printing cash sale receipt:', error);
+        throw new Error('Failed to open cash drawer. Please check printer connection.');
+      }
       
       const response = await api.post('/api/pos/drawer-session/operation/sale', {
         amount,
