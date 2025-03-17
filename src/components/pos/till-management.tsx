@@ -19,6 +19,9 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatCurrency } from '@/lib/utils';
 import { LockClosedIcon, LockOpenIcon, PlusIcon, MinusIcon, ClockIcon, ReceiptIcon, PlusCircleIcon, MinusCircleIcon } from '@/components/icons';
+import axios from 'axios';
+
+const PRINTER_PROXY_URL = process.env.NEXT_PUBLIC_PRINTER_PROXY_URL;
 
 export interface TillManagementProps {
   onSessionChange?: () => void;
@@ -65,14 +68,8 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
   const handleOpenTillClick = async () => {
     try {
       // First send print and open command
-      const response = await fetch(`${process.env.NEXT_PUBLIC_PRINTER_PROXY_URL}/print-and-open`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          type: 'open_drawer'
-        })
+      const response = await axios.post(`${PRINTER_PROXY_URL}/print-and-open`, {
+        type: 'open_drawer'
       });
 
       if (!response.ok) {
@@ -130,27 +127,19 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
 
   const handleCloseTillClick = async () => {
     try {
-      // First send print and open command
-      const response = await fetch(`${process.env.NEXT_PUBLIC_PRINTER_PROXY_URL}/print-and-open`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          type: 'open_drawer'
-        })
+      // First open the drawer and print initial receipt
+      await axios.post(`${PRINTER_PROXY_URL}/print-and-open`, {
+        type: 'till_close_initial',
+        data: {
+          message: 'Please count the cash and enter the closing amount'
+        }
       });
 
-      if (!response.ok) {
-        console.error('Failed to open drawer:', response.statusText);
-      }
-
-      // Then show the dialog
+      // Show dialog to enter closing amount
       setIsCloseTillModalOpen(true);
     } catch (error) {
-      console.error('Error opening drawer:', error);
-      // Show dialog anyway
-      setIsCloseTillModalOpen(true);
+      console.error('Error opening drawer for close:', error);
+      toast.error('Failed to open drawer. Please try again.');
     }
   };
 
@@ -169,6 +158,18 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
       const response = await drawerService.closeSession(amount);
       console.log('Till closed successfully:', response);
       
+      // Print the closing report without opening drawer
+      await axios.post(`${PRINTER_PROXY_URL}/print-only`, {
+        type: 'till_close',
+        data: {
+          sessionId: response.id,
+          openingAmount: parseFloat(response.openingAmount),
+          closingAmount: amount,
+          closedAt: response.closedAt,
+          operations: response.operations
+        }
+      });
+
       toast.success('Till closed successfully');
       setIsCloseTillModalOpen(false);
       setClosingAmount('');
@@ -178,9 +179,9 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
       await fetchCurrentSession();
       
       if (onSessionChange) onSessionChange();
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error closing till:', error);
-      toast.error(error.message || 'Failed to close till. Please try again.');
+      toast.error('Failed to close till. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -195,14 +196,8 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
       }
 
       // First send print and open command
-      const response = await fetch(`${process.env.NEXT_PUBLIC_PRINTER_PROXY_URL}/print-and-open`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          type: 'open_drawer'
-        })
+      const response = await axios.post(`${PRINTER_PROXY_URL}/print-and-open`, {
+        type: 'open_drawer'
       });
 
       if (!response.ok) {
@@ -233,14 +228,8 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
       }
 
       // First send print and open command
-      const response = await fetch(`${process.env.NEXT_PUBLIC_PRINTER_PROXY_URL}/print-and-open`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          type: 'open_drawer'
-        })
+      const response = await axios.post(`${PRINTER_PROXY_URL}/print-and-open`, {
+        type: 'open_drawer'
       });
 
       if (!response.ok) {
