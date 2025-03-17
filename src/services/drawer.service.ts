@@ -7,7 +7,7 @@ import { toast } from '@/lib/toast-utils';
 export interface DrawerOperation {
   id: string;
   amount: number;
-  type: 'ADD' | 'REMOVE' | 'SALE';
+  type: 'OPENING_BALANCE' | 'CLOSING_BALANCE' | 'ADD_CASH' | 'TAKE_CASH' | 'SALE';
   notes?: string;
   sessionId: string;
   userId: string;
@@ -210,13 +210,10 @@ export class DrawerService {
           case 'SALE':
             acc.sales += tx.amount;
             break;
-          case 'REFUND':
-            acc.refunds += tx.amount;
-            break;
-          case 'PAY_IN':
+          case 'ADD_CASH':
             acc.payIns += tx.amount;
             break;
-          case 'PAY_OUT':
+          case 'TAKE_CASH':
             acc.payOuts += tx.amount;
             break;
         }
@@ -230,7 +227,8 @@ export class DrawerService {
       const response = await api.post('/api/pos/drawer-session/close', { 
         closingAmount,
         expectedAmount,
-        difference
+        difference,
+        type: 'CLOSING_BALANCE'
       });
       console.log('Close session response:', response.data);
       
@@ -280,7 +278,11 @@ export class DrawerService {
   async addCash(amount: number, notes?: string): Promise<DrawerOperation | null> {
     try {
       console.log('Adding cash:', { amount, notes });
-      const response = await api.post('/api/pos/drawer-session/operation/add', { amount, notes });
+      const response = await api.post('/api/pos/drawer-session/operation/add', { 
+        amount, 
+        notes,
+        type: 'ADD_CASH'
+      });
       return response.data;
     } catch (error) {
       console.error('Error adding cash:', error);
@@ -291,7 +293,11 @@ export class DrawerService {
   async removeCash(amount: number, notes?: string): Promise<DrawerOperation | null> {
     try {
       console.log('Removing cash:', { amount, notes });
-      const response = await api.post('/api/pos/drawer-session/operation/remove', { amount, notes });
+      const response = await api.post('/api/pos/drawer-session/operation/remove', { 
+        amount, 
+        notes,
+        type: 'TAKE_CASH'
+      });
       return response.data;
     } catch (error) {
       console.error('Error removing cash:', error);
