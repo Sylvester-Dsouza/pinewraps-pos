@@ -100,41 +100,8 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
       const amount = parseFloat(openingAmount);
       console.log('Opening till with amount:', amount);
       
-      // Check if we're in development mode
-      const isDevelopment = process.env.NODE_ENV === 'development';
-      console.log('Running in development mode:', isDevelopment);
-      
-      let drawerId = '';
-      
-      // In production, we need to get a real drawer
-      if (!isDevelopment) {
-        try {
-          // Get the first drawer (for now, we'll assume there's only one)
-          const drawers = await drawerService.getDrawers();
-          console.log('Available drawers:', drawers);
-          
-          if (!drawers || drawers.length === 0) {
-            toast.error('No cash drawers found');
-            return;
-          }
-          
-          drawerId = drawers[0].id;
-          console.log('Using drawer ID:', drawerId);
-        } catch (drawerError) {
-          console.error('Error getting drawers:', drawerError);
-          if (!isDevelopment) {
-            toast.error('Failed to get cash drawers');
-            return;
-          }
-          // In development, we can continue without a drawer
-          console.log('Continuing without a drawer in development mode');
-        }
-      } else {
-        console.log('Development mode - will use mock drawer');
-      }
-      
       try {
-        const sessionResult = await drawerService.openSession(drawerId, amount);
+        const sessionResult = await drawerService.openSession(amount);
         console.log('Session open result:', sessionResult);
         toast.success('Till opened successfully');
         setIsOpenTillModalOpen(false);
@@ -176,7 +143,6 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
 
       if (!response.ok) {
         console.error('Failed to open drawer:', response.statusText);
-        // Continue anyway as we want to show the dialog
       }
 
       // Then show the dialog

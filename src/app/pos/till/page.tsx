@@ -29,7 +29,7 @@ export default function TillPage() {
       const history = await drawerService.getSessionHistory(20);
       setSessionHistory(history || []);
 
-      const logsResponse = await drawerService.getDrawerLogs(undefined, 50);
+      const logsResponse = await drawerService.getLogs(50);
       setDrawerLogs(logsResponse.logs || []);
 
       const transactionsResponse = await drawerService.getTransactionHistory(50);

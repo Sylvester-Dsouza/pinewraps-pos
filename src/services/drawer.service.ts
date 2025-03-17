@@ -6,61 +6,54 @@ import { toast } from '@/lib/toast-utils';
 // Drawer Service Types
 export interface DrawerOperation {
   id: string;
-  amount: number;
-  type: 'OPENING_BALANCE' | 'CLOSING_BALANCE' | 'ADD_CASH' | 'TAKE_CASH' | 'SALE';
-  notes?: string;
   sessionId: string;
   userId: string;
+  type: DrawerOperationType;
+  amount: string;
+  notes?: string;
   createdAt: string;
   updatedAt: string;
 }
 
 export interface DrawerSession {
   id: string;
-  openAmount: number;
-  closeAmount?: number;
-  status: 'OPEN' | 'CLOSED';
   userId: string;
-  drawerId: string;
+  status: DrawerSessionStatus;
+  openingAmount: string;
+  closingAmount?: string;
+  openedAt: string;
+  closedAt?: string;
   operations?: DrawerOperation[];
   createdAt: string;
   updatedAt: string;
-  closedAt?: string;
-}
-
-export interface CashDrawer {
-  id: string;
-  name: string;
-  ipAddress?: string;
-  port?: number;
-  connectionType: 'SERIAL' | 'NETWORK' | 'PRINTER';
-  serialPath?: string;
-  printerId?: string;
-  isActive: boolean;
-  locationId?: string;
-  createdAt: string;
-  updatedAt: string;
+  user?: {
+    firstName: string;
+    lastName: string;
+  };
 }
 
 export interface DrawerLog {
   id: string;
   userId: string;
-  drawerId?: string;
   action: string;
   timestamp: string;
   success: boolean;
   error?: string;
+  notes?: string;
   ipAddress?: string;
   deviceInfo?: string;
+  amount?: string;
   createdAt: string;
   updatedAt: string;
   user?: {
     firstName: string;
     lastName: string;
     email: string;
-    name: string;
   };
 }
+
+export type DrawerOperationType = 'OPENING_BALANCE' | 'CLOSING_BALANCE' | 'ADD_CASH' | 'TAKE_CASH' | 'SALE' | 'REFUND';
+export type DrawerSessionStatus = 'OPEN' | 'CLOSED';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 const PRINTER_PROXY_URL = process.env.NEXT_PUBLIC_PRINTER_PROXY_URL || 'http://localhost:3005';
@@ -77,7 +70,7 @@ export class DrawerService {
     return DrawerService.instance;
   }
 
-  async getCurrentSession(): Promise<any> {
+  async getCurrentSession(): Promise<{ data: DrawerSession | null }> {
     try {
       console.log('Getting current drawer session...');
       const response = await api.get('/api/pos/drawer-session/current');
@@ -93,30 +86,19 @@ export class DrawerService {
     }
   }
 
-  async openSession(openingAmount: number): Promise<any> {
+  async openSession(openingAmount: number): Promise<DrawerSession> {
     try {
       console.log('Opening drawer session:', { openingAmount });
       
       const payload = {
-        openingAmount
+        openingAmount: openingAmount.toString()
       };
       
       console.log('Sending open session request with payload:', payload);
       
-      try {
-        const response = await api.post('/api/pos/drawer-session/open', payload);
-        console.log('Open session response:', response.data);
-        
-        // Don't print and open drawer here since we already did it in handleOpenTillClick
-        return response.data;
-      } catch (apiError) {
-        console.error('API error in openSession:', apiError);
-        if (apiError.response) {
-          console.error('Response status:', apiError.response.status);
-          console.error('Response data:', apiError.response.data);
-        }
-        throw apiError;
-      }
+      const response = await api.post('/api/pos/drawer-session/open', payload);
+      console.log('Open session response:', response.data);
+      return response.data;
     } catch (error) {
       console.error('Error opening session:', error);
       if (error.response) {
@@ -127,11 +109,11 @@ export class DrawerService {
     }
   }
 
-  async closeSession(closingAmount: number): Promise<any> {
+  async closeSession(closingAmount: number): Promise<DrawerSession> {
     try {
       console.log('Closing drawer session with amount:', closingAmount);
       
-      // First get the current session to get the drawer ID
+      // First get the current session
       const currentSession = await this.getCurrentSession();
       if (!currentSession || !currentSession.data) {
         throw new Error('No active drawer session found');
@@ -139,10 +121,8 @@ export class DrawerService {
       
       // Close the session
       const response = await api.post('/api/pos/drawer-session/close', {
-        closingAmount
+        closingAmount: closingAmount.toString()
       });
-      
-      // Don't print and open drawer here since we already did it in handleCloseTillClick
       
       // Ensure we return null for currentSession after closing
       await this.getCurrentSession();
@@ -153,26 +133,12 @@ export class DrawerService {
     }
   }
 
-  async payIn(amount: number, notes?: string): Promise<any> {
+  async payIn(amount: number, notes?: string): Promise<DrawerOperation> {
     try {
       const response = await api.post('/api/pos/drawer-session/operation/add', {
-        amount,
+        amount: amount.toString(),
         notes
       });
-      
-      // Print the pay in receipt and open drawer
-      try {
-        await axios.post(`${PRINTER_PROXY_URL}/print-and-open`, {
-          type: 'pay_in',
-          data: {
-            amount,
-            notes,
-            timestamp: new Date().toISOString()
-          }
-        });
-      } catch (error) {
-        console.error('Error printing pay in receipt:', error);
-      }
       
       return response.data;
     } catch (error) {
@@ -181,26 +147,12 @@ export class DrawerService {
     }
   }
 
-  async payOut(amount: number, notes?: string): Promise<any> {
+  async payOut(amount: number, notes?: string): Promise<DrawerOperation> {
     try {
       const response = await api.post('/api/pos/drawer-session/operation/remove', {
-        amount,
+        amount: amount.toString(),
         notes
       });
-      
-      // Print the pay out receipt and open drawer
-      try {
-        await axios.post(`${PRINTER_PROXY_URL}/print-and-open`, {
-          type: 'pay_out',
-          data: {
-            amount,
-            notes,
-            timestamp: new Date().toISOString()
-          }
-        });
-      } catch (error) {
-        console.error('Error printing pay out receipt:', error);
-      }
       
       return response.data;
     } catch (error) {
@@ -209,36 +161,6 @@ export class DrawerService {
     }
   }
 
-  async addCash(amount: number, notes?: string): Promise<DrawerOperation | null> {
-    try {
-      console.log('Adding cash:', { amount, notes });
-      const response = await api.post('/api/pos/drawer-session/operation/add', { 
-        amount, 
-        notes,
-        type: 'ADD_CASH'
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Error adding cash:', error);
-      throw error;
-    }
-  }
-
-  async removeCash(amount: number, notes?: string): Promise<DrawerOperation | null> {
-    try {
-      console.log('Removing cash:', { amount, notes });
-      const response = await api.post('/api/pos/drawer-session/operation/remove', { 
-        amount, 
-        notes,
-        type: 'TAKE_CASH'
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Error removing cash:', error);
-      throw error;
-    }
-  }
-  
   async getSessionHistory(limit: number = 10): Promise<DrawerSession[]> {
     try {
       const response = await api.get(`/api/pos/drawer-session/history?limit=${limit}`);
@@ -249,25 +171,10 @@ export class DrawerService {
     }
   }
 
-  async getDrawers(): Promise<CashDrawer[]> {
+  async getLogs(limit = 100, offset = 0): Promise<{ logs: DrawerLog[], totalCount: number }> {
     try {
-      const response = await api.get('/api/pos/drawer/drawers');
-      return response.data || [];
-    } catch (error) {
-      console.error('Error getting drawers:', error);
-      return [];
-    }
-  }
-
-  async getDrawerLogs(drawerId?: string, limit = 100, offset = 0): Promise<{ logs: DrawerLog[], totalCount: number }> {
-    try {
-      let url = `/api/pos/drawer/logs?limit=${limit}&offset=${offset}`;
-      if (drawerId) {
-        url += `&drawerId=${drawerId}`;
-      }
-      
-      const response = await api.get(url);
-      return response.data;
+      const response = await api.get(`/api/pos/drawer/logs?limit=${limit}&offset=${offset}`);
+      return response.data || { logs: [], totalCount: 0 };
     } catch (error) {
       console.error('Error getting drawer logs:', error);
       return { logs: [], totalCount: 0 };
@@ -300,28 +207,6 @@ export class DrawerService {
         console.error('Response status:', error.response.status);
       }
       return { transactions: [], totalCount: 0 };
-    }
-  }
-
-  async recordCashSale(amount: number, notes?: string, orderNumber?: string): Promise<DrawerOperation | null> {
-    try {
-      console.log('Recording cash sale transaction:', { amount, notes, orderNumber });
-      
-      const response = await api.post('/api/pos/drawer-session/operation/sale', {
-        amount,
-        notes,
-        orderNumber
-      });
-      
-      console.log('Cash sale transaction recorded:', response.data);
-      return response.data;
-    } catch (error) {
-      console.error('Error recording cash sale transaction:', error);
-      if (error.response) {
-        console.error('Response error data:', error.response.data);
-        console.error('Response status:', error.response.status);
-      }
-      return null;
     }
   }
 }
