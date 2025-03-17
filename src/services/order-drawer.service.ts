@@ -35,28 +35,42 @@ export class OrderDrawerService {
   /**
    * Print receipt and open drawer for an order
    * @param orderId The order ID
+   * @param paymentMethod The payment method
    */
-  private async printAndOpenDrawer(orderId: string): Promise<boolean> {
+  private async printAndOpenDrawer(orderId: string, paymentMethod: POSPaymentMethod): Promise<boolean> {
     try {
       console.log('Printing receipt and opening drawer for order:', orderId);
       
-      // Call the print-and-open endpoint
-      const response = await api.post('/api/pos/printer/print-and-open', { 
-        orderId,
-        type: 'receipt'
-      });
-      
-      if (response.data?.success) {
-        console.log('Receipt printed and drawer opened successfully');
-        return true;
+      // For cash or split payments, use print-and-open to open drawer
+      if (paymentMethod === POSPaymentMethod.CASH || paymentMethod === POSPaymentMethod.SPLIT) {
+        const response = await api.post('/api/pos/printer/print-and-open', { 
+          orderId,
+          type: 'receipt'
+        });
+        
+        if (response.data?.success) {
+          console.log('Receipt printed and drawer opened successfully');
+          return true;
+        }
       } else {
-        console.error('Failed to print receipt and open drawer:', response.data?.error);
-        toast.error('Failed to print receipt and open drawer');
-        return false;
+        // For card payments, only print receipt
+        const response = await api.post('/api/pos/printer/print-only', { 
+          orderId,
+          type: 'receipt'
+        });
+        
+        if (response.data?.success) {
+          console.log('Receipt printed successfully');
+          return true;
+        }
       }
+      
+      console.error('Failed to handle printer operation');
+      toast.error('Failed to print receipt');
+      return false;
     } catch (error) {
-      console.error('Error printing receipt and opening drawer:', error);
-      toast.error('Error printing receipt and opening drawer');
+      console.error('Error in printer operation:', error);
+      toast.error('Error printing receipt');
       return false;
     }
   }
@@ -75,7 +89,9 @@ export class OrderDrawerService {
       );
       
       if (!hasCashPayment) {
-        console.log('No cash payments found, skipping cash drawer operations');
+        // For card-only payments, just print receipt
+        console.log('No cash payments found, printing receipt only');
+        await this.printAndOpenDrawer(orderNumber || '', POSPaymentMethod.CARD);
         return true;
       }
       
@@ -85,19 +101,18 @@ export class OrderDrawerService {
       for (const payment of payments) {
         if (payment.method === POSPaymentMethod.CASH) {
           totalCashAmount += payment.amount;
+          // Print and open drawer for cash payment
+          await this.printAndOpenDrawer(orderNumber || '', POSPaymentMethod.CASH);
         } else if (payment.isSplitPayment && payment.cashPortion) {
           totalCashAmount += payment.cashPortion;
+          // Print split payment receipt and open drawer
+          await api.post('/api/pos/printer/print-and-open', {
+            type: 'split_payment',
+            data: {
+              amount: payment.cashPortion
+            }
+          });
         }
-      }
-      
-      console.log('Opening cash drawer for payment with total cash amount:', totalCashAmount);
-      
-      // Print receipt and open drawer for cash payment
-      const printResult = await this.printAndOpenDrawer(orderNumber || '');
-      
-      if (!printResult) {
-        console.error('Failed to print receipt and open drawer');
-        // Continue even if print/drawer fails
       }
       
       // Record the cash sale in the drawer session
