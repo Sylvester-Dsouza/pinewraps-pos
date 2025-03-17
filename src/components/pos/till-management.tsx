@@ -143,15 +143,20 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
       }
 
       const amount = parseFloat(closingAmount);
-      await drawerService.closeSession(amount);
+      console.log('Closing till with amount:', amount);
+      
+      // Close the session which will trigger the print
+      const response = await drawerService.closeSession(amount);
+      console.log('Till closed successfully:', response);
+      
       toast.success('Till closed successfully');
       setIsCloseTillModalOpen(false);
       setClosingAmount('');
       fetchCurrentSession();
       if (onSessionChange) onSessionChange();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error closing till:', error);
-      toast.error('Failed to close till');
+      toast.error(error.message || 'Failed to close till. Please try again.');
     } finally {
       setIsLoading(false);
     }
