@@ -66,6 +66,12 @@ interface KitchenOrder {
   parallelProcessing?: {
     kitchenStatus?: KitchenOrderStatus;
   };
+<<<<<<< HEAD
+=======
+  parallelProcessing?: {
+    kitchenStatus?: KitchenOrderStatus;
+  };
+>>>>>>> 786eb8cd956f3f5a8ddf0a1fd5a9216762af520f
 }
 
 interface UpdateOrderStatusPayload {
@@ -167,6 +173,7 @@ export default function KitchenDisplay() {
            order.status === 'KITCHEN_PROCESSING' ||
            order.status === 'KITCHEN_READY') ||
           // Include parallel processing orders
+<<<<<<< HEAD
           order.status === 'PARALLEL_PROCESSING'
         );
 
@@ -215,6 +222,26 @@ export default function KitchenDisplay() {
         })));
         
         setOrders(sortedOrders);
+=======
+          order.status === 'PARALLEL_PROCESSING' ||
+          // Include orders sent back from Final Check
+          (order.qualityControl?.returnedFromFinalCheck && order.requiresKitchen)
+        );
+
+        const ordersWithImages = kitchenOrders.map((order: any) => ({
+          ...order,
+          // For parallel processing orders, show as KITCHEN_QUEUE
+          status: order.status === 'PARALLEL_PROCESSING' ? 'KITCHEN_QUEUE' : order.status,
+          items: order.items.map((item: any) => ({
+            ...item,
+            customImages: item.customImages?.map((img: any) => ({
+              url: img.url,
+              comment: img.comment
+            })) || []
+          }))
+        }));
+        setOrders(ordersWithImages);
+>>>>>>> 786eb8cd956f3f5a8ddf0a1fd5a9216762af520f
       }
     } catch (error) {
       console.error('Failed to fetch orders:', error);
@@ -408,6 +435,7 @@ export default function KitchenDisplay() {
       className="bg-white rounded-xl shadow-lg p-4 mb-6 border-l-4 overflow-hidden relative"
       style={{
         borderLeftColor: 
+          order.qualityControl?.returnedFromFinalCheck ? '#EF4444' : // Red border for returned orders
           order.status === 'KITCHEN_QUEUE' ? '#3B82F6' : 
           order.status === 'KITCHEN_PROCESSING' ? '#F59E0B' : 
           order.status === 'KITCHEN_READY' ? '#10B981' : '#6B7280'
@@ -426,6 +454,27 @@ export default function KitchenDisplay() {
         </span>
       </div>
 
+<<<<<<< HEAD
+=======
+      {/* Return Badge - Show when order was returned from Final Check */}
+      {order.qualityControl?.returnedFromFinalCheck && (
+        <div className="absolute top-10 right-3 z-10 mt-2">
+        <span className="px-3 py-1 text-xs font-medium rounded-full bg-red-100 text-red-800 flex items-center">
+          <AlertCircle className="w-3 h-3 mr-1" /> Return from Final Check
+        </span>
+      </div>
+      )}
+
+      {/* Prominent Sent Back Tag - Only show for returned orders */}
+      {order.qualityControl?.returnedFromFinalCheck && (
+        <div className="absolute top-0 left-0 w-full h-full overflow-hidden">
+          <div className="absolute -top-1 -left-12 bg-red-500 text-white px-12 py-1 transform rotate-315 shadow-md">
+            SENT BACK
+          </div>
+        </div>
+      )}
+
+>>>>>>> 786eb8cd956f3f5a8ddf0a1fd5a9216762af520f
       <div className="space-y-5">
         {/* Header Section */}
         <div className="flex justify-between items-start pb-3 border-b border-gray-100">
@@ -476,6 +525,25 @@ export default function KitchenDisplay() {
 
         {/* Notes Section */}
         <div className="space-y-3">
+<<<<<<< HEAD
+=======
+          {order.qualityControl?.returnedFromFinalCheck && order.qualityControl?.returnReason && (
+            <div className="p-3 bg-red-50 rounded-lg border border-red-200">
+              <p className="text-sm text-red-700">
+                <span className="font-bold flex items-center gap-1">
+                  <AlertCircle className="w-4 h-4 mr-1" /> Return Reason:
+                </span> 
+                {order.qualityControl.returnReason}
+              </p>
+              {order.qualityControl.returnedAt && (
+                <p className="text-xs text-red-500 mt-1">
+                  Returned on {format(new Date(order.qualityControl.returnedAt), 'MMM d, h:mm a')}
+                </p>
+              )}
+            </div>
+          )}
+
+>>>>>>> 786eb8cd956f3f5a8ddf0a1fd5a9216762af520f
           {order.kitchenNotes && (
             <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
               <div className="flex items-start">
@@ -711,6 +779,17 @@ export default function KitchenDisplay() {
           <h2 className="text-lg font-semibold mb-4 flex items-center">
             <ChefHat className="w-5 h-5 mr-2" />
             Queue
+            {orders.filter(order => 
+              order.status === 'KITCHEN_QUEUE' && 
+              order.qualityControl?.returnedFromFinalCheck
+            ).length > 0 && (
+              <span className="ml-2 px-2 py-0.5 text-xs bg-red-100 text-red-800 rounded-full">
+                {orders.filter(order => 
+                  order.status === 'KITCHEN_QUEUE' && 
+                  order.qualityControl?.returnedFromFinalCheck
+                ).length} Returned
+              </span>
+            )}
           </h2>
           <div className="space-y-4">
             <AnimatePresence>

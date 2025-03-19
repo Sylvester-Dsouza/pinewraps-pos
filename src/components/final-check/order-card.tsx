@@ -48,6 +48,12 @@ interface FinalCheckOrder {
   pickupTimeSlot?: string;
   deliveryDate?: string;
   deliveryTimeSlot?: string;
+  qualityControl?: {
+    returnedFromFinalCheck?: boolean;
+    returnReason?: string;
+    returnDestination?: 'KITCHEN' | 'DESIGN';
+    returnedAt?: string;
+  };
 }
 
 interface OrderCardProps {
@@ -91,13 +97,22 @@ export default function OrderCard({ order, onUpdateStatus }: OrderCardProps) {
   const confirmStatusUpdate = () => {
     if (nextStatus) {
       if (sendBackTarget) {
+<<<<<<< HEAD
         // For send back operations, still require a reason but store it as teamNotes
+=======
+        // For send back operations, require a return reason
+>>>>>>> 786eb8cd956f3f5a8ddf0a1fd5a9216762af520f
         if (!returnReason.trim()) {
           toast.error('Please provide a return reason');
           return;
         }
+<<<<<<< HEAD
         // Use returnReason as teamNotes
         onUpdateStatus?.(order.id, nextStatus, returnReason);
+=======
+        // Use returnReason as the primary reason
+        onUpdateStatus?.(order.id, nextStatus, returnReason || teamNotes);
+>>>>>>> 786eb8cd956f3f5a8ddf0a1fd5a9216762af520f
       } else {
         // For normal status updates, use teamNotes
         onUpdateStatus?.(order.id, nextStatus, teamNotes);
