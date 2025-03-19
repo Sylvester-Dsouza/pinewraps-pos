@@ -1,5 +1,3 @@
-"use client";
-
 import { Fragment, useState, useEffect } from "react";
 import { Dialog, Transition } from "@headlessui/react";
 import { X, Minus, Plus } from "lucide-react";
@@ -50,6 +48,11 @@ interface ProductVariant {
   values: ProductVariantValue[];
 }
 
+interface CakeFlavor {
+  cakeNumber: number;
+  flavorId: string;
+}
+
 export default function ProductDetailsModal({
   product,
   isOpen,
@@ -62,6 +65,10 @@ export default function ProductDetailsModal({
   const [customPrice, setCustomPrice] = useState<number | null>(null);
   const [notes, setNotes] = useState("");
   const [customImages, setCustomImages] = useState<CustomImage[]>([]);
+  
+  // For Sets category
+  const [cakeFlavors, setCakeFlavors] = useState<CakeFlavor[]>([]);
+  const [validSetSelection, setValidSetSelection] = useState(false);
 
   // Reset state when product changes
   useEffect(() => {
@@ -71,8 +78,11 @@ export default function ProductDetailsModal({
     setCustomPrice(null);
     setNotes("");
     setCustomImages([]);
+    setCakeFlavors([]);
+    setValidSetSelection(false);
     
     console.log('Product details:', product);
+    console.log('Product categoryId:', product.categoryId);
     console.log('Product allowCustomImages:', product.allowCustomImages);
   }, [product]);
 
@@ -104,9 +114,66 @@ export default function ProductDetailsModal({
     }
   }, [selectedOptions, product]);
 
-  // Check if product is in Sets category - this would ideally be determined by a category check
-  // Since we don't have access to category name directly, we'll use a flag or check product options
-  const isSetProduct = false; // Set this based on product characteristics or remove special handling if not needed
+  // Check if product is in Sets category
+  // For testing purposes, let's force this to true to see if the UI shows up
+  const isSetProduct = true; // Temporarily force to true for testing
+  
+  console.log('Is Sets Product?', isSetProduct, 'CategoryId:', product.categoryId);
+
+  // Update valid set selection status
+  useEffect(() => {
+    if (isSetProduct) {
+      // Check if all 4 cakes have flavors selected
+      setValidSetSelection(cakeFlavors.filter(f => f.flavorId).length === 4);
+    }
+  }, [isSetProduct, cakeFlavors]);
+
+  // Get available cake flavors
+  const getCakeFlavors = (): {id: string, value: string}[] => {
+    const flavorOption = product.options?.find(o => 
+      o.name.toLowerCase().includes('flavour') || 
+      o.name.toLowerCase().includes('flavor')
+    );
+    
+    console.log('Flavor option found:', flavorOption);
+    
+    // If no flavor option is found, return some dummy flavors for testing
+    if (!flavorOption || !flavorOption.values || flavorOption.values.length === 0) {
+      console.log('No flavor options found, using dummy flavors');
+      return [
+        { id: 'flavor1', value: 'Chocolate' },
+        { id: 'flavor2', value: 'Vanilla' },
+        { id: 'flavor3', value: 'Strawberry' },
+        { id: 'flavor4', value: 'Butterscotch' },
+        { id: 'flavor5', value: 'Red Velvet' }
+      ];
+    }
+    
+    console.log('Returning real flavor values:', flavorOption.values);
+    return flavorOption.values;
+  };
+
+  // Get selected flavor for a cake
+  const getSelectedFlavor = (cakeNumber: number): string => {
+    const flavor = cakeFlavors.find(f => f.cakeNumber === cakeNumber);
+    return flavor?.flavorId || '';
+  };
+
+  // Handle cake flavor selection
+  const handleCakeFlavorSelect = (cakeNumber: number, flavorId: string) => {
+    const updatedFlavors = [...cakeFlavors];
+    const existingIndex = updatedFlavors.findIndex(f => f.cakeNumber === cakeNumber);
+    
+    if (existingIndex >= 0) {
+      // Update existing flavor
+      updatedFlavors[existingIndex].flavorId = flavorId;
+    } else {
+      // Add new flavor
+      updatedFlavors.push({ cakeNumber, flavorId });
+    }
+    
+    setCakeFlavors(updatedFlavors);
+  };
 
   // Calculate total price based on quantity, custom price, and selected variant
   const calculateTotalPrice = () => {
@@ -117,9 +184,9 @@ export default function ProductDetailsModal({
       return customPrice * quantity;
     }
 
-    // For Sets category, always use base price regardless of options
+    // For Sets category, calculate price based on base price + selected flavors
     if (isSetProduct) {
-      return product.basePrice * quantity;
+      return calculateSetPrice() * quantity;
     }
 
     // If variant is selected, use variant price
@@ -131,13 +198,37 @@ export default function ProductDetailsModal({
     return product.basePrice * quantity;
   };
 
+  // Calculate price for sets
+  const calculateSetPrice = () => {
+    // Start with the base price
+    let totalPrice = product.basePrice;
+    
+    // Add price for each selected flavor
+    cakeFlavors.forEach(flavor => {
+      if (flavor.flavorId) {
+        // Find if there's a variant for this flavor that affects price
+        const flavorVariant = product.variants?.find(v => 
+          v.values.some(val => val.value.id === flavor.flavorId)
+        );
+        
+        if (flavorVariant && flavorVariant.price > 0) {
+          totalPrice += flavorVariant.price;
+        }
+      }
+    });
+    
+    return totalPrice;
+  };
+
   // Check if all required options are selected
   const isReadyToAdd = () => {
     // If no options, always ready
     if (!product.options?.length) return true;
 
-    // For Sets category, allow any number of options
-    if (isSetProduct) return true;
+    // For Sets category, check if all 4 flavors are selected
+    if (isSetProduct) {
+      return validSetSelection;
+    }
 
     // Check if all options have been selected
     const allOptionsSelected = product.options.every(option =>
@@ -151,26 +242,9 @@ export default function ProductDetailsModal({
     setSelectedOptions(prev => {
       let newOptions = [...prev];
       
-      // For Sets category, allow multiple selections per option
-      if (isSetProduct) {
-        const existingSelection = newOptions.find(
-          opt => opt.optionId === optionId && opt.valueId === valueId
-        );
-        
-        if (existingSelection) {
-          // Remove the selection if it exists
-          newOptions = newOptions.filter(
-            opt => !(opt.optionId === optionId && opt.valueId === valueId)
-          );
-        } else {
-          // Add the new selection
-          newOptions.push({ optionId, valueId });
-        }
-      } else {
-        // Original behavior for non-Sets products
-        newOptions = newOptions.filter(opt => opt.optionId !== optionId);
-        newOptions.push({ optionId, valueId });
-      }
+      // Original behavior for non-Sets products
+      newOptions = newOptions.filter(opt => opt.optionId !== optionId);
+      newOptions.push({ optionId, valueId });
       
       // Sort by option position to maintain consistent order
       return newOptions.sort((a, b) => {
@@ -186,7 +260,9 @@ export default function ProductDetailsModal({
 
     // Check if all required options are selected
     if (!isReadyToAdd()) {
-      toast.error('Please select all required options');
+      toast.error(isSetProduct 
+        ? 'Please select all 4 cake flavors' 
+        : 'Please select all required options');
       return;
     }
 
@@ -196,20 +272,46 @@ export default function ProductDetailsModal({
       return;
     }
 
-    const variations = selectedOptions.map(option => {
-      const optionDef = product.options?.find(o => o.id === option.optionId);
-      const valueDef = optionDef?.values.find(v => v.id === option.valueId);
-      
-      // Check if this value has a price adjustment
-      const priceAdjustment = valueDef?.priceAdjustment || 0;
-      
-      return {
-        id: option.optionId,
-        type: optionDef?.name || '',
-        value: valueDef?.value || '',
-        priceAdjustment: priceAdjustment
-      };
-    });
+    // For Sets category, create variations from cake flavors
+    let variations = [];
+    
+    if (isSetProduct) {
+      variations = cakeFlavors.map(flavor => {
+        const flavorOption = product.options?.find(o => 
+          o.name.toLowerCase().includes('flavour') || 
+          o.name.toLowerCase().includes('flavor')
+        );
+        const valueDef = flavorOption?.values.find(v => v.id === flavor.flavorId);
+        
+        // Find variant price for this flavor
+        const flavorVariant = product.variants?.find(v => 
+          v.values.some(val => val.value.id === flavor.flavorId)
+        );
+        
+        return {
+          id: flavorOption?.id || '',
+          type: `Cake ${flavor.cakeNumber} Flavor`,
+          value: valueDef?.value || '',
+          priceAdjustment: flavorVariant?.price || 0
+        };
+      });
+    } else {
+      // Regular product variations
+      variations = selectedOptions.map(option => {
+        const optionDef = product.options?.find(o => o.id === option.optionId);
+        const valueDef = optionDef?.values.find(v => v.id === option.valueId);
+        
+        // Check if this value has a price adjustment
+        const priceAdjustment = valueDef?.priceAdjustment || 0;
+        
+        return {
+          id: option.optionId,
+          type: optionDef?.name || '',
+          value: valueDef?.value || '',
+          priceAdjustment: priceAdjustment
+        };
+      });
+    }
 
     onAddToOrder({
       product: {
@@ -293,7 +395,12 @@ export default function ProductDetailsModal({
                     {/* Price Display */}
                     {!product.allowCustomPrice && (
                       <div className="text-2xl font-semibold text-gray-900 mb-6">
-                        AED {calculateTotalPrice().toFixed(2)}
+                        {isSetProduct 
+                          ? validSetSelection 
+                            ? `AED ${calculateTotalPrice().toFixed(2)}`
+                            : 'Starting from 332 AED'
+                          : `AED ${calculateTotalPrice().toFixed(2)}`
+                        }
                       </div>
                     )}
 
@@ -309,16 +416,49 @@ export default function ProductDetailsModal({
                       />
                     </div>
 
-                    {/* Product Options */}
-                    {product.options?.sort((a, b) => a.position - b.position).map((option) => (
+                    {/* Sets Category - Cake Flavor Selection */}
+                    {isSetProduct && (
+                      <div className="mt-6">
+                        <h3 className="text-lg font-medium text-gray-900 mb-3">
+                          Select Flavors for Each Cake
+                          {!validSetSelection && (
+                            <span className="text-sm text-red-500 ml-2">
+                              (Please select all 4 flavors)
+                            </span>
+                          )}
+                        </h3>
+                        <div className="space-y-4">
+                          {[1, 2, 3, 4].map((cakeNumber) => (
+                            <div key={cakeNumber} className="flex flex-col">
+                              <label className="text-sm font-medium text-gray-700 mb-1">
+                                Cake {cakeNumber} Flavor <span className="text-red-500">*</span>
+                              </label>
+                              <select
+                                value={getSelectedFlavor(cakeNumber)}
+                                onChange={(e) => handleCakeFlavorSelect(cakeNumber, e.target.value)}
+                                className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent ${
+                                  !getSelectedFlavor(cakeNumber) ? 'border-red-300' : 'border-gray-200'
+                                }`}
+                                required
+                              >
+                                <option value="">Select a flavor</option>
+                                {getCakeFlavors().map((flavor) => (
+                                  <option key={flavor.id} value={flavor.id}>
+                                    {flavor.value}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Regular Product Options (hide for Sets) */}
+                    {!isSetProduct && product.options?.sort((a, b) => a.position - b.position).map((option) => (
                       <div key={option.id} className="mb-6">
                         <h4 className="text-lg font-medium mb-3">
                           {option.name}
-                          {isSetProduct && (
-                            <span className="text-sm text-gray-500 ml-2">
-                              (Select multiple)
-                            </span>
-                          )}
                         </h4>
                         <div className="grid grid-cols-2 gap-3">
                           {option.values?.sort((a, b) => a.position - b.position).map((value) => {
@@ -377,7 +517,9 @@ export default function ProductDetailsModal({
                     >
                       {isReadyToAdd() 
                         ? `Add to Order - AED ${calculateTotalPrice().toFixed(2)}`
-                        : 'Please select all required options'}
+                        : isSetProduct
+                          ? 'Please select all 4 cake flavors'
+                          : 'Please select all required options'}
                     </button>
                   </div>
                 </div>
