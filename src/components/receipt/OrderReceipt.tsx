@@ -55,10 +55,10 @@ const generateReceiptContent = (order: Order): string => `
   <div class="receipt">
     <div class="header">
       <h1 style="font-size: 16px; margin: 0;">${centerText('PINEWRAPS')}</h1>
-      <p style="margin: 5px 0;">${centerText('Your Delicious Food Partner')}</p>
+      <p style="margin: 5px 0;">${centerText('Tax Invoice')}</p>
       <p style="margin: 5px 0;">${centerText('Dubai, UAE')}</p>
-      <p style="margin: 5px 0;">${centerText('Phone: +971 XXXXXXXXX')}</p>
-      <p style="margin: 5px 0; font-size: 10px;">${centerText('TRN: XXXXXXXXXXXXX')}</p>
+      <p style="margin: 5px 0;">${centerText('Phone: +971 544044864')}</p>
+      <p style="margin: 5px 0; font-size: 10px;">${centerText('TRN: 100461426700003')}</p>
     </div>
     
     <div class="divider"></div>
