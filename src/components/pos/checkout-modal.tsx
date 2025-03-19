@@ -399,7 +399,9 @@ export default function CheckoutModal({
       giftRecipientName: giftDetailsState?.isGift ? giftDetailsState.recipientName?.trim() || '' : undefined,
       giftRecipientPhone: giftDetailsState?.isGift ? giftDetailsState.recipientPhone?.trim() || '' : undefined,
       giftMessage: giftDetailsState?.isGift ? giftDetailsState.message?.trim() || '' : undefined,
-      giftCashAmount: giftDetailsState?.isGift && giftDetailsState.includeCash ? giftDetailsState.cashAmount?.trim() || '' : undefined,
+      giftCashAmount: giftDetailsState?.isGift && giftDetailsState.includeCash ? 
+        (giftDetailsState.cashAmount?.trim() ? parseFloat(giftDetailsState.cashAmount) : 0) : 
+        undefined,
 
       // Additional metadata for routing
       metadata: {
@@ -504,7 +506,7 @@ export default function CheckoutModal({
     recipientPhone: giftDetailsState.recipientPhone?.trim() || '',
     message: giftDetailsState.message?.trim() || '',
     note: giftDetailsState.note?.trim() || '',
-    cashAmount: giftDetailsState.cashAmount?.trim() || '0',
+    cashAmount: giftDetailsState.cashAmount?.trim() ? parseFloat(giftDetailsState.cashAmount) : 0,
     includeCash: giftDetailsState.includeCash || false
   });
 
@@ -946,7 +948,8 @@ export default function CheckoutModal({
           giftRecipientName: giftDetailsState.recipientName,
           giftRecipientPhone: giftDetailsState.recipientPhone,
           giftMessage: giftDetailsState.message,
-          giftCashAmount: giftDetailsState.cashAmount ? Number(giftDetailsState.cashAmount) : undefined
+          giftCashAmount: giftDetailsState.cashAmount ? Number(giftDetailsState.cashAmount) : undefined,
+          includeCash: giftDetailsState.includeCash || false
         }),
         
         notes: orderNotes
@@ -1072,23 +1075,60 @@ export default function CheckoutModal({
     return emirate === 'DUBAI' ? 30 : 50;
   };
 
-  // Time slots based on emirate and current time (for pickup)
+  // Time slots based on emirate, current time, and delivery method
   const getTimeSlots = (emirate: string, forDate?: string) => {
-    // Individual time slots from 10 AM to 8 PM
-    const defaultSlots = [
-      "10:00 AM",
-      "11:00 AM",
-      "12:00 PM",
-      "1:00 PM",
-      "2:00 PM",
-      "3:00 PM",
-      "4:00 PM",
-      "5:00 PM",
-      "6:00 PM",
-      "7:00 PM",
-      "8:00 PM"
-    ];
-
+    // Generate time slots based on delivery method
+    let defaultSlots = [];
+    
+    // For pickup: 30-minute intervals from 9 AM to 9 PM
+    if (deliveryMethodState === DeliveryMethod.PICKUP) {
+      defaultSlots = [
+        "9:00 AM",
+        "9:30 AM",
+        "10:00 AM",
+        "10:30 AM",
+        "11:00 AM",
+        "11:30 AM",
+        "12:00 PM",
+        "12:30 PM",
+        "1:00 PM",
+        "1:30 PM",
+        "2:00 PM",
+        "2:30 PM",
+        "3:00 PM",
+        "3:30 PM",
+        "4:00 PM",
+        "4:30 PM",
+        "5:00 PM",
+        "5:30 PM",
+        "6:00 PM",
+        "6:30 PM",
+        "7:00 PM",
+        "7:30 PM",
+        "8:00 PM",
+        "8:30 PM",
+        "9:00 PM"
+      ];
+    } 
+    // For delivery: 1-hour intervals from 9 AM to 9 PM
+    else {
+      defaultSlots = [
+        "9:00 AM",
+        "10:00 AM",
+        "11:00 AM",
+        "12:00 PM",
+        "1:00 PM",
+        "2:00 PM",
+        "3:00 PM",
+        "4:00 PM",
+        "5:00 PM",
+        "6:00 PM",
+        "7:00 PM",
+        "8:00 PM",
+        "9:00 PM"
+      ];
+    }
+    
     // If this is for pickup and the date is today, apply the 3-hour buffer
     if (deliveryMethodState === DeliveryMethod.PICKUP && forDate) {
       const selectedDate = new Date(forDate);
@@ -1976,7 +2016,10 @@ export default function CheckoutModal({
                                         cashAmount: e.target.value,
                                         includeCash: e.target.value !== ''
                                       }))}
-                                      className="w-20 text-lg font-medium border-b-2 border-gray-300 focus:border-black focus:outline-none text-right"
+                                      className="w-full h-14 text-2xl font-medium border-2 border-gray-300 rounded-lg px-16 py-3 focus:border-black focus:outline-none text-right"
+                                      placeholder="0"
+                                      min="0"
+                                      step="1"
                                     />
                                   </div>
                                 </div>

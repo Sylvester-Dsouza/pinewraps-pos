@@ -1,4 +1,4 @@
-import { Fragment, useState, useEffect } from "react";
+import { Fragment, useState, useEffect, useMemo } from "react";
 import { Dialog, Transition } from "@headlessui/react";
 import { X, Minus, Plus } from "lucide-react";
 import { Product } from "@/services/api";
@@ -82,7 +82,6 @@ export default function ProductDetailsModal({
     setValidSetSelection(false);
     
     console.log('Product details:', product);
-    console.log('Product categoryId:', product.categoryId);
     console.log('Product allowCustomImages:', product.allowCustomImages);
   }, [product]);
 
@@ -115,10 +114,30 @@ export default function ProductDetailsModal({
   }, [selectedOptions, product]);
 
   // Check if product is in Sets category
-  // For testing purposes, let's force this to true to see if the UI shows up
-  const isSetProduct = true; // Temporarily force to true for testing
-  
-  console.log('Is Sets Product?', isSetProduct, 'CategoryId:', product.categoryId);
+  const isSetProduct = useMemo(() => {
+    // Check if categoryId is 'sets' (case insensitive)
+    if (product.categoryId && product.categoryId.toLowerCase() === 'sets') {
+      return true;
+    }
+    
+    // If we have a category object with a name property, check that too
+    if (product.category && product.category.name === 'Sets') {
+      return true;
+    }
+    
+    // As a fallback, check if the product name contains 'set' as a whole word
+    if (product.name && /\bset(s)?\b/i.test(product.name)) {
+      return true;
+    }
+    
+    return false;
+  }, [product]);
+
+  // Debug log to check if product is identified as a Sets product
+  useEffect(() => {
+    console.log('Product category ID:', product.categoryId);
+    console.log('Is Sets product:', isSetProduct);
+  }, [product, isSetProduct]);
 
   // Update valid set selection status
   useEffect(() => {
@@ -134,23 +153,7 @@ export default function ProductDetailsModal({
       o.name.toLowerCase().includes('flavour') || 
       o.name.toLowerCase().includes('flavor')
     );
-    
-    console.log('Flavor option found:', flavorOption);
-    
-    // If no flavor option is found, return some dummy flavors for testing
-    if (!flavorOption || !flavorOption.values || flavorOption.values.length === 0) {
-      console.log('No flavor options found, using dummy flavors');
-      return [
-        { id: 'flavor1', value: 'Chocolate' },
-        { id: 'flavor2', value: 'Vanilla' },
-        { id: 'flavor3', value: 'Strawberry' },
-        { id: 'flavor4', value: 'Butterscotch' },
-        { id: 'flavor5', value: 'Red Velvet' }
-      ];
-    }
-    
-    console.log('Returning real flavor values:', flavorOption.values);
-    return flavorOption.values;
+    return flavorOption?.values || [];
   };
 
   // Get selected flavor for a cake

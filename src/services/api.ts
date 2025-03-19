@@ -282,6 +282,7 @@ export interface Product {
   stock: number;
   trackInventory: boolean;
   categoryId: string;
+  category?: Category; // Add optional category property
   options: ProductOption[];
   variants: ProductVariant[];
   images: ProductImage[];

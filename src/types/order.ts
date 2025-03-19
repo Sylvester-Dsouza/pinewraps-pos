@@ -331,6 +331,7 @@ export interface ParkedOrder {
   giftRecipientPhone?: string;
   giftMessage?: string;
   giftCashAmount?: number;
+  includeCash?: boolean;
   
   // General notes
   notes?: string;
@@ -398,6 +399,7 @@ export interface ParkedOrderData {
   giftRecipientPhone?: string;
   giftMessage?: string;
   giftCashAmount?: number;
+  includeCash?: boolean;
   
   // General notes
   notes?: string;
