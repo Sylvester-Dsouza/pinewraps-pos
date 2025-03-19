@@ -98,6 +98,7 @@ export default function KitchenDisplay() {
   const [selectedOrder, setSelectedOrder] = useState<KitchenOrder | null>(null);
   const [showNotesInput, setShowNotesInput] = useState(false);
   const [teamNotes, setTeamNotes] = useState('');
+  const [activeTab, setActiveTab] = useState('queue');
 
   // Fetch initial orders
   useEffect(() => {
@@ -669,14 +670,14 @@ export default function KitchenDisplay() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 p-4">
+    <div className="min-h-screen bg-gray-100 p-2 sm:p-4">
       {/* Header */}
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-4 sm:mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-0">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">Kitchen Screen</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-800">Kitchen Screen</h1>
         </div>
         
-        <div className="flex items-center space-x-4">
+        <div className="flex items-center space-x-4 self-end sm:self-auto">
           <button
             onClick={fetchOrders}
             className="p-2 rounded-lg bg-white hover:bg-gray-50 text-gray-600"
@@ -704,15 +705,39 @@ export default function KitchenDisplay() {
         </div>
       </div>
 
-      {/* Orders Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      {/* Tab navigation for mobile */}
+      <div className="block sm:hidden mb-4">
+        <div className="flex border-b border-gray-200">
+          <button 
+            onClick={() => setActiveTab('queue')}
+            className={`flex-1 py-2 px-4 text-center font-medium ${activeTab === 'queue' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500'}`}
+          >
+            Queue
+          </button>
+          <button 
+            onClick={() => setActiveTab('processing')}
+            className={`flex-1 py-2 px-4 text-center font-medium ${activeTab === 'processing' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500'}`}
+          >
+            Processing
+          </button>
+          <button 
+            onClick={() => setActiveTab('ready')}
+            className={`flex-1 py-2 px-4 text-center font-medium ${activeTab === 'ready' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500'}`}
+          >
+            Ready
+          </button>
+        </div>
+      </div>
+
+      {/* Orders Grid - Desktop version */}
+      <div className="hidden sm:grid sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
         {/* Queue Section */}
-        <div className="bg-white rounded-lg shadow p-4">
-          <h2 className="text-lg font-semibold mb-4 flex items-center">
+        <div className="bg-white rounded-lg shadow p-3 sm:p-4">
+          <h2 className="text-lg font-semibold mb-3 sm:mb-4 flex items-center">
             <ChefHat className="w-5 h-5 mr-2" />
             Queue
           </h2>
-          <div className="space-y-4">
+          <div className="space-y-4 max-h-[calc(100vh-180px)] overflow-y-auto">
             <AnimatePresence>
               {orders
                 .filter(order => order.status === 'KITCHEN_QUEUE')
@@ -727,12 +752,12 @@ export default function KitchenDisplay() {
         </div>
 
         {/* Processing Section */}
-        <div className="bg-white rounded-lg shadow p-4">
-          <h2 className="text-lg font-semibold mb-4 flex items-center">
+        <div className="bg-white rounded-lg shadow p-3 sm:p-4">
+          <h2 className="text-lg font-semibold mb-3 sm:mb-4 flex items-center">
             <ChefHat className="w-5 h-5 mr-2" />
             Processing
           </h2>
-          <div className="space-y-4">
+          <div className="space-y-4 max-h-[calc(100vh-180px)] overflow-y-auto">
             <AnimatePresence>
               {orders
                 .filter(order => order.status === 'KITCHEN_PROCESSING')
@@ -747,12 +772,12 @@ export default function KitchenDisplay() {
         </div>
 
         {/* Ready Section */}
-        <div className="bg-white rounded-lg shadow p-4">
-          <h2 className="text-lg font-semibold mb-4 flex items-center">
+        <div className="bg-white rounded-lg shadow p-3 sm:p-4">
+          <h2 className="text-lg font-semibold mb-3 sm:mb-4 flex items-center">
             <CheckCircle2 className="w-5 h-5 mr-2" />
             Ready
           </h2>
-          <div className="space-y-4">
+          <div className="space-y-4 max-h-[calc(100vh-180px)] overflow-y-auto">
             <AnimatePresence>
               {orders
                 .filter(order => order.status === 'KITCHEN_READY')
@@ -765,6 +790,72 @@ export default function KitchenDisplay() {
             </AnimatePresence>
           </div>
         </div>
+      </div>
+
+      {/* Mobile version - shows only the active tab */}
+      <div className="block sm:hidden">
+        {activeTab === 'queue' && (
+          <div className="bg-white rounded-lg shadow p-3">
+            <h2 className="text-lg font-semibold mb-3 flex items-center">
+              <ChefHat className="w-5 h-5 mr-2" />
+              Queue
+            </h2>
+            <div className="space-y-4 max-h-[calc(100vh-180px)] overflow-y-auto">
+              <AnimatePresence>
+                {orders
+                  .filter(order => order.status === 'KITCHEN_QUEUE')
+                  .map(order => (
+                    <OrderCard
+                      key={order.id}
+                      order={order}
+                    />
+                  ))}
+              </AnimatePresence>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'processing' && (
+          <div className="bg-white rounded-lg shadow p-3">
+            <h2 className="text-lg font-semibold mb-3 flex items-center">
+              <ChefHat className="w-5 h-5 mr-2" />
+              Processing
+            </h2>
+            <div className="space-y-4 max-h-[calc(100vh-180px)] overflow-y-auto">
+              <AnimatePresence>
+                {orders
+                  .filter(order => order.status === 'KITCHEN_PROCESSING')
+                  .map(order => (
+                    <OrderCard
+                      key={order.id}
+                      order={order}
+                    />
+                  ))}
+              </AnimatePresence>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'ready' && (
+          <div className="bg-white rounded-lg shadow p-3">
+            <h2 className="text-lg font-semibold mb-3 flex items-center">
+              <CheckCircle2 className="w-5 h-5 mr-2" />
+              Ready
+            </h2>
+            <div className="space-y-4 max-h-[calc(100vh-180px)] overflow-y-auto">
+              <AnimatePresence>
+                {orders
+                  .filter(order => order.status === 'KITCHEN_READY')
+                  .map(order => (
+                    <OrderCard
+                      key={order.id}
+                      order={order}
+                    />
+                  ))}
+              </AnimatePresence>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Lightbox for images */}

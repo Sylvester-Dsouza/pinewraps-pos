@@ -258,6 +258,7 @@ export default function DesignDisplay() {
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [currentImages, setCurrentImages] = useState<CustomSlide[]>([]);
+  const [activeTab, setActiveTab] = useState('queue');
 
   useEffect(() => {
     // Initial fetch
@@ -806,90 +807,174 @@ export default function DesignDisplay() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      <div className="p-4">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold">Design Display</h1>
-          <div className="flex items-center gap-4">
-            <button
-              onClick={fetchOrders}
-              className="flex items-center px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
-            >
-              <RotateCw className="w-4 h-4 mr-2" />
-              Refresh
-            </button>
-            <button
-              onClick={() => {
-                if (!document.fullscreenElement) {
-                  document.documentElement.requestFullscreen();
-                } else {
-                  document.exitFullscreen();
-                }
-              }}
-              className="flex items-center px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
-            >
-              {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-              <span className="ml-2">Toggle Fullscreen</span>
-            </button>
+    <div className="min-h-screen bg-gray-100 p-2 sm:p-4">
+      {/* Header */}
+      <div className="mb-4 sm:mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-0">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-800">Design Screen</h1>
+        </div>
+        
+        <div className="flex items-center space-x-4 self-end sm:self-auto">
+          <button
+            onClick={fetchOrders}
+            className="p-2 rounded-lg bg-white hover:bg-gray-50 text-gray-600"
+            title="Refresh Orders"
+          >
+            <RotateCw className="w-5 h-5" />
+          </button>
+          <button
+            onClick={() => {
+              if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen();
+              } else {
+                document.exitFullscreen();
+              }
+            }}
+            className="p-2 rounded-lg bg-white hover:bg-gray-50 text-gray-600"
+            title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
+          >
+            {isFullscreen ? (
+              <Minimize2 className="w-5 h-5" />
+            ) : (
+              <Maximize2 className="w-5 h-5" />
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* Tab navigation for mobile */}
+      <div className="block sm:hidden mb-4">
+        <div className="flex border-b border-gray-200">
+          <button 
+            onClick={() => setActiveTab('queue')}
+            className={`flex-1 py-2 px-4 text-center font-medium ${activeTab === 'queue' ? 'text-purple-600 border-b-2 border-purple-600' : 'text-gray-500'}`}
+          >
+            Queue
+          </button>
+          <button 
+            onClick={() => setActiveTab('processing')}
+            className={`flex-1 py-2 px-4 text-center font-medium ${activeTab === 'processing' ? 'text-purple-600 border-b-2 border-purple-600' : 'text-gray-500'}`}
+          >
+            Processing
+          </button>
+          <button 
+            onClick={() => setActiveTab('ready')}
+            className={`flex-1 py-2 px-4 text-center font-medium ${activeTab === 'ready' ? 'text-purple-600 border-b-2 border-purple-600' : 'text-gray-500'}`}
+          >
+            Ready
+          </button>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="h-full flex items-center justify-center bg-gray-100">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 mx-auto"></div>
+            <p className="mt-4 text-gray-600">Loading orders...</p>
           </div>
         </div>
-
-        {loading ? (
-          <div className="flex justify-center items-center h-64">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900"></div>
-          </div>
-        ) : (
-          <div className="grid grid-cols-3 gap-4">
-            {/* 1. New - Design Queue Orders */}
-            <div className="bg-gray-50 rounded-xl p-4 overflow-y-auto">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="font-semibold text-lg flex items-center">
-                  <div className="w-3 h-3 rounded-full bg-purple-500 mr-2" />
-                  New
-                </h2>
-                <span className="text-sm text-gray-500">{getOrdersByStatus("DESIGN_QUEUE").length}</span>
+      ) : (
+        <>
+          {/* Desktop version - grid layout */}
+          <div className="hidden sm:grid sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+            {/* Queue Section */}
+            <div className="bg-white rounded-lg shadow p-3 sm:p-4">
+              <h2 className="text-lg font-semibold mb-3 sm:mb-4 flex items-center">
+                <div className="w-3 h-3 rounded-full bg-purple-500 mr-2" />
+                Queue
+              </h2>
+              <div className="space-y-4 max-h-[calc(100vh-180px)] overflow-y-auto">
+                <AnimatePresence>
+                  {getOrdersByStatus("DESIGN_QUEUE").map(order => (
+                    <OrderCard key={order.id} order={order} />
+                  ))}
+                </AnimatePresence>
               </div>
-              <AnimatePresence>
-                {getOrdersByStatus("DESIGN_QUEUE").map(order => (
-                  <OrderCard key={order.id} order={order} />
-                ))}
-              </AnimatePresence>
             </div>
 
-            {/* Design Processing Column */}
-            <div className="bg-gray-50 rounded-xl p-4 overflow-y-auto">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="font-semibold text-lg flex items-center">
+            {/* Processing Section */}
+            <div className="bg-white rounded-lg shadow p-3 sm:p-4">
+              <h2 className="text-lg font-semibold mb-3 sm:mb-4 flex items-center">
+                <div className="w-3 h-3 rounded-full bg-purple-500 mr-2" />
+                Processing
+              </h2>
+              <div className="space-y-4 max-h-[calc(100vh-180px)] overflow-y-auto">
+                <AnimatePresence>
+                  {getOrdersByStatus("DESIGN_PROCESSING").map(order => (
+                    <OrderCard key={order.id} order={order} />
+                  ))}
+                </AnimatePresence>
+              </div>
+            </div>
+
+            {/* Ready Section */}
+            <div className="bg-white rounded-lg shadow p-3 sm:p-4">
+              <h2 className="text-lg font-semibold mb-3 sm:mb-4 flex items-center">
+                <div className="w-3 h-3 rounded-full bg-yellow-500 mr-2" />
+                Ready
+              </h2>
+              <div className="space-y-4 max-h-[calc(100vh-180px)] overflow-y-auto">
+                <AnimatePresence>
+                  {getOrdersByStatus("DESIGN_READY").map(order => (
+                    <OrderCard key={order.id} order={order} />
+                  ))}
+                </AnimatePresence>
+              </div>
+            </div>
+          </div>
+
+          {/* Mobile version - shows only the active tab */}
+          <div className="block sm:hidden">
+            {activeTab === 'queue' && (
+              <div className="bg-white rounded-lg shadow p-3">
+                <h2 className="text-lg font-semibold mb-3 flex items-center">
+                  <div className="w-3 h-3 rounded-full bg-purple-500 mr-2" />
+                  Queue
+                </h2>
+                <div className="space-y-4 max-h-[calc(100vh-180px)] overflow-y-auto">
+                  <AnimatePresence>
+                    {getOrdersByStatus("DESIGN_QUEUE").map(order => (
+                      <OrderCard key={order.id} order={order} />
+                    ))}
+                  </AnimatePresence>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'processing' && (
+              <div className="bg-white rounded-lg shadow p-3">
+                <h2 className="text-lg font-semibold mb-3 flex items-center">
                   <div className="w-3 h-3 rounded-full bg-purple-500 mr-2" />
                   Processing
                 </h2>
-                <span className="text-sm text-gray-500">{getOrdersByStatus("DESIGN_PROCESSING").length}</span>
+                <div className="space-y-4 max-h-[calc(100vh-180px)] overflow-y-auto">
+                  <AnimatePresence>
+                    {getOrdersByStatus("DESIGN_PROCESSING").map(order => (
+                      <OrderCard key={order.id} order={order} />
+                    ))}
+                  </AnimatePresence>
+                </div>
               </div>
-              <AnimatePresence>
-                {getOrdersByStatus("DESIGN_PROCESSING").map(order => (
-                  <OrderCard key={order.id} order={order} />
-                ))}
-              </AnimatePresence>
-            </div>
+            )}
 
-            {/* Design Ready Column */}
-            <div className="bg-gray-50 rounded-xl p-4 overflow-y-auto">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="font-semibold text-lg flex items-center">
+            {activeTab === 'ready' && (
+              <div className="bg-white rounded-lg shadow p-3">
+                <h2 className="text-lg font-semibold mb-3 flex items-center">
                   <div className="w-3 h-3 rounded-full bg-yellow-500 mr-2" />
                   Ready
                 </h2>
-                <span className="text-sm text-gray-500">{getOrdersByStatus("DESIGN_READY").length}</span>
+                <div className="space-y-4 max-h-[calc(100vh-180px)] overflow-y-auto">
+                  <AnimatePresence>
+                    {getOrdersByStatus("DESIGN_READY").map(order => (
+                      <OrderCard key={order.id} order={order} />
+                    ))}
+                  </AnimatePresence>
+                </div>
               </div>
-              <AnimatePresence>
-                {getOrdersByStatus("DESIGN_READY").map(order => (
-                  <OrderCard key={order.id} order={order} />
-                ))}
-              </AnimatePresence>
-            </div>
+            )}
           </div>
-        )}
-      </div>
+        </>
+      )}
 
       {/* Lightbox for design images */}
       <Lightbox

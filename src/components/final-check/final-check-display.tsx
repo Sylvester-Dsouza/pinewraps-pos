@@ -61,6 +61,7 @@ export default function FinalCheckDisplay() {
   const [orders, setOrders] = useState<FinalCheckOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [activeTab, setActiveTab] = useState('queue');
   const { user } = useAuth();
   const router = useRouter();
 
@@ -355,18 +356,18 @@ export default function FinalCheckDisplay() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 p-6">
+    <div className="min-h-screen bg-gray-100 p-2 sm:p-6">
       <div className="w-full">
         {/* Header */}
-        <div className="flex justify-between items-center mb-8">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 sm:mb-8 gap-2 sm:gap-0">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Final Check Display</h1>
-            <p className="text-gray-500 mt-1">Review orders and ensure quality before completion</p>
+            <h1 className="text-xl sm:text-3xl font-bold text-gray-900">Final Check Display</h1>
+            <p className="text-sm sm:text-base text-gray-500 mt-1">Review orders and ensure quality before completion</p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 self-end sm:self-auto">
             <button
               onClick={handleRefresh}
-              className="flex items-center px-4 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm"
+              className="flex items-center px-3 py-2 sm:px-4 sm:py-2.5 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm text-sm sm:text-base"
             >
               <RotateCw className="w-4 h-4 mr-2 text-gray-500" />
               Refresh
@@ -379,16 +380,46 @@ export default function FinalCheckDisplay() {
                   document.exitFullscreen();
                 }
               }}
-              className="flex items-center px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all shadow-sm"
+              className="flex items-center px-3 py-2 sm:px-4 sm:py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all shadow-sm text-sm sm:text-base"
             >
               {isFullscreen ? <Minimize2 className="w-4 h-4 mr-2" /> : <Maximize2 className="w-4 h-4 mr-2" />}
-              {isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
+              {isFullscreen ? "Exit" : "Fullscreen"}
             </button>
           </div>
         </div>
 
-        {/* Dashboard Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {/* Tab navigation for mobile */}
+        <div className="block sm:hidden mb-4">
+          <div className="flex border-b border-gray-200">
+            <button 
+              onClick={() => setActiveTab('queue')}
+              className={`flex-1 py-2 px-4 text-center font-medium ${activeTab === 'queue' ? 'text-amber-600 border-b-2 border-amber-600' : 'text-gray-500'}`}
+            >
+              Queue
+            </button>
+            <button 
+              onClick={() => setActiveTab('processing')}
+              className={`flex-1 py-2 px-4 text-center font-medium ${activeTab === 'processing' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500'}`}
+            >
+              Processing
+            </button>
+            <button 
+              onClick={() => setActiveTab('completed')}
+              className={`flex-1 py-2 px-4 text-center font-medium ${activeTab === 'completed' ? 'text-green-600 border-b-2 border-green-600' : 'text-gray-500'}`}
+            >
+              Ready
+            </button>
+            <button 
+              onClick={() => setActiveTab('returned')}
+              className={`flex-1 py-2 px-4 text-center font-medium ${activeTab === 'returned' ? 'text-purple-600 border-b-2 border-purple-600' : 'text-gray-500'}`}
+            >
+              Returned
+            </button>
+          </div>
+        </div>
+
+        {/* Desktop version - grid layout */}
+        <div className="hidden sm:grid sm:grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
           {/* Queue Column */}
           <div className="bg-white rounded-xl shadow-md overflow-hidden">
             <div className="border-b border-gray-100 bg-gradient-to-r from-amber-50 to-white">
@@ -492,8 +523,8 @@ export default function FinalCheckDisplay() {
           </div>
         </div>
 
-        {/* Send Back Section */}
-        <div className="mt-8 bg-white rounded-xl shadow-md overflow-hidden">
+        {/* Send Back Section - Desktop */}
+        <div className="mt-8 bg-white rounded-xl shadow-md overflow-hidden hidden sm:block">
           <div className="border-b border-gray-100 bg-gradient-to-r from-purple-50 to-white">
             <div className="p-4">
               <h2 className="font-bold text-lg text-purple-800">Returned Items</h2>
@@ -524,6 +555,153 @@ export default function FinalCheckDisplay() {
               </AnimatePresence>
             </div>
           </div>
+        </div>
+
+        {/* Mobile version - shows only the active tab */}
+        <div className="block sm:hidden">
+          {/* Queue Tab */}
+          {activeTab === 'queue' && (
+            <div className="bg-white rounded-xl shadow-md overflow-hidden">
+              <div className="border-b border-gray-100 bg-gradient-to-r from-amber-50 to-white">
+                <div className="p-4 flex items-center justify-between">
+                  <h2 className="font-bold text-lg flex items-center text-amber-800">
+                    <div className="w-3 h-3 rounded-full bg-amber-500 mr-2" />
+                    Final Check Queue
+                  </h2>
+                  <span className="px-2.5 py-1 bg-amber-100 text-amber-800 text-sm font-medium rounded-full">
+                    {getOrdersByStatus("FINAL_CHECK_QUEUE").length}
+                  </span>
+                </div>
+              </div>
+              <div className="p-4 overflow-y-auto max-h-[calc(100vh-200px)]">
+                <div className="space-y-4">
+                  <AnimatePresence>
+                    {getOrdersByStatus("FINAL_CHECK_QUEUE").length === 0 ? (
+                      <div className="text-center py-8 text-gray-500">
+                        <p>No orders in queue</p>
+                      </div>
+                    ) : (
+                      getOrdersByStatus("FINAL_CHECK_QUEUE").map(order => (
+                        <OrderCard 
+                          key={order.id} 
+                          order={order} 
+                          onUpdateStatus={updateOrderStatus}
+                        />
+                      ))
+                    )}
+                  </AnimatePresence>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Processing Tab */}
+          {activeTab === 'processing' && (
+            <div className="bg-white rounded-xl shadow-md overflow-hidden">
+              <div className="border-b border-gray-100 bg-gradient-to-r from-blue-50 to-white">
+                <div className="p-4 flex items-center justify-between">
+                  <h2 className="font-bold text-lg flex items-center text-blue-800">
+                    <div className="w-3 h-3 rounded-full bg-blue-500 mr-2" />
+                    Processing
+                  </h2>
+                  <span className="px-2.5 py-1 bg-blue-100 text-blue-800 text-sm font-medium rounded-full">
+                    {getOrdersByStatus("FINAL_CHECK_PROCESSING").length}
+                  </span>
+                </div>
+              </div>
+              <div className="p-4 overflow-y-auto max-h-[calc(100vh-200px)]">
+                <div className="space-y-4">
+                  <AnimatePresence>
+                    {getOrdersByStatus("FINAL_CHECK_PROCESSING").length === 0 ? (
+                      <div className="text-center py-8 text-gray-500">
+                        <p>No orders being processed</p>
+                      </div>
+                    ) : (
+                      getOrdersByStatus("FINAL_CHECK_PROCESSING").map(order => (
+                        <OrderCard 
+                          key={order.id} 
+                          order={order} 
+                          onUpdateStatus={updateOrderStatus}
+                        />
+                      ))
+                    )}
+                  </AnimatePresence>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Completed Tab */}
+          {activeTab === 'completed' && (
+            <div className="bg-white rounded-xl shadow-md overflow-hidden">
+              <div className="border-b border-gray-100 bg-gradient-to-r from-green-50 to-white">
+                <div className="p-4 flex items-center justify-between">
+                  <h2 className="font-bold text-lg flex items-center text-green-800">
+                    <div className="w-3 h-3 rounded-full bg-green-500 mr-2" />
+                    Ready for Pickup
+                  </h2>
+                  <span className="px-2.5 py-1 bg-green-100 text-green-800 text-sm font-medium rounded-full">
+                    {getOrdersByStatus("FINAL_CHECK_COMPLETE").length}
+                  </span>
+                </div>
+              </div>
+              <div className="p-4 overflow-y-auto max-h-[calc(100vh-200px)]">
+                <div className="space-y-4">
+                  <AnimatePresence>
+                    {getOrdersByStatus("FINAL_CHECK_COMPLETE").length === 0 ? (
+                      <div className="text-center py-8 text-gray-500">
+                        <p>No completed orders</p>
+                      </div>
+                    ) : (
+                      getOrdersByStatus("FINAL_CHECK_COMPLETE").map(order => (
+                        <OrderCard 
+                          key={order.id} 
+                          order={order} 
+                          onUpdateStatus={updateOrderStatus}
+                        />
+                      ))
+                    )}
+                  </AnimatePresence>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Returned Tab */}
+          {activeTab === 'returned' && (
+            <div className="bg-white rounded-xl shadow-md overflow-hidden">
+              <div className="border-b border-gray-100 bg-gradient-to-r from-purple-50 to-white">
+                <div className="p-4">
+                  <h2 className="font-bold text-lg text-purple-800">Returned Items</h2>
+                  <p className="text-sm text-gray-500">Orders sent back to Kitchen or Design for revision</p>
+                </div>
+              </div>
+              <div className="p-4 overflow-y-auto max-h-[calc(100vh-200px)]">
+                <div className="space-y-4">
+                  <AnimatePresence>
+                    {orders.filter(order => 
+                      order.status === "KITCHEN_QUEUE" || 
+                      order.status === "DESIGN_QUEUE"
+                    ).length === 0 ? (
+                      <div className="text-center py-8 text-gray-500">
+                        <p>No returned orders</p>
+                      </div>
+                    ) : (
+                      orders
+                        .filter(order => order.status === "KITCHEN_QUEUE" || order.status === "DESIGN_QUEUE")
+                        .map(order => (
+                          <OrderCard 
+                            key={order.id} 
+                            order={order} 
+                            onUpdateStatus={updateOrderStatus}
+                          />
+                        ))
+                    )}
+                  </AnimatePresence>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
