@@ -32,10 +32,10 @@ export const generateReceiptLines = (order: Order): { text: string; alignment?: 
 
   // Header
   lines.push({ text: 'PINEWRAPS', alignment: 'center', bold: true, size: 'double' });
-  lines.push({ text: 'Your Delicious Food Partner', alignment: 'center' });
+  lines.push({ text: 'Tax Invoice', alignment: 'center' });
   lines.push({ text: 'Dubai, UAE', alignment: 'center' });
-  lines.push({ text: 'Phone: +971 XXXXXXXXX', alignment: 'center' });
-  lines.push({ text: 'TRN: XXXXXXXXXXXXX', alignment: 'center' });
+  lines.push({ text: 'Phone: +971 544044864', alignment: 'center' });
+  lines.push({ text: 'TRN: 100461426700003', alignment: 'center' });
   lines.push({ text: '-'.repeat(PRINTER_CONFIG.characterWidth), alignment: 'center' });
 
   // Order Info
