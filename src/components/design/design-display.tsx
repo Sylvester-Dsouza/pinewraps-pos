@@ -568,7 +568,7 @@ export default function DesignDisplay() {
               </div>
               
               
-              {/* Delivery/Pickup Time - Prominent display with countdown */}
+              {/* Delivery/Pickup Time - Prominent display with contdown */}
               {order.deliveryMethod && (
                 <div className="mt-3 py-2 px-3 rounded-lg bg-gray-50 border border-gray-100">
                   <div className="flex items-center">
