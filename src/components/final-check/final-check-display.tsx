@@ -170,7 +170,7 @@ export default function FinalCheckDisplay() {
       setOrders(prev => {
         // If the order is now in final check status, add it if not already present
         if (
-          ['FINAL_CHECK_QUEUE', 'FINAL_CHECK_PROCESSING', 'FINAL_CHECK_COMPLETE', 'KITCHEN_QUEUE', 'DESIGN_QUEUE'].includes(data.status) &&
+          ['FINAL_CHECK_QUEUE', 'FINAL_CHECK_PROCESSING', 'FINAL_CHECK_COMPLETE', 'COMPLETED', 'KITCHEN_QUEUE', 'DESIGN_QUEUE'].includes(data.status) &&
           !prev.some(order => order.id === data.id)
         ) {
           // Fetch the full order details
@@ -226,7 +226,13 @@ export default function FinalCheckDisplay() {
   // Get orders by status
   const getOrdersByStatus = (status: FinalCheckOrderStatus) => {
     return orders
-      .filter(order => order.status === status)
+      .filter(order => {
+        if (status === "FINAL_CHECK_COMPLETE") {
+          // Show both FINAL_CHECK_COMPLETE and COMPLETED orders in the Ready column
+          return order.status === "FINAL_CHECK_COMPLETE" || order.status === "COMPLETED";
+        }
+        return order.status === status;
+      })
       .sort((a, b) => {
         // Get the relevant date for each order (pickup or delivery)
         const getOrderDate = (order: FinalCheckOrder) => {
@@ -288,6 +294,7 @@ export default function FinalCheckDisplay() {
           order.status === 'FINAL_CHECK_QUEUE' || 
           order.status === 'FINAL_CHECK_PROCESSING' || 
           order.status === 'FINAL_CHECK_COMPLETE' ||
+          order.status === 'COMPLETED' ||
           order.status === 'KITCHEN_QUEUE' ||
           order.status === 'DESIGN_QUEUE'
         );
@@ -494,7 +501,7 @@ export default function FinalCheckDisplay() {
               <div className="p-4 flex items-center justify-between">
                 <h2 className="font-bold text-lg flex items-center text-green-800">
                   <div className="w-3 h-3 rounded-full bg-green-500 mr-2" />
-                  Ready for Pickup
+                  Ready
                 </h2>
                 <span className="px-2.5 py-1 bg-green-100 text-green-800 text-sm font-medium rounded-full">
                   {getOrdersByStatus("FINAL_CHECK_COMPLETE").length}
@@ -638,7 +645,7 @@ export default function FinalCheckDisplay() {
                 <div className="p-4 flex items-center justify-between">
                   <h2 className="font-bold text-lg flex items-center text-green-800">
                     <div className="w-3 h-3 rounded-full bg-green-500 mr-2" />
-                    Ready for Pickup
+                    Ready
                   </h2>
                   <span className="px-2.5 py-1 bg-green-100 text-green-800 text-sm font-medium rounded-full">
                     {getOrdersByStatus("FINAL_CHECK_COMPLETE").length}

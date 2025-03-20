@@ -6,9 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Plus, Edit, Trash2, ArrowLeft } from 'lucide-react';
+import { Plus, Edit, Trash2, ArrowLeft, RefreshCw, Printer } from 'lucide-react';
 import { toast } from 'sonner';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { api } from '@/lib/api';
@@ -17,15 +16,11 @@ import { useRouter } from 'next/navigation';
 interface Printer {
   id: string;
   name: string;
-  connectionType: string;
-  ipAddress?: string;
-  port?: number;
-  vendorId?: string;
-  productId?: string;
-  serialPath?: string;
+  ipAddress: string;
+  port: number;
   isDefault: boolean;
-  printerType: string;
-  macName?: string;
+  isActive: boolean;
+  connected: boolean;
 }
 
 export default function PrinterPage() {
@@ -34,10 +29,15 @@ export default function PrinterPage() {
   const [selectedPrinter, setSelectedPrinter] = useState<Printer | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isTestingConnection, setIsTestingConnection] = useState(false);
+  const [isOpeningDrawer, setIsOpeningDrawer] = useState(false);
+  const [isPrinting, setIsPrinting] = useState(false);
+  const [directTestIp, setDirectTestIp] = useState('');
+  const [directTestPort, setDirectTestPort] = useState('9100');
   const [formData, setFormData] = useState<Partial<Printer>>({
     name: '',
-    connectionType: 'USB',
-    printerType: 'RECEIPT',
+    ipAddress: '',
+    port: 9100,
     isDefault: false,
   });
   const router = useRouter();
@@ -61,16 +61,14 @@ export default function PrinterPage() {
     // Check for query params to pre-fill the form
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
-      const connectionType = params.get('connectionType');
       const name = params.get('name');
       const ipAddress = params.get('ipAddress');
       const port = params.get('port');
       
       // If we have query params, update form data and switch to config tab
-      if (connectionType || name || ipAddress || port) {
+      if (name || ipAddress || port) {
         const newFormData: Partial<Printer> = {
           ...formData,
-          connectionType: connectionType || formData.connectionType,
           name: name || formData.name,
           ipAddress: ipAddress || formData.ipAddress,
           port: port ? parseInt(port) : formData.port,
@@ -95,45 +93,30 @@ export default function PrinterPage() {
     }
   };
 
-  const handleSelectChange = (name: string, value: string) => {
-    setFormData({ ...formData, [name]: value });
+  const handleCheckboxChange = (checked: boolean) => {
+    setFormData({ ...formData, isDefault: checked });
   };
 
-  const handleCheckboxChange = (name: string, checked: boolean) => {
-    setFormData({ ...formData, [name]: checked });
-  };
-
-  const handleSelectPrinter = (printer: Printer) => {
-    setSelectedPrinter(printer);
-    setFormData({
-      ...printer
-    });
-    setActiveTab('config');
-  };
-
-  const handleNewPrinter = () => {
-    setSelectedPrinter(null);
-    setFormData({
-      name: '',
-      connectionType: 'USB',
-      printerType: 'RECEIPT',
-      isDefault: false,
-    });
-    setActiveTab('config');
-  };
-
-  const handleSavePrinter = async () => {
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
     if (!formData.name) {
       toast.error('Printer name is required');
       return;
     }
-
-    if (formData.connectionType === 'NETWORK' && (!formData.ipAddress || !formData.port)) {
-      toast.error('IP address and port are required for network printers');
+    
+    if (!formData.ipAddress) {
+      toast.error('IP address is required');
       return;
     }
-
+    
+    if (!formData.port) {
+      toast.error('Port is required');
+      return;
+    }
+    
     setIsLoading(true);
+    
     try {
       let response;
       
@@ -144,11 +127,21 @@ export default function PrinterPage() {
       } else {
         // Create new printer
         response = await api.post('/api/pos/printer', formData);
-        toast.success('Printer created successfully');
+        toast.success('Printer added successfully');
       }
       
-      await loadPrinters();
+      // Reset form and go back to list
+      setFormData({
+        name: '',
+        ipAddress: '',
+        port: 9100,
+        isDefault: false,
+      });
+      setSelectedPrinter(null);
       setActiveTab('list');
+      
+      // Reload printers list
+      loadPrinters();
     } catch (error) {
       console.error('Error saving printer:', error);
       toast.error('Failed to save printer');
@@ -157,16 +150,26 @@ export default function PrinterPage() {
     }
   };
 
-  const handleDeletePrinter = async () => {
-    if (!selectedPrinter) return;
-    
+  const handleEdit = (printer: Printer) => {
+    setSelectedPrinter(printer);
+    setFormData({
+      name: printer.name,
+      ipAddress: printer.ipAddress,
+      port: printer.port,
+      isDefault: printer.isDefault,
+    });
+    setActiveTab('config');
+  };
+
+  const handleDelete = async (id: string) => {
     setIsDeleting(true);
+    
     try {
-      await api.delete(`/api/pos/printer/${selectedPrinter.id}`);
+      await api.delete(`/api/pos/printer/${id}`);
       toast.success('Printer deleted successfully');
-      await loadPrinters();
-      setActiveTab('list');
-      setSelectedPrinter(null);
+      
+      // Reload printers list
+      loadPrinters();
     } catch (error) {
       console.error('Error deleting printer:', error);
       toast.error('Failed to delete printer');
@@ -175,24 +178,142 @@ export default function PrinterPage() {
     }
   };
 
-  const handleTestPrinter = async (printerId: string) => {
+  const handleCancel = () => {
+    setSelectedPrinter(null);
+    setFormData({
+      name: '',
+      ipAddress: '',
+      port: 9100,
+      isDefault: false,
+    });
+    setActiveTab('list');
+  };
+
+  const testPrinterConnection = async (id: string) => {
+    setIsTestingConnection(true);
+    
     try {
-      const printer = printers.find(p => p.id === printerId);
-      if (!printer) {
-        toast.error('Printer not found');
-        return;
-      }
+      const response = await api.post(`/api/pos/printer/${id}/test`);
       
-      const response = await api.post(`/api/pos/printer/${printerId}/test`);
-        
+      if (response.data.success) {
+        toast.success('Printer connection successful');
+      } else {
+        toast.error(`Printer connection failed: ${response.data.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Error testing printer connection:', error);
+      toast.error('Failed to test printer connection');
+    } finally {
+      setIsTestingConnection(false);
+    }
+  };
+
+  const testDirectPrinter = async () => {
+    if (!directTestIp) {
+      toast.error('IP address is required');
+      return;
+    }
+    
+    setIsTestingConnection(true);
+    
+    try {
+      const response = await api.post('/api/pos/printer/test-direct', {
+        ipAddress: directTestIp,
+        port: directTestPort || '9100'
+      });
+      
+      if (response.data.success) {
+        toast.success('Printer connection successful');
+      } else {
+        toast.error(`Printer connection failed: ${response.data.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Error testing direct printer connection:', error);
+      toast.error('Failed to test printer connection');
+    } finally {
+      setIsTestingConnection(false);
+    }
+  };
+
+  const printDirectTest = async (openDrawer: boolean) => {
+    if (!directTestIp) {
+      toast.error('IP address is required');
+      return;
+    }
+    
+    if (openDrawer) {
+      setIsOpeningDrawer(true);
+    } else {
+      setIsPrinting(true);
+    }
+    
+    try {
+      const response = await api.post('/api/pos/printer/test-direct', {
+        ipAddress: directTestIp,
+        port: directTestPort || '9100',
+        action: openDrawer ? 'print-and-open' : 'print-only'
+      });
+      
+      if (response.data.success) {
+        toast.success(openDrawer ? 'Print and cash drawer operation successful' : 'Print operation successful');
+      } else {
+        toast.error(`Operation failed: ${response.data.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Error in printer operation:', error);
+      toast.error(openDrawer ? 'Failed to print and open drawer' : 'Failed to print');
+    } finally {
+      if (openDrawer) {
+        setIsOpeningDrawer(false);
+      } else {
+        setIsPrinting(false);
+      }
+    }
+  };
+
+  const openCashDrawer = async (id: string) => {
+    setIsOpeningDrawer(true);
+    
+    try {
+      const response = await api.post(`/api/pos/printer/${id}/test`);
+      
       if (response.data.success) {
         toast.success('Cash drawer opened successfully');
       } else {
-        toast.error(response.data.error || 'Failed to open cash drawer');
+        toast.error(`Failed to open cash drawer: ${response.data.error || 'Unknown error'}`);
       }
     } catch (error) {
       console.error('Error opening cash drawer:', error);
       toast.error('Failed to open cash drawer');
+    } finally {
+      setIsOpeningDrawer(false);
+    }
+  };
+
+  const openDirectCashDrawer = async () => {
+    if (!directTestIp) {
+      toast.error('IP address is required');
+      return;
+    }
+    
+    setIsOpeningDrawer(true);
+    
+    try {
+      const response = await api.post('/api/pos/printer/test-direct', {
+        ipAddress: directTestIp,
+        port: directTestPort || '9100'
+      });
+      
+      if (response.data.success) {
+        toast.success('Cash drawer opened successfully');
+      } else {
+        toast.error(`Failed to open cash drawer: ${response.data.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Error opening direct cash drawer:', error);
+      toast.error('Failed to open cash drawer');
+    } finally {
+      setIsOpeningDrawer(false);
     }
   };
 
@@ -200,274 +321,320 @@ export default function PrinterPage() {
     <div className="container mx-auto py-6">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">Printer Management</h1>
-        <Button
-          variant="outline"
-          onClick={() => router.back()}
-          className="flex items-center gap-2"
-        >
-          <ArrowLeft className="h-4 w-4" /> Back
+        <Button onClick={() => router.push('/pos')} variant="outline" size="sm">
+          <ArrowLeft className="mr-2 h-4 w-4" />
+          Back to POS
         </Button>
       </div>
       
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList>
+        <TabsList className="mb-4">
           <TabsTrigger value="list">Printer List</TabsTrigger>
-          <TabsTrigger value="config">Configuration</TabsTrigger>
+          <TabsTrigger value="config">
+            {selectedPrinter ? 'Edit Printer' : 'Add Printer'}
+          </TabsTrigger>
+          <TabsTrigger value="direct-test">Direct Test</TabsTrigger>
         </TabsList>
         
-        <TabsContent value="list" className="pt-4">
-          <div className="flex justify-between mb-4">
-            <h3 className="text-lg font-medium">Available Printers</h3>
-            <Button onClick={handleNewPrinter} size="sm">
-              <Plus className="h-4 w-4 mr-2" />
-              New Printer
-            </Button>
-          </div>
-          
-          {isLoading && printers.length === 0 ? (
-            <div className="flex flex-col items-center justify-center p-8">
-              <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent mb-4"></div>
-              <p className="text-muted-foreground">Loading printers...</p>
-            </div>
-          ) : printers.length === 0 ? (
-            <div className="text-center p-8 border rounded-md">
-              <p className="text-muted-foreground mb-4">No printers configured yet</p>
-              <Button onClick={handleNewPrinter} variant="outline" size="sm">
-                <Plus className="h-4 w-4 mr-2" />
-                Add Your First Printer
+        <TabsContent value="list">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle>Configured Printers</CardTitle>
+              <Button onClick={() => setActiveTab('config')} size="sm">
+                <Plus className="mr-2 h-4 w-4" />
+                Add Printer
               </Button>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {printers.map(printer => (
-                <Card 
-                  key={printer.id} 
-                  className={`cursor-pointer ${selectedPrinter?.id === printer.id ? 'border-primary' : ''}`}
-                  onClick={() => handleSelectPrinter(printer)}
-                >
-                  <CardHeader className="p-4 pb-2">
-                    <CardTitle className="text-base flex justify-between items-center">
-                      <span>{printer.name} {printer.isDefault && <span className="text-xs bg-primary/20 text-primary px-2 py-0.5 rounded ml-2">Default</span>}</span>
-                      <Button 
-                        variant="ghost" 
-                        size="icon"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleSelectPrinter(printer);
-                          setActiveTab("config");
-                        }}
-                      >
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="p-4 pt-0">
-                    <div className="text-sm text-muted-foreground">
-                      <p>Type: {printer.printerType}</p>
-                      {printer.connectionType === 'NETWORK' ? (
-                        <p>Network: {printer.ipAddress}:{printer.port}</p>
-                      ) : printer.connectionType === 'USB' ? (
-                        <p>USB: {printer.vendorId && printer.productId ? `${printer.vendorId}:${printer.productId}` : 'Auto-detect'}</p>
-                      ) : (
-                        <p>Serial: {printer.serialPath || 'Not specified'}</p>
-                      )}
-                    </div>
-                    <div className="mt-2 flex justify-end">
-                      <Button 
-                        size="sm" 
-                        variant="secondary"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleTestPrinter(printer.id);
-                        }}
-                      >
-                        Test Drawer
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          )}
+            </CardHeader>
+            <CardContent>
+              {isLoading ? (
+                <div className="flex justify-center py-4">
+                  <RefreshCw className="h-6 w-6 animate-spin" />
+                </div>
+              ) : printers.length === 0 ? (
+                <div className="text-center py-4 text-muted-foreground">
+                  No printers configured. Click "Add Printer" to get started.
+                </div>
+              ) : (
+                <div className="grid gap-4">
+                  {printers.map((printer) => (
+                    <Card key={printer.id} className="relative">
+                      <CardContent className="pt-6">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <h3 className="font-medium flex items-center">
+                              <Printer className="h-4 w-4 mr-2" />
+                              {printer.name}
+                              {printer.isDefault && (
+                                <span className="ml-2 text-xs bg-primary text-primary-foreground px-2 py-0.5 rounded-full">
+                                  Default
+                                </span>
+                              )}
+                              {printer.connected && (
+                                <span className="ml-2 text-xs bg-green-500 text-white px-2 py-0.5 rounded-full">
+                                  Connected
+                                </span>
+                              )}
+                            </h3>
+                            <p className="text-sm text-muted-foreground mt-1">
+                              IP: {printer.ipAddress}:{printer.port}
+                            </p>
+                          </div>
+                          <div className="flex space-x-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => testPrinterConnection(printer.id)}
+                              disabled={isTestingConnection}
+                            >
+                              {isTestingConnection ? (
+                                <RefreshCw className="h-4 w-4 animate-spin" />
+                              ) : (
+                                'Test Connection'
+                              )}
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => openCashDrawer(printer.id)}
+                              disabled={isOpeningDrawer}
+                            >
+                              {isOpeningDrawer ? (
+                                <RefreshCw className="h-4 w-4 animate-spin" />
+                              ) : (
+                                'Open Drawer'
+                              )}
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleEdit(printer)}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button variant="outline" size="sm">
+                                  <Trash2 className="h-4 w-4 text-destructive" />
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Delete Printer</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    Are you sure you want to delete this printer? This action cannot be undone.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                  <AlertDialogAction
+                                    onClick={() => handleDelete(printer.id)}
+                                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                    disabled={isDeleting}
+                                  >
+                                    {isDeleting ? 'Deleting...' : 'Delete'}
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
         
-        <TabsContent value="config" className="pt-4">
-          <div className="flex justify-between mb-4">
-            <h3 className="text-lg font-medium">
-              {selectedPrinter ? `Edit Printer: ${selectedPrinter.name}` : 'New Printer'}
-            </h3>
-            {selectedPrinter && (
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button variant="destructive" size="sm">
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    Delete
+        <TabsContent value="config">
+          <Card>
+            <CardHeader>
+              <CardTitle>
+                {selectedPrinter ? 'Edit Printer' : 'Add New Printer'}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="name">Printer Name</Label>
+                    <Input
+                      id="name"
+                      name="name"
+                      value={formData.name || ''}
+                      onChange={handleInputChange}
+                      placeholder="Office Printer"
+                      required
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="ipAddress">IP Address</Label>
+                    <Input
+                      id="ipAddress"
+                      name="ipAddress"
+                      value={formData.ipAddress || ''}
+                      onChange={handleInputChange}
+                      placeholder="192.168.1.100"
+                      required
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="port">Port</Label>
+                    <Input
+                      id="port"
+                      name="port"
+                      type="number"
+                      value={formData.port || ''}
+                      onChange={handleInputChange}
+                      placeholder="9100"
+                      required
+                    />
+                  </div>
+                  
+                  <div className="flex items-center space-x-2 pt-8">
+                    <Checkbox
+                      id="isDefault"
+                      checked={formData.isDefault || false}
+                      onCheckedChange={handleCheckboxChange}
+                    />
+                    <Label htmlFor="isDefault" className="cursor-pointer">
+                      Set as default printer
+                    </Label>
+                  </div>
+                </div>
+                
+                <div className="flex justify-end space-x-2 pt-4">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleCancel}
+                  >
+                    Cancel
                   </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Delete Printer</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      Are you sure you want to delete this printer? This action cannot be undone.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction 
-                      onClick={handleDeletePrinter}
-                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                    >
-                      {isDeleting ? 'Deleting...' : 'Delete'}
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            )}
-          </div>
-          
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="name">Printer Name</Label>
-                <Input 
-                  id="name"
-                  name="name"
-                  value={formData.name || ''}
-                  onChange={handleInputChange}
-                  placeholder="e.g. Receipt Printer"
-                />
-              </div>
-              
-              <div>
-                <Label htmlFor="printerType">Printer Type</Label>
-                <Select 
-                  value={formData.printerType} 
-                  onValueChange={(value) => handleSelectChange('printerType', value)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select printer type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="RECEIPT">Receipt Printer</SelectItem>
-                    <SelectItem value="KITCHEN">Kitchen Printer</SelectItem>
-                    <SelectItem value="LABEL">Label Printer</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            
-            <div>
-              <Label htmlFor="connectionType">Connection Type</Label>
-              <Select 
-                value={formData.connectionType || ''}
-                onValueChange={(value) => handleSelectChange('connectionType', value)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select connection type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="USB">USB</SelectItem>
-                  <SelectItem value="NETWORK">Network</SelectItem>
-                  <SelectItem value="SERIAL">Serial</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            
-            {formData.connectionType === 'NETWORK' && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="ipAddress">IP Address</Label>
-                  <Input 
-                    id="ipAddress"
-                    name="ipAddress"
-                    value={formData.ipAddress || ''}
-                    onChange={handleInputChange}
-                    placeholder="e.g. 192.168.1.100"
-                  />
+                  <Button type="submit" disabled={isLoading}>
+                    {isLoading ? (
+                      <>
+                        <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      'Save Printer'
+                    )}
+                  </Button>
                 </div>
-                <div>
-                  <Label htmlFor="port">Port</Label>
-                  <Input 
-                    id="port"
-                    name="port"
-                    type="number"
-                    value={formData.port || ''}
-                    onChange={handleInputChange}
-                    placeholder="e.g. 9100"
-                  />
+              </form>
+            </CardContent>
+          </Card>
+        </TabsContent>
+        
+        <TabsContent value="direct-test">
+          <Card>
+            <CardHeader>
+              <CardTitle>Direct Printer Test</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  Test a printer connection directly without saving it to the database.
+                  This is useful for troubleshooting or testing new printers.
+                </p>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="directTestIp">IP Address</Label>
+                    <Input
+                      id="directTestIp"
+                      value={directTestIp}
+                      onChange={(e) => setDirectTestIp(e.target.value)}
+                      placeholder="192.168.1.100"
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="directTestPort">Port</Label>
+                    <Input
+                      id="directTestPort"
+                      value={directTestPort}
+                      onChange={(e) => setDirectTestPort(e.target.value)}
+                      placeholder="9100"
+                    />
+                  </div>
+                </div>
+                
+                <div className="flex space-x-2 pt-4">
+                  <Button
+                    variant="outline"
+                    onClick={testDirectPrinter}
+                    disabled={isTestingConnection}
+                  >
+                    {isTestingConnection ? (
+                      <>
+                        <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                        Testing...
+                      </>
+                    ) : (
+                      'Test Connection'
+                    )}
+                  </Button>
+                  
+                  <Button
+                    variant="outline"
+                    onClick={() => printDirectTest(true)}
+                    disabled={isOpeningDrawer}
+                  >
+                    {isOpeningDrawer ? (
+                      <>
+                        <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                        Processing...
+                      </>
+                    ) : (
+                      <>
+                        <Printer className="mr-2 h-4 w-4" />
+                        Print and Open
+                      </>
+                    )}
+                  </Button>
+                  
+                  <Button
+                    variant="outline"
+                    onClick={() => printDirectTest(false)}
+                    disabled={isPrinting}
+                  >
+                    {isPrinting ? (
+                      <>
+                        <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                        Printing...
+                      </>
+                    ) : (
+                      <>
+                        <Printer className="mr-2 h-4 w-4" />
+                        Print Only
+                      </>
+                    )}
+                  </Button>
+                  
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      // Add this printer to the configuration form
+                      setFormData({
+                        ...formData,
+                        name: 'New Printer',
+                        ipAddress: directTestIp,
+                        port: parseInt(directTestPort) || 9100,
+                      });
+                      setActiveTab('config');
+                    }}
+                  >
+                    Add to Configuration
+                  </Button>
                 </div>
               </div>
-            )}
-            
-            {formData.connectionType === 'USB' && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="vendorId">Vendor ID (optional)</Label>
-                  <Input 
-                    id="vendorId"
-                    name="vendorId"
-                    value={formData.vendorId || ''}
-                    onChange={handleInputChange}
-                    placeholder="e.g. 0x04b8"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="productId">Product ID (optional)</Label>
-                  <Input 
-                    id="productId"
-                    name="productId"
-                    value={formData.productId || ''}
-                    onChange={handleInputChange}
-                    placeholder="e.g. 0x0202"
-                  />
-                </div>
-              </div>
-            )}
-            
-            {formData.connectionType === 'SERIAL' && (
-              <div>
-                <Label htmlFor="serialPath">Serial Path</Label>
-                <Input 
-                  id="serialPath"
-                  name="serialPath"
-                  value={formData.serialPath || ''}
-                  onChange={handleInputChange}
-                  placeholder="e.g. COM1 (Windows) or /dev/ttyS0 (Linux)"
-                />
-              </div>
-            )}
-            
-            <div className="flex items-center space-x-2">
-              <Checkbox 
-                id="isDefault" 
-                checked={formData.isDefault} 
-                onCheckedChange={(checked) => handleCheckboxChange('isDefault', checked === true)}
-              />
-              <Label htmlFor="isDefault">Set as default printer</Label>
-            </div>
-            
-            <div className="flex justify-end space-x-2 pt-4">
-              <Button 
-                variant="outline" 
-                onClick={() => setActiveTab('list')}
-              >
-                Cancel
-              </Button>
-              <Button 
-                onClick={handleSavePrinter}
-                disabled={isLoading}
-              >
-                {isLoading ? (
-                  <>
-                    <div className="h-4 w-4 mr-2 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
-                    Saving...
-                  </>
-                ) : (
-                  <>Save</>
-                )}
-              </Button>
-            </div>
-          </div>
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
     </div>

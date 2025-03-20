@@ -101,7 +101,7 @@ export default function Header({ title }: HeaderProps) {
               >
                 Kitchen Display
               </Link>
-              {/* <Link
+              <Link
                 href="/printer"
                 className={`text-sm font-medium ${
                   pathname === "/printer"
@@ -110,7 +110,7 @@ export default function Header({ title }: HeaderProps) {
                 }`}
               >
                 Printer
-              </Link> */}
+              </Link>
               {/* <Link
                 href="/drawer"
                 className={`text-sm font-medium ${
