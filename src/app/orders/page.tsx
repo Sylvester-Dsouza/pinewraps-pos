@@ -32,7 +32,8 @@ const statusColors = {
   COMPLETED: { bg: 'bg-green-100', text: 'text-green-800', icon: CheckCircle },
   CANCELLED: { bg: 'bg-red-100', text: 'text-red-800', icon: XCircle },
   REFUNDED: { bg: 'bg-orange-100', text: 'text-orange-800', icon: RotateCcw },
-  PENDING_PAYMENT: { bg: 'bg-orange-100', text: 'text-orange-800', icon: Clock }
+  PENDING_PAYMENT: { bg: 'bg-orange-100', text: 'text-orange-800', icon: Clock },
+  PARTIALLY_REFUNDED: { bg: 'bg-orange-100', text: 'text-orange-800', icon: RotateCcw }
 } as const;
 
 const statusLabels = {
@@ -49,7 +50,8 @@ const statusLabels = {
   COMPLETED: 'Completed',
   CANCELLED: 'Cancelled',
   REFUNDED: 'Refunded',
-  PENDING_PAYMENT: 'Pending Payment'
+  PENDING_PAYMENT: 'Pending Payment',
+  PARTIALLY_REFUNDED: 'Partially Refunded'
 } as const;
 
 const deliveryMethodColors = {
@@ -71,6 +73,8 @@ const OrdersPage = () => {
   const [showCancelConfirm, setShowCancelConfirm] = useState<string | null>(null);
   const [selectedOrderForPayment, setSelectedOrderForPayment] = useState<Order | null>(null);
   const [selectedOrderForPickupUpdate, setSelectedOrderForPickupUpdate] = useState<Order | null>(null);
+  const [showPartialRefundModal, setShowPartialRefundModal] = useState<string | null>(null);
+  const [partialRefundAmount, setPartialRefundAmount] = useState<string>('');
 
   // Check authentication status
   useEffect(() => {
@@ -332,6 +336,35 @@ const OrdersPage = () => {
     }
   };
 
+  const handlePartialRefund = async (orderId: string) => {
+    try {
+      // Validate refund amount
+      const amount = parseFloat(partialRefundAmount);
+      if (isNaN(amount) || amount <= 0) {
+        toast.error('Please enter a valid refund amount');
+        return;
+      }
+
+      const response = await apiMethods.pos.updateOrderStatus(orderId, {
+        status: 'PARTIALLY_REFUNDED',
+        notes: `Order partially refunded by POS user. Amount: ${amount}`,
+        partialRefundAmount: amount
+      });
+
+      if (response.success) {
+        toast.success('Order marked as partially refunded');
+        setShowPartialRefundModal(null);
+        setPartialRefundAmount('');
+        fetchOrders(); // Refresh orders list
+      } else {
+        throw new Error(response.message || 'Failed to mark order as partially refunded');
+      }
+    } catch (error: any) {
+      console.error('Error marking order as partially refunded:', error);
+      toast.error(error.message || 'Failed to mark order as partially refunded');
+    }
+  };
+
   const handleDownloadInvoice = async (orderId: string) => {
     try {
       setDownloadingInvoices(prev => ({ ...prev, [orderId]: true }));
@@ -473,32 +506,15 @@ const OrdersPage = () => {
                         {order.customerEmail && <p>Email: {order.customerEmail}</p>}
                         <p>Date: {format(new Date(order.createdAt), 'PPpp')}</p>
                         
-                        {/* Payment Details Section */}
-                        <div className="mt-2 pt-2 border-t border-gray-200">
-                          <p className="font-medium text-gray-700">Payment Details:</p>
-                          <p>Total Amount: AED {order.totalAmount?.toFixed(2) || '0.00'}</p>
-                          <p>Paid Amount: AED {typeof order.paidAmount === 'number' ? order.paidAmount.toFixed(2) : '0.00'}</p>
-                          <p>Payment Method: {getPaymentMethodDisplay(order)}</p>
-                          {order.payments && order.payments.length > 0 && (
-                            <div className="ml-2 mt-1">
-                              {order.payments.map((payment, idx) => (
-                                <div key={idx} className="text-sm">
-                                  {payment.method === 'SPLIT' ? (
-                                    <>
-                                      <p>Cash: AED {payment.metadata?.cashAmount || '0.00'}</p>
-                                      <p>Card: AED {typeof payment.amount === 'number' && payment.metadata?.cashAmount 
-                                        ? (payment.amount - parseFloat(payment.metadata.cashAmount)).toFixed(2) 
-                                        : '0.00'}</p>
-                                      {payment.reference && <p>Card Reference: {payment.reference}</p>}
-                                    </>
-                                  ) : (
-                                    <p>{payment.method}: AED {typeof payment.amount === 'number' ? payment.amount.toFixed(2) : '0.00'} {payment.reference && `(Ref: ${payment.reference})`}</p>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
+                        {/* Display refund status */}
+                        {order.status === 'REFUNDED' && (
+                          <p className="font-medium text-red-600 mt-2">Status: Fully Refunded</p>
+                        )}
+                        {order.status === 'PARTIALLY_REFUNDED' && order.partialRefundAmount && (
+                          <p className="font-medium text-orange-600 mt-2">
+                            Status: Partially Refunded (AED {order.partialRefundAmount.toFixed(2)})
+                          </p>
+                        )}
                         
                         {/* Delivery/Pickup Details */}
                         {order.deliveryMethod === 'DELIVERY' ? (
@@ -594,6 +610,19 @@ const OrdersPage = () => {
                         </div>
                       ))}
                     </div>
+                    
+                    {/* Display partial refund amount if applicable */}
+                    {order.status === 'PARTIALLY_REFUNDED' && order.partialRefundAmount && (
+                      <div className="mt-3 pt-2 border-t border-gray-200">
+                        <p className="font-medium text-orange-600">
+                          Partial Refund Amount: AED {order.partialRefundAmount.toFixed(2)}
+                        </p>
+                      </div>
+                    )}
+                    
+                    <div className="mt-3 pt-2 border-t border-gray-200">
+                      <p className="font-medium text-gray-700">Total Amount: AED {order.totalAmount?.toFixed(2) || '0.00'}</p>
+                    </div>
                   </div>
                   
                   <div className="flex items-center gap-2 mt-4">
@@ -603,7 +632,7 @@ const OrdersPage = () => {
                     >
                       View Receipt
                     </button>
-                    {!['COMPLETED', 'CANCELLED', 'REFUNDED'].includes(order.status) && (
+                    {!['COMPLETED', 'CANCELLED', 'REFUNDED', 'PARTIALLY_REFUNDED'].includes(order.status) && (
                       <button
                         onClick={() => setShowCancelConfirm(order.id)}
                         className="px-4 py-2 text-sm font-medium text-red-700 bg-red-100 rounded-md hover:bg-red-200 flex-1"
@@ -638,13 +667,22 @@ const OrdersPage = () => {
                       </button>
                     )}
                     {order.status === 'CANCELLED' && (
-                      <button
-                        onClick={() => handleRefundOrder(order.id)}
-                        className="text-sm text-orange-600 hover:text-orange-800 flex items-center gap-1"
-                      >
-                        <RotateCcw className="h-4 w-4" />
-                        Mark as Refunded
-                      </button>
+                      <>
+                        <button
+                          onClick={() => handleRefundOrder(order.id)}
+                          className="text-sm text-orange-600 hover:text-orange-800 flex items-center gap-1 mr-3"
+                        >
+                          <RotateCcw className="h-4 w-4" />
+                          Mark as Refunded
+                        </button>
+                        <button
+                          onClick={() => setShowPartialRefundModal(order.id)}
+                          className="text-sm text-orange-600 hover:text-orange-800 flex items-center gap-1"
+                        >
+                          <RotateCcw className="h-4 w-4" />
+                          Mark as Partial Refund
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>
@@ -709,6 +747,39 @@ const OrdersPage = () => {
           order={selectedOrderForPickupUpdate}
           onSuccess={handlePickupDetailsUpdated}
         />
+      )}
+
+      {/* Partial Refund Modal */}
+      {showPartialRefundModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold mb-4">Partial Refund</h3>
+            <p className="text-gray-600 mb-6">
+              Enter the amount you want to refund:
+            </p>
+            <input
+              type="number"
+              value={partialRefundAmount}
+              onChange={(e) => setPartialRefundAmount(e.target.value)}
+              placeholder="Refund Amount"
+              className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <div className="flex justify-end gap-3 mt-4">
+              <button
+                onClick={() => setShowPartialRefundModal(null)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handlePartialRefund(showPartialRefundModal)}
+                className="px-4 py-2 text-sm font-medium text-white bg-orange-600 rounded-md hover:bg-orange-700"
+              >
+                Refund
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

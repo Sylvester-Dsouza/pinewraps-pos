@@ -49,6 +49,7 @@ export enum POSOrderStatus {
   COMPLETED = 'COMPLETED',
   CANCELLED = 'CANCELLED',
   REFUNDED = 'REFUNDED',
+  PARTIALLY_REFUNDED = 'PARTIALLY_REFUNDED',
   PENDING_PAYMENT = 'PENDING_PAYMENT'
 }
 
@@ -172,6 +173,9 @@ export interface POSOrderData {
   // Payment details
   paymentMethod?: POSPaymentMethod;
   paymentReference?: string;
+  
+  // Refund details
+  partialRefundAmount?: number;
   
   // Order routing and processing metadata
   metadata?: {

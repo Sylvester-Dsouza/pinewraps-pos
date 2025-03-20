@@ -769,14 +769,15 @@ export const apiMethods = {
       }
     },
 
-    updateOrderStatus: async (orderId: string, { status, notes, teamNotes, qualityControl }: { status: string, notes?: string, teamNotes?: string, qualityControl?: any }) => {
+    updateOrderStatus: async (orderId: string, { status, notes, teamNotes, qualityControl, partialRefundAmount }: { status: string, notes?: string, teamNotes?: string, qualityControl?: any, partialRefundAmount?: number }) => {
       try {
-        console.log('API call: updateOrderStatus', { orderId, status, notes, teamNotes, qualityControl });
+        console.log('API call: updateOrderStatus', { orderId, status, notes, teamNotes, qualityControl, partialRefundAmount });
         const response = await api.patch(`/api/pos/orders/${orderId}/status`, {
           status,
           notes: notes || '',
           teamNotes: teamNotes || '',
-          qualityControl
+          qualityControl,
+          partialRefundAmount
         });
         return response.data;
       } catch (error: any) {
