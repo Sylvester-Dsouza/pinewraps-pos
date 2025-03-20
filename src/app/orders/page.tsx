@@ -17,6 +17,7 @@ import { Order, OrderItem, OrderPayment, POSPaymentMethod, POSPaymentStatus } fr
 import { getPaymentMethodDisplay } from '@/utils/payment-utils';
 import RemainingPaymentModal from '@/components/pos/RemainingPaymentModal';
 import UpdatePickupDetailsModal from '@/components/pos/UpdatePickupDetailsModal';
+import { useUserRole } from '@/hooks/use-user-role';
 
 const statusColors = {
   PENDING: { bg: 'bg-yellow-100', text: 'text-yellow-800', icon: Clock },
@@ -75,6 +76,7 @@ const OrdersPage = () => {
   const [selectedOrderForPickupUpdate, setSelectedOrderForPickupUpdate] = useState<Order | null>(null);
   const [showPartialRefundModal, setShowPartialRefundModal] = useState<string | null>(null);
   const [partialRefundAmount, setPartialRefundAmount] = useState<string>('');
+  const { isSuperAdmin } = useUserRole();
 
   // Check authentication status
   useEffect(() => {
@@ -299,9 +301,15 @@ const OrdersPage = () => {
 
   const handleCancelOrder = async (orderId: string) => {
     try {
+      if (!isSuperAdmin) {
+        toast.error('Only Super Admins can cancel orders');
+        setShowCancelConfirm(null);
+        return;
+      }
+
       const response = await apiMethods.pos.updateOrderStatus(orderId, {
         status: 'CANCELLED',
-        notes: 'Order cancelled by POS user'
+        notes: 'Order cancelled by Super Admin'
       });
 
       if (response.success) {
@@ -314,6 +322,7 @@ const OrdersPage = () => {
     } catch (error: any) {
       console.error('Error cancelling order:', error);
       toast.error(error.message || 'Failed to cancel order');
+      setShowCancelConfirm(null);
     }
   };
 
@@ -397,6 +406,12 @@ const OrdersPage = () => {
   const handlePickupDetailsUpdated = async () => {
     await fetchOrders();
     setSelectedOrderForPickupUpdate(null);
+  };
+
+  const handleCancelAttempt = () => {
+    if (!isSuperAdmin) {
+      toast.error('Only Super Admins can cancel orders');
+    }
   };
 
   if (!isAuthenticated) {
@@ -634,8 +649,8 @@ const OrdersPage = () => {
                     </button>
                     {!['COMPLETED', 'CANCELLED', 'REFUNDED', 'PARTIALLY_REFUNDED'].includes(order.status) && (
                       <button
-                        onClick={() => setShowCancelConfirm(order.id)}
-                        className="px-4 py-2 text-sm font-medium text-red-700 bg-red-100 rounded-md hover:bg-red-200 flex-1"
+                        onClick={isSuperAdmin ? () => setShowCancelConfirm(order.id) : handleCancelAttempt}
+                        className={`px-4 py-2 text-sm font-medium ${isSuperAdmin ? 'text-red-700 bg-red-100 hover:bg-red-200' : 'text-gray-500 bg-gray-100 hover:bg-gray-200'} rounded-md flex-1`}
                       >
                         Cancel Order
                       </button>

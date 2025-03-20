@@ -4,6 +4,7 @@ import axios from 'axios';
 import { getAuth, signInWithEmailAndPassword } from 'firebase/auth';
 import Cookies from 'js-cookie';
 import { nanoid } from 'nanoid';
+import { toast } from 'react-hot-toast';
 import { 
   Order, 
   OrderPayment, 
@@ -97,6 +98,13 @@ api.interceptors.response.use(
     return Promise.reject(error);
   }
 );
+
+// Helper function to handle API errors
+const handleApiError = (error: any) => {
+  console.error('API Error:', error);
+  const errorMessage = error.response?.data?.message || 'An error occurred';
+  toast.error(errorMessage);
+};
 
 // Auth endpoints
 export const authApi = {
@@ -1009,6 +1017,20 @@ export const apiMethods = {
     },
     completePayment: async (orderId: string): Promise<APIResponse<Order>> => {
       return api.post(`/api/pos/orders/${orderId}/complete-payment`);
+    },
+    cancelOrder: async (orderId: string): Promise<boolean> => {
+      try {
+        const response = await api.post(`/api/pos/orders/${orderId}/cancel`);
+        return response.data.success;
+      } catch (error: any) {
+        if (error.response?.data?.message === 'Only super admins can cancel orders') {
+          toast.error('Only Super Admins can cancel orders');
+        } else {
+          toast.error('Failed to cancel order');
+          console.error('Failed to cancel order:', error);
+        }
+        return false;
+      }
     },
   }
 };
