@@ -2,13 +2,15 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { FileCheck, CheckCircle2, AlertCircle, ChevronDown, ChevronUp, Clock, ExternalLink } from "lucide-react";
+import { FileCheck, CheckCircle2, AlertCircle, ChevronDown, ChevronUp, Clock, ExternalLink, Gift, Maximize2 } from "lucide-react";
 import OrderTimer from "./order-timer";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
 import Image from "next/image";
 import { toast } from "react-hot-toast";
+import Lightbox from "yet-another-react-lightbox";
+import "yet-another-react-lightbox/styles.css";
 
 // Types for order and status
 type FinalCheckOrderStatus = 
@@ -18,6 +20,15 @@ type FinalCheckOrderStatus =
   | "COMPLETED"
   | "KITCHEN_QUEUE"
   | "DESIGN_QUEUE";
+
+interface VariationOption {
+  type: string;
+  value: string;
+  name?: string;
+  price?: number;
+  id?: string;
+  priceAdjustment?: number;
+}
 
 interface FinalCheckOrder {
   id: string;
@@ -29,10 +40,18 @@ interface FinalCheckOrder {
     id: string;
     name: string;
     quantity: number;
-    variations: Record<string, any>;
+    variations: {
+      variationsObj?: Record<string, any>;
+      selectedVariations?: VariationOption[];
+    } | Record<string, any>;
+    selectedVariations?: VariationOption[];
     kitchenNotes?: string;
     designNotes?: string;
     customImages?: Array<{
+      url: string;
+      comment?: string;
+    }>;
+    images?: Array<{
       url: string;
       comment?: string;
     }>;
@@ -54,11 +73,25 @@ interface FinalCheckOrder {
     returnDestination?: 'KITCHEN' | 'DESIGN';
     returnedAt?: string;
   };
+  giftDetails?: {
+    isGift: boolean;
+    recipientName?: string;
+    recipientPhone?: string;
+    message?: string;
+    note?: string;
+    cashAmount?: string;
+    includeCash?: boolean;
+  };
 }
 
 interface OrderCardProps {
   order: FinalCheckOrder;
   onUpdateStatus?: (orderId: string, newStatus: FinalCheckOrderStatus, teamNotes?: string) => Promise<void>;
+}
+
+interface CustomSlide {
+  src: string;
+  comment?: string;
 }
 
 // Order card component for the final check display
@@ -71,6 +104,9 @@ export default function OrderCard({ order, onUpdateStatus }: OrderCardProps) {
   const [nextStatus, setNextStatus] = useState<FinalCheckOrderStatus | null>(null);
   const [sendBackTarget, setSendBackTarget] = useState<'KITCHEN' | 'DESIGN' | null>(null);
   const [returnReason, setReturnReason] = useState("");
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
+  const [currentImages, setCurrentImages] = useState<CustomSlide[]>([]);
 
   const toggleExpand = () => {
     setExpanded(!expanded);
@@ -102,8 +138,8 @@ export default function OrderCard({ order, onUpdateStatus }: OrderCardProps) {
           toast.error('Please provide a return reason');
           return;
         }
-        // Use returnReason as the primary reason
-        onUpdateStatus?.(order.id, nextStatus, returnReason || teamNotes);
+        // Use returnReason as the only reason when sending back
+        onUpdateStatus?.(order.id, nextStatus, returnReason);
       } else {
         // For normal status updates, use teamNotes
         onUpdateStatus?.(order.id, nextStatus, teamNotes);
@@ -196,6 +232,16 @@ export default function OrderCard({ order, onUpdateStatus }: OrderCardProps) {
   const statusBadge = getStatusBadge();
   const finalCheckStartTime = order.finalCheckStartTime ? new Date(order.finalCheckStartTime) : null;
 
+  const handleImageClick = (images: any[], index: number) => {
+    const slides = images.map(img => ({
+      src: img.url,
+      comment: img.comment || ''
+    }));
+    setCurrentImages(slides);
+    setLightboxIndex(index);
+    setLightboxOpen(true);
+  };
+
   return (
     <motion.div
       layout
@@ -233,6 +279,12 @@ export default function OrderCard({ order, onUpdateStatus }: OrderCardProps) {
                 {finalCheckStartTime && (
                   <span className="text-xs text-gray-500">
                     Final Check Started: {format(finalCheckStartTime, 'MMM d, h:mm a')}
+                  </span>
+                )}
+                {order.giftDetails?.isGift && (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-pink-100 text-pink-800">
+                    <Gift className="w-3 h-3 mr-1" />
+                    Gift
                   </span>
                 )}
               </div>
@@ -285,7 +337,46 @@ export default function OrderCard({ order, onUpdateStatus }: OrderCardProps) {
               </p>
             </div>
           )}
-
+          
+          {/* Gift Information Section */}
+          {order.giftDetails?.isGift && (
+            <div className="p-2.5 bg-pink-50 rounded-lg border border-pink-100">
+              <div className="flex items-start">
+                <div className="p-1 bg-pink-100 rounded mr-2">
+                  <Gift className="w-4 h-4 text-pink-600" />
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-pink-800">Gift Information</p>
+                  
+                  {order.giftDetails.recipientName && (
+                    <p className="text-sm text-pink-700">
+                      <span className="font-medium">Recipient:</span> {order.giftDetails.recipientName}
+                      {order.giftDetails.recipientPhone && ` (${order.giftDetails.recipientPhone})`}
+                    </p>
+                  )}
+                  
+                  {order.giftDetails.message && (
+                    <p className="text-sm text-pink-700">
+                      <span className="font-medium">Message:</span> "{order.giftDetails.message}"
+                    </p>
+                  )}
+                  
+                  {order.giftDetails.includeCash && order.giftDetails.cashAmount && (
+                    <p className="text-sm text-pink-700">
+                      <span className="font-medium">Cash Included:</span> {order.giftDetails.cashAmount}
+                    </p>
+                  )}
+                  
+                  {order.giftDetails.note && (
+                    <p className="text-sm text-pink-700">
+                      <span className="font-medium">Additional Note:</span> {order.giftDetails.note}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+          
           {order.finalCheckNotes && (
             <div className="p-2.5 bg-amber-50 rounded-lg border border-amber-100">
               <p className="text-sm text-amber-800">
@@ -320,15 +411,48 @@ export default function OrderCard({ order, onUpdateStatus }: OrderCardProps) {
                     </div>
                     
                     {/* Variations */}
-                    {Object.entries(item.variations || {}).length > 0 && (
-                      <div className="mt-2 ml-8 space-y-1">
-                        {Object.entries(item.variations || {}).map(([type, variation]: [string, any]) => (
-                          <p key={type} className="text-sm text-gray-600">
-                            <span className="font-medium">{type}:</span> {variation.name || variation.value}
+                    <div className="mt-2 ml-8 space-y-1">
+                      {/* Display directly from selectedVariations array if available */}
+                      {item.selectedVariations && Array.isArray(item.selectedVariations) && item.selectedVariations.length > 0 && 
+                        item.selectedVariations.map((variation, index) => (
+                          <p key={`sel-${index}`} className="text-sm text-gray-600">
+                            <span className="font-medium">{variation.type}:</span> {variation.value}
                           </p>
-                        ))}
-                      </div>
-                    )}
+                        ))
+                      }
+                      
+                      {/* If no direct selectedVariations, try to get them from variations.selectedVariations */}
+                      {(!item.selectedVariations || !Array.isArray(item.selectedVariations) || item.selectedVariations.length === 0) && 
+                        item.variations && typeof item.variations === 'object' && 
+                        item.variations.selectedVariations && Array.isArray(item.variations.selectedVariations) && 
+                        item.variations.selectedVariations.length > 0 && 
+                        item.variations.selectedVariations.map((variation, index) => (
+                          <p key={`var-${index}`} className="text-sm text-gray-600">
+                            <span className="font-medium">{variation.type}:</span> {variation.value}
+                          </p>
+                        ))
+                      }
+                      
+                      {/* As a last resort, try to get them from variations.variationsObj or legacy format */}
+                      {(!item.selectedVariations || !Array.isArray(item.selectedVariations) || item.selectedVariations.length === 0) &&
+                        (!item.variations || !item.variations.selectedVariations || !Array.isArray(item.variations.selectedVariations) || item.variations.selectedVariations.length === 0) &&
+                        item.variations && typeof item.variations === 'object' && 
+                        (item.variations.variationsObj || Object.keys(item.variations).length > 0) && (
+                          item.variations.variationsObj ? 
+                            Object.entries(item.variations.variationsObj).map(([type, value], index) => (
+                              <p key={`obj-${index}`} className="text-sm text-gray-600">
+                                <span className="font-medium">{type}:</span> {typeof value === 'object' ? (value as any).value || JSON.stringify(value) : value}
+                              </p>
+                            ))
+                          :
+                            Object.entries(item.variations).map(([type, value], index) => (
+                              <p key={`leg-${index}`} className="text-sm text-gray-600">
+                                <span className="font-medium">{type}:</span> {typeof value === 'object' ? (value as any).value || JSON.stringify(value) : value}
+                              </p>
+                            ))
+                        )
+                      }
+                    </div>
                     
                     {/* Item notes */}
                     {item.kitchenNotes && (
@@ -360,27 +484,90 @@ export default function OrderCard({ order, onUpdateStatus }: OrderCardProps) {
                   )}
                 </div>
 
-                {/* Images */}
+                {/* Custom Images */}
                 {item.customImages && item.customImages.length > 0 && (
-                  <div className="mt-3 flex gap-2 overflow-x-auto pb-2 ml-8">
-                    {item.customImages.map((image, index) => (
+                  <div className="mt-3 ml-8">
+                    <h5 className="text-sm font-medium text-gray-700 mb-2">Custom Images:</h5>
+                    <div className="flex gap-2 overflow-x-auto pb-2">
+                      {item.customImages.map((image, index) => (
+                        <div 
+                          key={`custom-${index}`} 
+                          className="relative min-w-[80px] h-[80px] rounded-lg overflow-hidden border border-gray-200 group cursor-pointer shadow-sm hover:shadow-md transition-shadow"
+                          onClick={() => handleImageClick(item.customImages || [], index)}
+                        >
+                          <Image
+                            src={image.url}
+                            alt={`Custom Image ${index + 1}`}
+                            fill
+                            className="object-cover group-hover:opacity-75 transition-opacity"
+                            onError={(e) => {
+                              // Handle image loading errors
+                              console.error('Error loading custom image:', e);
+                              // Hide the parent div on error
+                              const target = e.target as HTMLImageElement;
+                              if (target.parentElement) {
+                                target.parentElement.style.display = 'none';
+                              }
+                            }}
+                          />
+                          {image.comment && (
+                            <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-50 text-white p-1 text-xs truncate">
+                              {image.comment}
+                            </div>
+                          )}
+                          <button 
+                            className="absolute top-0 right-0 p-1 text-gray-500 hover:text-gray-700"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleImageClick(item.customImages || [], index);
+                            }}
+                          >
+                            <Maximize2 size={16} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {/* Product Images - Only show primary image with error handling */}
+                {item.images && item.images.length > 0 && item.images[0]?.url && (
+                  <div className="mt-3 ml-8">
+                    <h5 className="text-sm font-medium text-gray-700 mb-2">Product Image:</h5>
+                    <div className="flex gap-2">
                       <div 
-                        key={index} 
+                        key="product-primary" 
                         className="relative min-w-[80px] h-[80px] rounded-lg overflow-hidden border border-gray-200 group cursor-pointer shadow-sm hover:shadow-md transition-shadow"
+                        onClick={(e) => {
+                          handleImageClick(item.images || [], 0);
+                        }}
                       >
                         <Image
-                          src={image.url}
-                          alt={`Image ${index + 1}`}
+                          src={item.images[0].url}
+                          alt="Product Image"
                           fill
                           className="object-cover group-hover:opacity-75 transition-opacity"
+                          onError={(e) => {
+                            // Handle image loading errors
+                            console.error('Error loading product image:', e);
+                            // Hide the parent div on error
+                            const target = e.target as HTMLImageElement;
+                            if (target.parentElement) {
+                              target.parentElement.style.display = 'none';
+                            }
+                          }}
                         />
-                        {image.comment && (
-                          <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-50 text-white p-1 text-xs truncate">
-                            {image.comment}
-                          </div>
-                        )}
+                        <button 
+                          className="absolute top-0 right-0 p-1 text-gray-500 hover:text-gray-700"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleImageClick(item.images || [], 0);
+                          }}
+                        >
+                          <Maximize2 size={16} />
+                        </button>
                       </div>
-                    ))}
+                    </div>
                   </div>
                 )}
               </div>
@@ -425,19 +612,21 @@ export default function OrderCard({ order, onUpdateStatus }: OrderCardProps) {
                   placeholder={`Why is this order being returned to ${sendBackTarget}?`}
                   value={returnReason}
                   onChange={(e) => setReturnReason(e.target.value)}
-                  rows={3}
+                  rows={4}
                   className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
                   required
                 />
               </div>
             )}
-            <textarea
-              placeholder={sendBackTarget ? `Additional notes for ${sendBackTarget} (optional)` : 'Add any notes about this order (optional)'}
-              value={teamNotes}
-              onChange={(e) => setTeamNotes(e.target.value)}
-              rows={4}
-              className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
-            />
+            {!sendBackTarget && (
+              <textarea
+                placeholder="Add any notes about this order (optional)"
+                value={teamNotes}
+                onChange={(e) => setTeamNotes(e.target.value)}
+                rows={4}
+                className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+              />
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
@@ -449,6 +638,12 @@ export default function OrderCard({ order, onUpdateStatus }: OrderCardProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <Lightbox
+        open={lightboxOpen}
+        index={lightboxIndex}
+        slides={currentImages}
+        onClose={() => setLightboxOpen(false)}
+      />
     </motion.div>
   );
 }

@@ -36,7 +36,7 @@ export const uploadCustomImage = async (
     
     // Set a timeout to prevent hanging
     const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('Upload timed out')), 8000);
+      setTimeout(() => reject(new Error('Upload timed out')), 15000); // Increased timeout
     });
     
     // Race between upload and timeout
@@ -83,7 +83,7 @@ export const uploadCustomImages = async (
     
     const uploadPromises = validImages.map(async (image, index) => {
       // Skip if no file or already has URL
-      if (!('file' in image) || !image.file || image.url) {
+      if (!image.file || (image.url && image.url.startsWith('http'))) {
         console.log(`Image ${index} already has URL or no file:`, image.url);
         return image;
       }
@@ -98,7 +98,7 @@ export const uploadCustomImages = async (
         // Return updated image object with URL
         const updatedImage = {
           ...image,
-          url: downloadURL || null // Ensure we always have at least null
+          url: downloadURL || '' // Ensure we always have at least an empty string
         };
         
         console.log(`Returning updated image object:`, {
@@ -112,14 +112,14 @@ export const uploadCustomImages = async (
         // Return the original image if upload fails
         return {
           ...image,
-          url: image.url || null // Use null instead of empty string to avoid browser warnings
+          url: image.url || '' // Use empty string instead of null
         };
       }
     });
     
     // Wait for all uploads to complete with a global timeout
     const timeoutPromise = new Promise<CustomImage[]>((_, reject) => {
-      setTimeout(() => reject(new Error('All image uploads timed out')), 15000);
+      setTimeout(() => reject(new Error('All image uploads timed out')), 30000); // Increased timeout
     });
     
     const uploadedImages = await Promise.race([
@@ -134,10 +134,10 @@ export const uploadCustomImages = async (
     return uploadedImages;
   } catch (error) {
     console.error('Error uploading images to Firebase Storage:', error);
-    // Return original images with null URLs if the whole process fails
+    // Return original images with empty URLs if the whole process fails
     return images.map(img => ({
       ...img,
-      url: img.url || null // Use null instead of empty string
+      url: img.url || '' // Use empty string instead of null
     }));
   }
 };

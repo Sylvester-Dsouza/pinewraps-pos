@@ -8,7 +8,10 @@ export interface OrderItem {
   quantity: number;
   unitPrice: number;
   totalPrice: number;
-  variations?: Record<string, any>;
+  variations?: {
+    variationsObj?: Record<string, any>;
+    selectedVariations?: ProductVariation[];
+  };
   selectedVariations?: ProductVariation[];
   notes?: string;
   customImages?: Array<{
@@ -103,7 +106,10 @@ export interface POSOrderItemData {
   unitPrice: number;
   totalPrice: number;
   quantity: number;
-  variations?: Record<string, any>;
+  variations?: {
+    variationsObj?: Record<string, any>;
+    selectedVariations?: ProductVariation[];
+  };
   selectedVariations?: ProductVariation[];
   notes?: string;
   customImages?: CustomImage[];

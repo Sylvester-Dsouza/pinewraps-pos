@@ -4,6 +4,7 @@ import { X, Minus, Plus } from "lucide-react";
 import { Product } from "@/services/api";
 import { toast } from "react-hot-toast";
 import { CustomImage } from "@/types/cart";
+import ImageUpload from "./custom-images/image-upload";
 
 interface ProductDetailsModalProps {
   product: Product;
@@ -62,14 +63,12 @@ export default function ProductDetailsModal({
   const [quantity, setQuantity] = useState(1);
   const [selectedOptions, setSelectedOptions] = useState<SelectedOption[]>([]);
   const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(null);
-  const [customPrice, setCustomPrice] = useState<number | null>(null);
   const [notes, setNotes] = useState("");
-  const [customImages, setCustomImages] = useState<CustomImage[]>([]);
-  
-  // For Sets category
+  const [customPrice, setCustomPrice] = useState<number | null>(null);
   const [cakeFlavors, setCakeFlavors] = useState<CakeFlavor[]>([]);
   const [validSetSelection, setValidSetSelection] = useState(false);
-
+  const [customImages, setCustomImages] = useState<CustomImage[]>([]);
+  
   // Reset state when product changes
   useEffect(() => {
     setQuantity(1);
@@ -77,9 +76,9 @@ export default function ProductDetailsModal({
     setSelectedVariant(null);
     setCustomPrice(null);
     setNotes("");
-    setCustomImages([]);
     setCakeFlavors([]);
     setValidSetSelection(false);
+    setCustomImages([]);
     
     console.log('Product details:', product);
     console.log('Product allowCustomImages:', product.allowCustomImages);
@@ -319,13 +318,18 @@ export default function ProductDetailsModal({
     onAddToOrder({
       product: {
         ...product,
-        // If a variant is selected, update the base price to match the variant price
-        basePrice: selectedVariant ? selectedVariant.price : product.basePrice
+        // If custom price is set, update the base price to the custom price
+        // Otherwise, if a variant is selected, update to variant price
+        basePrice: product.allowCustomPrice && customPrice !== null 
+          ? customPrice 
+          : selectedVariant 
+            ? selectedVariant.price 
+            : product.basePrice
       },
       quantity,
       selectedVariations: variations,
       notes,
-      customImages: [], // Always pass an empty array for custom images
+      customImages,
       totalPrice: calculateTotalPrice(),
     });
 
@@ -408,16 +412,36 @@ export default function ProductDetailsModal({
                     )}
 
                     {/* Notes */}
-                    <div className="mt-6">
-                      <h3 className="text-lg font-medium text-gray-900 mb-2">Notes</h3>
+                    <div className="mb-6">
+                      <label 
+                        htmlFor="notes" 
+                        className="block text-xl font-semibold text-gray-900 mb-2"
+                      >
+                        Notes
+                      </label>
                       <textarea
-                        className="w-full border border-gray-300 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-black"
-                        rows={3}
-                        placeholder="Add any special instructions or notes for this item..."
+                        id="notes"
+                        name="notes"
                         value={notes}
                         onChange={(e) => setNotes(e.target.value)}
+                        className="block w-full p-4 rounded-xl border-2 border-gray-300 focus:border-black focus:ring-0 transition-colors"
+                        placeholder="Add special instructions"
+                        rows={3}
                       />
                     </div>
+
+                    {/* Custom Images Upload */}
+                    {product.allowCustomImages && (
+                      <div className="mb-6">
+                        <h4 className="block text-xl font-semibold text-gray-900 mb-4">
+                          Custom Images
+                        </h4>
+                        <ImageUpload 
+                          value={customImages}
+                          onChange={setCustomImages}
+                        />
+                      </div>
+                    )}
 
                     {/* Sets Category - Cake Flavor Selection */}
                     {isSetProduct && (
@@ -463,7 +487,7 @@ export default function ProductDetailsModal({
                         <h4 className="text-lg font-medium mb-3">
                           {option.name}
                         </h4>
-                        <div className="grid grid-cols-2 gap-3">
+                        <div className="grid grid-cols-4 gap-3">
                           {option.values?.sort((a, b) => a.position - b.position).map((value) => {
                             const isSelected = selectedOptions.some(
                               opt => opt.optionId === option.id && opt.valueId === value.id

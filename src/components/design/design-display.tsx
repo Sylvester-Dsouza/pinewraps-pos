@@ -28,13 +28,21 @@ type DesignOrderStatus =
   | "DESIGN_READY"
   | "FINAL_CHECK_QUEUE"
   | "FINAL_CHECK_PROCESSING"
-  | "FINAL_CHECK_READY"
   | "COMPLETED";
 
 interface UpdateOrderStatusPayload {
   status: DesignOrderStatus;
   notes?: string;
   teamNotes?: string;
+}
+
+interface VariationOption {
+  type: string;
+  value: string;
+  name?: string;
+  price?: number;
+  id?: string;
+  priceAdjustment?: number;
 }
 
 interface DesignOrder {
@@ -44,10 +52,15 @@ interface DesignOrder {
     id: string;
     name: string;
     quantity: number;
-    variations: any;
+    variations: {
+      variationsObj?: Record<string, any>;
+      selectedVariations?: VariationOption[];
+    } | Record<string, any>;
+    selectedVariations?: VariationOption[];
     kitchenNotes?: string;
     designNotes?: string;
     designImages?: DesignImage[];
+    images?: any[]; // Add product images
     isCustom?: boolean;
     status: DesignOrderStatus;
   }[];
@@ -71,6 +84,7 @@ interface DesignOrder {
   parallelProcessing?: {
     designStatus: DesignOrderStatus;
   };
+  isSentBack?: boolean;
 }
 
 interface CustomSlide {
@@ -317,7 +331,8 @@ export default function DesignDisplay() {
             designImages: item.customProduct?.designImages?.map((img: any) => ({
               url: img.imageUrl,
               comment: img.comment
-            })) || []
+            })) || [],
+            images: item.product?.images?.filter((img: any) => img && img.url) || []
           }))
         }));
         
@@ -545,16 +560,23 @@ export default function DesignDisplay() {
         }}
       >
         {/* Status Badge */}
-        <div className="absolute top-3 right-3 z-10">
-          <span className={`px-3 py-1 text-xs font-medium rounded-full ${
-            order.status === 'DESIGN_QUEUE' ? 'bg-purple-100 text-purple-800' : 
-            order.status === 'DESIGN_PROCESSING' ? 'bg-pink-100 text-pink-800' : 
-            'bg-green-100 text-green-800'
-          }`}>
-            {order.status === 'DESIGN_QUEUE' ? 'New' : 
-             order.status === 'DESIGN_PROCESSING' ? 'Processing' : 
-             'Ready'}
-          </span>
+        <div className="absolute top-3 right-3 z-10 flex flex-col gap-2">
+          {order.isSentBack ? (
+            <span className="px-3 py-1 text-xs font-medium rounded-full bg-red-100 text-red-800 flex items-center justify-center">
+              <AlertCircle className="w-3 h-3 mr-1" />
+              Sent Back
+            </span>
+          ) : (
+            <span className={`px-3 py-1 text-xs font-medium rounded-full ${
+              order.status === 'DESIGN_QUEUE' ? 'bg-purple-100 text-purple-800' : 
+              order.status === 'DESIGN_PROCESSING' ? 'bg-pink-100 text-pink-800' : 
+              'bg-green-100 text-green-800'
+            }`}>
+              {order.status === 'DESIGN_QUEUE' ? 'New' : 
+               order.status === 'DESIGN_PROCESSING' ? 'Processing' : 
+               'Ready'}
+            </span>
+          )}
         </div>
 
         <div className="space-y-5">
@@ -676,17 +698,48 @@ export default function DesignDisplay() {
                       </div>
                       
                       {/* Variations displayed as pills */}
-                      {item.variations && Object.entries(item.variations).length > 0 && (
-                        <div className="mt-2 flex flex-wrap gap-1">
-                          {Object.entries(item.variations).map(([type, variation]) => (
-                            <span key={type} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                              {type}: {typeof variation === 'object' && variation !== null ? 
-                                (variation as any).value || JSON.stringify(variation) : 
-                                variation}
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {/* Display directly from selectedVariations array if available - this is the most reliable source */}
+                        {item.selectedVariations && Array.isArray(item.selectedVariations) && item.selectedVariations.length > 0 && 
+                          item.selectedVariations.map((variation, index) => (
+                            <span key={`sel-${index}`} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                              {variation.type}: {variation.value}
                             </span>
-                          ))}
-                        </div>
-                      )}
+                          ))
+                        }
+                        
+                        {/* If no direct selectedVariations, try to get them from variations.selectedVariations */}
+                        {(!item.selectedVariations || !Array.isArray(item.selectedVariations) || item.selectedVariations.length === 0) && 
+                          item.variations && typeof item.variations === 'object' && 
+                          item.variations.selectedVariations && Array.isArray(item.variations.selectedVariations) && 
+                          item.variations.selectedVariations.length > 0 && 
+                          item.variations.selectedVariations.map((variation, index) => (
+                            <span key={`var-${index}`} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                              {variation.type}: {variation.value}
+                            </span>
+                          ))
+                        }
+                        
+                        {/* As a last resort, try to get them from variations.variationsObj */}
+                        {(!item.selectedVariations || !Array.isArray(item.selectedVariations) || item.selectedVariations.length === 0) &&
+                          (!item.variations || !item.variations.selectedVariations || !Array.isArray(item.variations.selectedVariations) || item.variations.selectedVariations.length === 0) &&
+                          item.variations && typeof item.variations === 'object' && 
+                          (item.variations.variationsObj || Object.keys(item.variations).length > 0) && (
+                            item.variations.variationsObj ? 
+                              Object.entries(item.variations.variationsObj).map(([type, value], index) => (
+                                <span key={`obj-${index}`} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                                  {type}: {typeof value === 'object' ? (value as any).value || JSON.stringify(value) : value}
+                                </span>
+                              ))
+                            :
+                              Object.entries(item.variations).map(([type, value], index) => (
+                                <span key={`leg-${index}`} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                                  {type}: {typeof value === 'object' ? (value as any).value || JSON.stringify(value) : value}
+                                </span>
+                              ))
+                          )
+                        }
+                      </div>
                       
                       {/* Item specific notes */}
                       {item.designNotes && (
@@ -699,37 +752,90 @@ export default function DesignDisplay() {
                   
                   {/* Design Images with improved gallery */}
                   {item.designImages && item.designImages.length > 0 && (
-                    <div className="mt-3 grid grid-cols-3 gap-2">
-                      {item.designImages.map((image, index) => (
+                    <div className="mt-3">
+                      <h5 className="text-sm font-medium text-gray-700 mb-2">Custom Images:</h5>
+                      <div className="grid grid-cols-3 gap-2">
+                        {item.designImages.map((image, index) => (
+                          <div 
+                            key={`design-${index}`} 
+                            className="relative aspect-square rounded-lg overflow-hidden border border-gray-200 group cursor-pointer shadow-sm hover:shadow-md transition-all"
+                            onClick={() => {
+                              const slides = item.designImages?.map(img => ({
+                                src: img.url || img.imageUrl || null,
+                                comment: img.comment
+                              })) || [];
+                              setCurrentImages(slides);
+                              setLightboxIndex(index);
+                              setLightboxOpen(true);
+                            }}
+                          >
+                            <Image
+                              src={image.url || image.imageUrl || null}
+                              alt={`Design ${index + 1}`}
+                              fill
+                              className="object-cover group-hover:opacity-90 transition-opacity"
+                              onError={(e) => {
+                                // Handle image loading errors
+                                console.error('Error loading design image:', e);
+                                // Hide the parent div on error
+                                const target = e.target as HTMLImageElement;
+                                if (target.parentElement) {
+                                  target.parentElement.style.display = 'none';
+                                }
+                              }}
+                            />
+                            <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-all flex items-center justify-center">
+                              <Maximize2 className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                            </div>
+                            {image.comment && (
+                              <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-60 text-white p-1.5 text-xs">
+                                {image.comment}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Product Images - Only show primary image with error handling */}
+                  {item.images && item.images.length > 0 && item.images[0]?.url && (
+                    <div className="mt-3">
+                      <h5 className="text-sm font-medium text-gray-700 mb-2">Product Image:</h5>
+                      <div className="grid grid-cols-3 gap-2">
                         <div 
-                          key={index} 
+                          key="product-primary" 
                           className="relative aspect-square rounded-lg overflow-hidden border border-gray-200 group cursor-pointer shadow-sm hover:shadow-md transition-all"
                           onClick={() => {
-                            const slides = item.designImages?.map(img => ({
-                              src: img.url || img.imageUrl || null,
-                              comment: img.comment
-                            })) || [];
+                            const slides = [{
+                              src: item.images[0].url,
+                              comment: ''
+                            }];
                             setCurrentImages(slides);
-                            setLightboxIndex(index);
+                            setLightboxIndex(0);
                             setLightboxOpen(true);
                           }}
                         >
                           <Image
-                            src={image.url || image.imageUrl || null}
-                            alt={`Design ${index + 1}`}
+                            src={item.images[0].url}
+                            alt="Product Image"
                             fill
                             className="object-cover group-hover:opacity-90 transition-opacity"
+                            onError={(e) => {
+                              // Handle image loading errors
+                              console.error('Error loading product image:', e);
+                              // Hide the parent div on error
+                              const target = e.target as HTMLImageElement;
+                              if (target.parentElement) {
+                                target.parentElement.style.display = 'none';
+                              }
+                            }}
                           />
                           <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-all flex items-center justify-center">
                             <Maximize2 className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
                           </div>
-                          {image.comment && (
-                            <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-60 text-white p-1.5 text-xs">
-                              {image.comment}
-                            </div>
-                          )}
                         </div>
-                      ))}
+                      </div>
                     </div>
                   )}
                 </div>

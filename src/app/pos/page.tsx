@@ -382,11 +382,19 @@ export default function POSPage() {
       return;
     }
     // Calculate total price
-    let totalPrice = customPrice !== null ? customPrice : product.basePrice;
+    let totalPrice = 0;
     
-    // Add variation price adjustments
-    if (selectedVariations.length > 0) {
-      totalPrice += selectedVariations.reduce((sum, variation) => sum + (variation.priceAdjustment || 0), 0);
+    // If product allows custom price and a custom price is provided, use that
+    if (product.allowCustomPrice && customPrice !== null) {
+      totalPrice = customPrice;
+    } else {
+      // Otherwise use base price plus variation adjustments
+      totalPrice = product.basePrice;
+      
+      // Add variation price adjustments
+      if (selectedVariations.length > 0) {
+        totalPrice += selectedVariations.reduce((sum, variation) => sum + (variation.priceAdjustment || 0), 0);
+      }
     }
     
     // Multiply by quantity
@@ -397,6 +405,8 @@ export default function POSPage() {
       id: nanoid(),
       product: {
         ...product,
+        // If custom price is set, update the product's base price
+        basePrice: product.allowCustomPrice && customPrice !== null ? customPrice : product.basePrice,
         allowCustomImages: true, // Always enable custom images for all products
       },
       quantity,

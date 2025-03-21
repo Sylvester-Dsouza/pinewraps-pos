@@ -104,11 +104,11 @@ const generateReceiptContent = (order: Order): string => `
       <tbody>
         ${order.items.map((item) => `
           <tr>
-            <td>${item.name}</td>
+            <td>${item.productName}</td>
             <td style="text-align: center;">${item.quantity}</td>
             <td style="text-align: right;">${formatCurrency(item.totalPrice)}</td>
           </tr>
-          ${Array.isArray(item.variations) ? item.variations.map(variation => {
+          ${Array.isArray(item.selectedVariations) ? item.selectedVariations.map(variation => {
             // Ensure variation has the correct structure
             const type = typeof variation === 'object' && variation !== null 
               ? (variation.type || variation.id || '').toString()
@@ -119,7 +119,9 @@ const generateReceiptContent = (order: Order): string => `
             
             return type && value ? `
               <tr>
-                <td colspan="3" class="variation">- ${type}: ${value}</td>
+                <td class="variation">${type}: ${value}</td>
+                <td></td>
+                <td style="text-align: right;">${variation.price ? formatCurrency(variation.price) : ''}</td>
               </tr>
             ` : '';
           }).join('') : ''}
@@ -137,8 +139,8 @@ const generateReceiptContent = (order: Order): string => `
     <div style="margin: 10px 0;">
       <p style="margin: 2px 0;">${formatLineItem('Subtotal:', formatCurrency(order.subtotal || order.totalAmount))}</p>
       ${order.deliveryMethod === 'DELIVERY' && order.deliveryCharge ? `<p style="margin: 2px 0;">${formatLineItem('Delivery:', formatCurrency(order.deliveryCharge))}</p>` : ''}
-      ${order.tax ? `<p style="margin: 2px 0;">${formatLineItem('Tax:', formatCurrency(order.tax))}</p>` : ''}
-      ${order.discount ? `<p style="margin: 2px 0;">${formatLineItem('Discount:', formatCurrency(-order.discount))}</p>` : ''}
+      ${order.metadata?.tax ? `<p style="margin: 2px 0;">${formatLineItem('Tax:', formatCurrency(order.metadata.tax))}</p>` : ''}
+      ${order.metadata?.discount ? `<p style="margin: 2px 0;">${formatLineItem('Discount:', formatCurrency(-order.metadata.discount))}</p>` : ''}
       <p style="margin: 2px 0; font-weight: bold;">${formatLineItem('Total:', formatCurrency(order.totalAmount))}</p>
     </div>
     
@@ -151,8 +153,8 @@ const generateReceiptContent = (order: Order): string => `
           <p style="margin: 2px 0;">${formatLineItem(payment.method, formatCurrency(payment.amount))}</p>
           ${payment.status ? `<p style="margin: 2px 0;">${formatLineItem('Status:', payment.status)}</p>` : ''}
           ${payment.reference ? `<p style="margin: 2px 0;">${formatLineItem('Reference:', payment.reference)}</p>` : ''}
-          ${payment.metadata && payment.metadata.cashAmount ? `<p style="margin: 2px 0;">${formatLineItem('Cash Amount:', formatCurrency(payment.metadata.cashAmount))}</p>` : ''}
-          ${payment.metadata && payment.metadata.changeAmount ? `<p style="margin: 2px 0;">${formatLineItem('Change Amount:', formatCurrency(payment.metadata.changeAmount))}</p>` : ''}
+          ${payment.metadata && payment.metadata.cashAmount ? `<p style="margin: 2px 0;">${formatLineItem('Cash Amount:', formatCurrency(Number(payment.metadata.cashAmount)))}</p>` : ''}
+          ${payment.metadata && payment.metadata.changeAmount ? `<p style="margin: 2px 0;">${formatLineItem('Change Amount:', formatCurrency(Number(payment.metadata.changeAmount)))}</p>` : ''}
         `).join('<div style="margin: 5px 0;"></div>')}
       ` : `
         <p style="margin: 2px 0;">${formatLineItem('Payment Method:', order.paymentMethod || 'Not specified')}</p>
@@ -168,7 +170,7 @@ const generateReceiptContent = (order: Order): string => `
         ${order.giftRecipientName ? `<p style="margin: 2px 0;">${formatLineItem('Recipient:', order.giftRecipientName)}</p>` : ''}
         ${order.giftRecipientPhone ? `<p style="margin: 2px 0;">${formatLineItem('Recipient Phone:', order.giftRecipientPhone)}</p>` : ''}
         ${order.giftMessage ? `<p style="margin: 2px 0;">${formatLineItem('Message:', order.giftMessage)}</p>` : ''}
-        ${order.giftCashAmount ? `<p style="margin: 2px 0;">${formatLineItem('Cash Amount:', formatCurrency(order.giftCashAmount))}</p>` : ''}
+        ${order.giftCashAmount ? `<p style="margin: 2px 0;">${formatLineItem('Cash Amount:', formatCurrency(Number(order.giftCashAmount)))}</p>` : ''}
       </div>
     ` : ''}
     

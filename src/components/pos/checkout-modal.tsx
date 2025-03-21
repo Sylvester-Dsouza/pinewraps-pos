@@ -183,56 +183,94 @@ export default function CheckoutModal({
 
     // Create order items from cart
     const orderItems = processedCart.map(item => {
-      // Calculate unit price including variations
-      const variationPriceAdjustments = (item.selectedVariations || []).reduce(
-        (total, variation) => total + (variation.priceAdjustment || 0), 
-        0
-      );
-      const unitPrice = item.product.basePrice + variationPriceAdjustments;
-      
-      const itemData: POSOrderItemData = {
-        id: nanoid(),
-        productId: item.product.id,
-        productName: item.product.name,
-        quantity: item.quantity,
-        unitPrice: unitPrice,
-        totalPrice: unitPrice * item.quantity,
-        sku: item.product.sku || '',
-        requiresKitchen: item.product.requiresKitchen || false,
-        requiresDesign: item.product.requiresDesign || false,
-        variations: (item.selectedVariations || []).map(v => ({
-          id: nanoid(),
-          type: v.type,
-          value: v.value,
-          priceAdjustment: v.priceAdjustment || 0
-        }))
-      };
-
-      // Add custom images if available
-      if (item.customImages && item.customImages.length > 0) {
-        // Create a new array of custom images with proper URL handling
-        itemData.customImages = item.customImages.map(img => {
-          // Ensure we have a valid URL
-          const imageUrl = img.url || '';
-          
-          // Log each image URL to verify it's being included
-          console.log(`Image URL for item ${itemData.id}: ${imageUrl}`);
-          
-          return {
-            id: img.id || nanoid(),
-            url: imageUrl,
-            type: img.type || 'reference',
-            notes: img.notes || ''
-          };
-        });
+      // For custom products, use the product's basePrice directly (which was set to the custom price)
+      // and ignore variation price adjustments
+      if (item.product.allowCustomPrice) {
+        const unitPrice = item.product.basePrice;
         
-        // Log custom images being added to order
-        console.log(`Adding ${itemData.customImages.length} custom images to item ${itemData.id}:`, 
-          JSON.stringify(itemData.customImages.map(img => ({ id: img.id, url: img.url })))
-        );
-      }
+        const itemData: POSOrderItemData = {
+          id: nanoid(),
+          productId: item.product.id,
+          productName: item.product.name,
+          quantity: item.quantity,
+          unitPrice: unitPrice,
+          totalPrice: unitPrice * item.quantity,
+          sku: item.product.sku || '',
+          requiresKitchen: item.product.requiresKitchen || false,
+          requiresDesign: item.product.requiresDesign || false,
+          variations: {
+            variationsObj: (item.selectedVariations || []).reduce((acc, v) => ({
+              ...acc,
+              [v.type]: v.value
+            }), {}),
+            selectedVariations: (item.selectedVariations || []).map(v => ({
+              id: nanoid(),
+              type: v.type,
+              value: v.value,
+              priceAdjustment: v.priceAdjustment || 0
+            }))
+          },
+          selectedVariations: (item.selectedVariations || []).map(v => ({
+            id: nanoid(),
+            type: v.type,
+            value: v.value,
+            priceAdjustment: v.priceAdjustment || 0
+          })),
+          // Add custom images if available
+          customImages: item.customImages && item.customImages.length > 0 ? item.customImages.map(img => ({
+            id: img.id || nanoid(),
+            url: img.url || '',
+            comment: img.comment || ''
+          })) : undefined
+        };
 
-      return itemData;
+        return itemData;
+      } else {
+        // Calculate unit price including variations
+        const variationPriceAdjustments = (item.selectedVariations || []).reduce(
+          (total, variation) => total + (variation.priceAdjustment || 0), 
+          0
+        );
+        const unitPrice = item.product.basePrice + variationPriceAdjustments;
+        
+        const itemData: POSOrderItemData = {
+          id: nanoid(),
+          productId: item.product.id,
+          productName: item.product.name,
+          quantity: item.quantity,
+          unitPrice: unitPrice,
+          totalPrice: unitPrice * item.quantity,
+          sku: item.product.sku || '',
+          requiresKitchen: item.product.requiresKitchen || false,
+          requiresDesign: item.product.requiresDesign || false,
+          variations: {
+            variationsObj: (item.selectedVariations || []).reduce((acc, v) => ({
+              ...acc,
+              [v.type]: v.value
+            }), {}),
+            selectedVariations: (item.selectedVariations || []).map(v => ({
+              id: nanoid(),
+              type: v.type,
+              value: v.value,
+              priceAdjustment: v.priceAdjustment || 0
+            }))
+          },
+          selectedVariations: (item.selectedVariations || []).map(v => ({
+            id: nanoid(),
+            type: v.type,
+            value: v.value,
+            priceAdjustment: v.priceAdjustment || 0
+          })),
+          // Add custom images if available
+          customImages: item.customImages && item.customImages.length > 0 ? item.customImages.map(img => ({
+            id: img.id || nanoid(),
+            url: img.url || '',
+            comment: img.comment || ''
+          })) : undefined
+        };
+
+        return itemData;
+      }
     });
 
     // Let the backend handle routing based on product categories

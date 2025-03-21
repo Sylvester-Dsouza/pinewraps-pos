@@ -777,15 +777,16 @@ export const apiMethods = {
       }
     },
 
-    updateOrderStatus: async (orderId: string, { status, notes, teamNotes, qualityControl, partialRefundAmount }: { status: string, notes?: string, teamNotes?: string, qualityControl?: any, partialRefundAmount?: number }) => {
+    updateOrderStatus: async (orderId: string, { status, notes, teamNotes, qualityControl, partialRefundAmount, returnToKitchenOrDesign }: { status: string, notes?: string, teamNotes?: string, qualityControl?: any, partialRefundAmount?: number, returnToKitchenOrDesign?: boolean }) => {
       try {
-        console.log('API call: updateOrderStatus', { orderId, status, notes, teamNotes, qualityControl, partialRefundAmount });
+        console.log('API call: updateOrderStatus', { orderId, status, notes, teamNotes, qualityControl, partialRefundAmount, returnToKitchenOrDesign });
         const response = await api.patch(`/api/pos/orders/${orderId}/status`, {
           status,
           notes: notes || '',
           teamNotes: teamNotes || '',
           qualityControl,
-          partialRefundAmount
+          partialRefundAmount,
+          returnToKitchenOrDesign
         });
         return response.data;
       } catch (error: any) {

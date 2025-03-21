@@ -13,8 +13,12 @@ import Image from 'next/image';
 import { CustomImage } from '@/types/cart';
 
 interface VariationOption {
-  name: string;
+  name?: string;
   value: string;
+  type?: string;
+  price?: number;
+  id?: string;
+  priceAdjustment?: number;
 }
 
 type KitchenOrderStatus = 
@@ -27,7 +31,6 @@ type KitchenOrderStatus =
   | "DESIGN_READY"
   | "FINAL_CHECK_QUEUE"
   | "FINAL_CHECK_PROCESSING"
-  | "FINAL_CHECK_READY"
   | "COMPLETED";
 
 interface KitchenOrder {
@@ -37,10 +40,15 @@ interface KitchenOrder {
     id: string;
     name: string;
     quantity: number;
-    variations: Record<string, VariationOption>;
+    variations: {
+      variationsObj?: Record<string, VariationOption>;
+      selectedVariations?: VariationOption[];
+    };
+    selectedVariations?: VariationOption[];
     kitchenNotes?: string;
     designNotes?: string;
     customImages?: CustomImage[];
+    images?: any[]; 
     isCustom?: boolean;
     status: KitchenOrderStatus;
   }[];
@@ -66,6 +74,7 @@ interface KitchenOrder {
   parallelProcessing?: {
     kitchenStatus?: KitchenOrderStatus;
   };
+  isSentBack?: boolean;
 }
 
 interface UpdateOrderStatusPayload {
@@ -85,6 +94,11 @@ interface VariationItem {
   type?: string;
   value: string;
   priceAdjustment?: number;
+}
+
+interface CustomSlide {
+  src: string;
+  comment?: string;
 }
 
 export default function KitchenDisplay() {
@@ -181,7 +195,22 @@ export default function KitchenDisplay() {
               customImages: item.customImages?.map((img: any) => ({
                 url: img.url,
                 comment: img.comment
-              })) || []
+              })) || [],
+              // Add product images if available, ensuring they have valid URLs
+              images: item.product?.images?.filter((img: any) => img && img.url) || [],
+              // Ensure selectedVariations is properly mapped
+              selectedVariations: Array.isArray(item.selectedVariations) 
+                ? item.selectedVariations 
+                : (typeof item.selectedVariations === 'string' 
+                    ? (() => {
+                        try {
+                          return JSON.parse(item.selectedVariations);
+                        } catch (error) {
+                          console.error('Error parsing selectedVariations:', error);
+                          return [];
+                        }
+                      })()
+                    : [])
             }))
           };
         });
@@ -286,51 +315,20 @@ export default function KitchenDisplay() {
       .filter(order => order.status === status)
       .sort((a, b) => {
         // Get the relevant date for each order (pickup or delivery)
-        const getOrderDate = (order: KitchenOrder) => {
-          let dateStr = '';
-          let timeStr = '';
-          
-          // Determine which date and time to use based on delivery method
+        const getOrderDate = (order: any) => {
           if (order.deliveryMethod === 'PICKUP' && order.pickupDate) {
-            dateStr = order.pickupDate;
-            timeStr = order.pickupTimeSlot || '';
+            return new Date(order.pickupDate);
           } else if (order.deliveryMethod === 'DELIVERY' && order.deliveryDate) {
-            dateStr = order.deliveryDate;
-            timeStr = order.deliveryTimeSlot || '';
-          } else {
-            // If no pickup or delivery date, use created date
-            return new Date(order.createdAt);
+            return new Date(order.deliveryDate);
           }
-          
-          // Create a date object from the date string
-          const date = new Date(dateStr);
-          
-          // Extract hour from time slot if available
-          if (timeStr) {
-            const match = timeStr.match(/(\d+):(\d+)\s*(AM|PM)/i);
-            if (match) {
-              let hour = parseInt(match[1]);
-              const minute = parseInt(match[2]);
-              
-              // Convert to 24-hour format
-              if (match[3].toUpperCase() === 'PM' && hour < 12) {
-                hour += 12;
-              } else if (match[3].toUpperCase() === 'AM' && hour === 12) {
-                hour = 0;
-              }
-              
-              date.setHours(hour, minute, 0, 0);
-            }
-          }
-          
-          return date;
+          // If no date is available, use a far future date to put it at the end
+          return new Date('2099-12-31');
         };
         
-        // Get dates for comparison
         const dateA = getOrderDate(a);
         const dateB = getOrderDate(b);
         
-        // Simple chronological sort - earlier dates first
+        // Compare dates
         return dateA.getTime() - dateB.getTime();
       });
   };
@@ -361,7 +359,7 @@ export default function KitchenDisplay() {
   };
 
   const OrderCard = ({ order }: { order: KitchenOrder }) => {
-    const handleImageClick = (images: CustomImage[], index: number) => {
+    const handleImageClick = (images: any[], index: number) => {
       const slides = images.map(img => ({
         src: img.url,
         comment: img.comment || ''
@@ -389,11 +387,10 @@ export default function KitchenDisplay() {
       } else if (action === 'finalCheck') {
         // Only send to final check if not already there
         if (order.status !== 'FINAL_CHECK_QUEUE' && 
-            order.status !== 'FINAL_CHECK_PROCESSING' && 
-            order.status !== 'FINAL_CHECK_READY') {
+            order.status !== 'FINAL_CHECK_PROCESSING') {
           updateOrderStatus(order.id, 'FINAL_CHECK_QUEUE');
         } else {
-          toast.info('Order is already in final check');
+          toast.success('Order is already in final check');
         }
       } else if (action === 'design') {
         setShowNotesInput(true);
@@ -415,16 +412,23 @@ export default function KitchenDisplay() {
       }}
     >
       {/* Status Badge */}
-      <div className="absolute top-3 right-3 z-10">
-        <span className={`px-3 py-1 text-xs font-medium rounded-full ${
-          order.status === 'KITCHEN_QUEUE' ? 'bg-blue-100 text-blue-800' : 
-          order.status === 'KITCHEN_PROCESSING' ? 'bg-yellow-100 text-yellow-800' : 
-          'bg-green-100 text-green-800'
-        }`}>
-          {order.status === 'KITCHEN_QUEUE' ? 'New' : 
-           order.status === 'KITCHEN_PROCESSING' ? 'Processing' : 
-           'Ready'}
-        </span>
+      <div className="absolute top-3 right-3 z-10 flex flex-col gap-2">
+        {order.isSentBack ? (
+          <span className="px-3 py-1 text-xs font-medium rounded-full bg-red-100 text-red-800 flex items-center justify-center">
+            <AlertCircle className="w-3 h-3 mr-1" />
+            Sent Back
+          </span>
+        ) : (
+          <span className={`px-3 py-1 text-xs font-medium rounded-full ${
+            order.status === 'KITCHEN_QUEUE' ? 'bg-blue-100 text-blue-800' : 
+            order.status === 'KITCHEN_PROCESSING' ? 'bg-yellow-100 text-yellow-800' : 
+            'bg-green-100 text-green-800'
+          }`}>
+            {order.status === 'KITCHEN_QUEUE' ? 'New' : 
+             order.status === 'KITCHEN_PROCESSING' ? 'Processing' : 
+             'Ready'}
+          </span>
+        )}
       </div>
 
       <div className="space-y-5">
@@ -538,15 +542,40 @@ export default function KitchenDisplay() {
                     </div>
                     
                     {/* Variations displayed as pills */}
-                    {Object.entries(item.variations || {}).length > 0 && (
-                      <div className="mt-2 flex flex-wrap gap-1">
-                        {Object.entries(item.variations || {}).map(([type, variation]) => (
-                          <span key={type} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                            {variation.name}: {variation.value}
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {/* Display directly from selectedVariations array if available - this is the most reliable source */}
+                      {item.selectedVariations && Array.isArray(item.selectedVariations) && item.selectedVariations.length > 0 && 
+                        item.selectedVariations.map((variation, index) => (
+                          <span key={`sel-${index}`} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                            {variation.type}: {variation.value}
                           </span>
-                        ))}
-                      </div>
-                    )}
+                        ))
+                      }
+                      
+                      {/* If no direct selectedVariations, try to get them from variations.selectedVariations */}
+                      {(!item.selectedVariations || !Array.isArray(item.selectedVariations) || item.selectedVariations.length === 0) && 
+                        item.variations && typeof item.variations === 'object' && 
+                        item.variations.selectedVariations && Array.isArray(item.variations.selectedVariations) && 
+                        item.variations.selectedVariations.length > 0 && 
+                        item.variations.selectedVariations.map((variation, index) => (
+                          <span key={`var-${index}`} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                            {variation.type}: {variation.value}
+                          </span>
+                        ))
+                      }
+                      
+                      {/* As a last resort, try to get them from variations.variationsObj */}
+                      {(!item.selectedVariations || !Array.isArray(item.selectedVariations) || item.selectedVariations.length === 0) &&
+                        (!item.variations || !item.variations.selectedVariations || !Array.isArray(item.variations.selectedVariations) || item.variations.selectedVariations.length === 0) &&
+                        item.variations && typeof item.variations === 'object' && 
+                        item.variations.variationsObj && typeof item.variations.variationsObj === 'object' &&
+                        Object.entries(item.variations.variationsObj).map(([type, value], index) => (
+                          <span key={`obj-${index}`} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                            {type}: {typeof value === 'object' ? (value as any).value || JSON.stringify(value) : value}
+                          </span>
+                        ))
+                      }
+                    </div>
                     
                     {/* Item specific notes */}
                     {item.kitchenNotes && (
@@ -557,31 +586,76 @@ export default function KitchenDisplay() {
                   </div>
                 </div>
                 
-                {/* Design Images with improved gallery */}
+                {/* Custom Images with improved gallery and error handling */}
                 {item.customImages && item.customImages.length > 0 && (
-                  <div className="mt-3 grid grid-cols-3 gap-2">
-                    {item.customImages.map((image, index) => (
+                  <div className="mt-3">
+                    <h5 className="text-sm font-medium text-gray-700 mb-2">Custom Images:</h5>
+                    <div className="grid grid-cols-3 gap-2">
+                      {item.customImages.map((image, index) => (
+                        <div 
+                          key={`custom-${index}`} 
+                          className="relative aspect-square rounded-lg overflow-hidden border border-gray-200 group cursor-pointer shadow-sm hover:shadow-md transition-all"
+                          onClick={() => handleImageClick(item.customImages || [], index)}
+                        >
+                          <Image
+                            src={image.url}
+                            alt={`Custom ${index + 1}`}
+                            fill
+                            className="object-cover group-hover:opacity-90 transition-opacity"
+                            onError={(e) => {
+                              // Handle image loading errors
+                              console.error('Error loading custom image:', e);
+                              // Hide the parent div on error
+                              const target = e.target as HTMLImageElement;
+                              if (target.parentElement) {
+                                target.parentElement.style.display = 'none';
+                              }
+                            }}
+                          />
+                          <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-all flex items-center justify-center">
+                            <Maximize2 className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                          </div>
+                          {image.comment && (
+                            <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-60 text-white p-1.5 text-xs">
+                              {image.comment}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {/* Product Images - Only show primary image with error handling */}
+                {item.images && item.images.length > 0 && item.images[0]?.url && (
+                  <div className="mt-3">
+                    <h5 className="text-sm font-medium text-gray-700 mb-2">Product Image:</h5>
+                    <div className="grid grid-cols-3 gap-2">
                       <div 
-                        key={index} 
+                        key="product-primary" 
                         className="relative aspect-square rounded-lg overflow-hidden border border-gray-200 group cursor-pointer shadow-sm hover:shadow-md transition-all"
-                        onClick={() => handleImageClick(item.customImages || [], index)}
+                        onClick={() => handleImageClick([item.images[0]], 0)}
                       >
                         <Image
-                          src={image.url}
-                          alt={`Design ${index + 1}`}
+                          src={item.images[0].url}
+                          alt="Product Image"
                           fill
                           className="object-cover group-hover:opacity-90 transition-opacity"
+                          onError={(e) => {
+                            // Handle image loading errors
+                            console.error('Error loading product image:', e);
+                            // Hide the parent div on error
+                            const target = e.target as HTMLImageElement;
+                            if (target.parentElement) {
+                              target.parentElement.style.display = 'none';
+                            }
+                          }}
                         />
                         <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-all flex items-center justify-center">
                           <Maximize2 className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
                         </div>
-                        {image.comment && (
-                          <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-60 text-white p-1.5 text-xs">
-                            {image.comment}
-                          </div>
-                        )}
                       </div>
-                    ))}
+                    </div>
                   </div>
                 )}
               </div>
@@ -867,9 +941,4 @@ export default function KitchenDisplay() {
       />
     </div>
   );
-}
-
-interface CustomSlide {
-  src: string;
-  comment?: string;
 }

@@ -37,6 +37,9 @@ export interface FinalCheckOrder {
       comment?: string;
     }>;
     category?: string;
+    images?: Array<{
+      url: string;
+    }>;
   }>;
   kitchenNotes?: string;
   designNotes?: string;
@@ -48,6 +51,15 @@ export interface FinalCheckOrder {
   pickupTimeSlot?: string;
   deliveryDate?: string;
   deliveryTimeSlot?: string;
+  giftDetails?: {
+    isGift: boolean;
+    recipientName?: string;
+    recipientPhone?: string;
+    message?: string;
+    note?: string;
+    cashAmount?: string;
+    includeCash?: boolean;
+  };
 }
 
 export interface UpdateOrderStatusPayload {
@@ -299,7 +311,21 @@ export default function FinalCheckDisplay() {
           order.status === 'DESIGN_QUEUE'
         );
 
-        setOrders(finalCheckOrders);
+        // Map orders to include product images
+        const ordersWithImages = finalCheckOrders.map((order: any) => ({
+          ...order,
+          items: order.items.map((item: any) => ({
+            ...item,
+            customImages: item.customImages?.map((img: any) => ({
+              url: img.url,
+              comment: img.comment
+            })) || [],
+            // Add product images if available, ensuring they have valid URLs
+            images: item.product?.images?.filter((img: any) => img && img.url) || []
+          }))
+        }));
+
+        setOrders(ordersWithImages);
       }
     } catch (error) {
       console.error('Failed to fetch orders:', error);
@@ -319,6 +345,7 @@ export default function FinalCheckDisplay() {
       const response = await apiMethods.pos.updateOrderStatus(orderId, {
         status: newStatus,
         teamNotes: teamNotes || '',
+        returnToKitchenOrDesign: isReturnToKitchenOrDesign,
       });
 
       if (response.success) {
