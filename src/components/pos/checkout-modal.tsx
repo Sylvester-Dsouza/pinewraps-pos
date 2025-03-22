@@ -207,14 +207,14 @@ export default function CheckoutModal({
               id: nanoid(),
               type: v.type,
               value: v.value,
-              priceAdjustment: v.priceAdjustment || 0
+              priceAdjustment: v.price || 0
             }))
           },
           selectedVariations: (item.selectedVariations || []).map(v => ({
             id: nanoid(),
             type: v.type,
             value: v.value,
-            priceAdjustment: v.priceAdjustment || 0
+            priceAdjustment: v.price || 0
           })),
           // Add custom images if available
           customImages: item.customImages && item.customImages.length > 0 ? item.customImages.map(img => ({
@@ -228,7 +228,7 @@ export default function CheckoutModal({
       } else {
         // Calculate unit price including variations
         const variationPriceAdjustments = (item.selectedVariations || []).reduce(
-          (total, variation) => total + (variation.priceAdjustment || 0), 
+          (total, variation) => total + (variation.price || variation.priceAdjustment || 0), 
           0
         );
         const unitPrice = item.product.basePrice + variationPriceAdjustments;
@@ -252,14 +252,14 @@ export default function CheckoutModal({
               id: nanoid(),
               type: v.type,
               value: v.value,
-              priceAdjustment: v.priceAdjustment || 0
+              priceAdjustment: v.price || v.priceAdjustment || 0
             }))
           },
           selectedVariations: (item.selectedVariations || []).map(v => ({
             id: nanoid(),
             type: v.type,
             value: v.value,
-            priceAdjustment: v.priceAdjustment || 0
+            priceAdjustment: v.price || v.priceAdjustment || 0
           })),
           // Add custom images if available
           customImages: item.customImages && item.customImages.length > 0 ? item.customImages.map(img => ({
@@ -438,7 +438,7 @@ export default function CheckoutModal({
       giftRecipientPhone: giftDetailsState?.isGift ? giftDetailsState.recipientPhone?.trim() || '' : undefined,
       giftMessage: giftDetailsState?.isGift ? giftDetailsState.message?.trim() || '' : undefined,
       giftCashAmount: giftDetailsState?.isGift && giftDetailsState.includeCash ? 
-        (giftDetailsState.cashAmount?.trim() ? parseFloat(giftDetailsState.cashAmount) : 0) : 
+        giftDetailsState.cashAmount?.trim() || '0' : 
         undefined,
 
       // Additional metadata for routing
@@ -544,7 +544,7 @@ export default function CheckoutModal({
     recipientPhone: giftDetailsState.recipientPhone?.trim() || '',
     message: giftDetailsState.message?.trim() || '',
     note: giftDetailsState.note?.trim() || '',
-    cashAmount: giftDetailsState.cashAmount?.trim() ? parseFloat(giftDetailsState.cashAmount) : 0,
+    cashAmount: giftDetailsState.cashAmount?.trim() || '0',
     includeCash: giftDetailsState.includeCash || false
   });
 
@@ -792,7 +792,7 @@ export default function CheckoutModal({
       console.log('Final order data being sent to API:', {
         items: orderData.items.map(item => ({
           id: item.id,
-          name: item.name,
+          productName: item.productName,
           customImages: item.customImages?.map(img => ({ id: img.id, url: img.url }))
         }))
       });
@@ -986,7 +986,7 @@ export default function CheckoutModal({
           giftRecipientName: giftDetailsState.recipientName,
           giftRecipientPhone: giftDetailsState.recipientPhone,
           giftMessage: giftDetailsState.message,
-          giftCashAmount: giftDetailsState.cashAmount ? Number(giftDetailsState.cashAmount) : undefined,
+          giftCashAmount: giftDetailsState.cashAmount ? parseFloat(giftDetailsState.cashAmount) : 0,
           includeCash: giftDetailsState.includeCash || false
         }),
         
@@ -2145,7 +2145,7 @@ export default function CheckoutModal({
                                               : '';
                                             // Handle price property for variations
                                             const priceAdjustment = typeof variation === 'object' && variation !== null 
-                                              ? Number(variation.priceAdjustment || variation.price || 0)
+                                              ? Number((variation as any).price || 0)
                                               : 0;
                                             
                                             return (

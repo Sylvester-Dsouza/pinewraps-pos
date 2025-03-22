@@ -341,7 +341,7 @@ export default function ParkedOrdersPage() {
         toast.success('Order deleted successfully');
       } else {
         console.warn('Received unsuccessful response but order might be deleted:', response);
-        toast.warning('Order may have been deleted, refreshing list...');
+        toast.error('Order may have been deleted, refreshing list...');
       }
       
       // Always clean up the UI state
@@ -354,7 +354,7 @@ export default function ParkedOrdersPage() {
       console.error('Error deleting order:', error);
       
       // Even on error, the deletion might have succeeded on the server
-      toast.warning('Error occurred, but order may have been deleted. Refreshing list...');
+      toast.error('Error occurred, but order may have been deleted. Refreshing list...');
       
       // Clean up UI state
       setOrderToDelete(null);

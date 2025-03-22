@@ -642,7 +642,7 @@ export default function OrderCard({ order, onUpdateStatus }: OrderCardProps) {
         open={lightboxOpen}
         index={lightboxIndex}
         slides={currentImages}
-        onClose={() => setLightboxOpen(false)}
+        close={() => setLightboxOpen(false)}
       />
     </motion.div>
   );

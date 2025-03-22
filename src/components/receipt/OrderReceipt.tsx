@@ -139,8 +139,8 @@ const generateReceiptContent = (order: Order): string => `
     <div style="margin: 10px 0;">
       <p style="margin: 2px 0;">${formatLineItem('Subtotal:', formatCurrency(order.subtotal || order.totalAmount))}</p>
       ${order.deliveryMethod === 'DELIVERY' && order.deliveryCharge ? `<p style="margin: 2px 0;">${formatLineItem('Delivery:', formatCurrency(order.deliveryCharge))}</p>` : ''}
-      ${order.metadata?.tax ? `<p style="margin: 2px 0;">${formatLineItem('Tax:', formatCurrency(order.metadata.tax))}</p>` : ''}
-      ${order.metadata?.discount ? `<p style="margin: 2px 0;">${formatLineItem('Discount:', formatCurrency(-order.metadata.discount))}</p>` : ''}
+      ${(order as any).metadata?.tax ? `<p style="margin: 2px 0;">${formatLineItem('Tax:', formatCurrency((order as any).metadata.tax))}</p>` : ''}
+      ${(order as any).metadata?.discount ? `<p style="margin: 2px 0;">${formatLineItem('Discount:', formatCurrency(-(order as any).metadata.discount))}</p>` : ''}
       <p style="margin: 2px 0; font-weight: bold;">${formatLineItem('Total:', formatCurrency(order.totalAmount))}</p>
     </div>
     
@@ -210,8 +210,7 @@ const OrderReceipt: React.FC<OrderReceiptProps> = ({ order, onClose }) => {
               `Order Receipt #${order.orderNumber}`,
               receiptStyles
             );
-          },
-          'Failed to print receipt'
+          }
         );
       }, 500);
     }

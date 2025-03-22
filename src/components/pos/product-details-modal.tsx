@@ -304,7 +304,7 @@ export default function ProductDetailsModal({
         const valueDef = optionDef?.values.find(v => v.id === option.valueId);
         
         // Check if this value has a price adjustment
-        const priceAdjustment = valueDef?.priceAdjustment || 0;
+        const priceAdjustment = (valueDef as any)?.price || 0;
         
         return {
           id: option.optionId,
