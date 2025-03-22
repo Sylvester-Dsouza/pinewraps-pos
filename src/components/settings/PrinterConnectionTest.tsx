@@ -34,6 +34,7 @@ const PrinterConnectionTest: React.FC<PrinterConnectionTestProps> = ({ onConnect
         onConnectionSuccess(ip, portNumber);
       }
     } catch (error: any) {
+      console.error('Test connection error:', error);
       setResult({
         connected: false,
         message: `Error: ${error.message || 'Unknown error'}`
@@ -70,6 +71,8 @@ const PrinterConnectionTest: React.FC<PrinterConnectionTestProps> = ({ onConnect
       // If connection is successful, send the print command
       const endpoint = action === 'print' ? '/api/pos/printer/print-only' : '/api/pos/printer/print-and-open';
       
+      console.log(`Sending ${action} request to ${endpoint} with IP: ${ip}, Port: ${portNumber}`);
+      
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
@@ -78,11 +81,13 @@ const PrinterConnectionTest: React.FC<PrinterConnectionTestProps> = ({ onConnect
         body: JSON.stringify({
           ipAddress: ip,
           port: portNumber,
-          action: action
+          type: 'test'
         })
       });
       
+      console.log(`${action} response status:`, response.status);
       const data = await response.json();
+      console.log(`${action} response data:`, data);
       
       setResult({
         connected: data.success,
@@ -95,6 +100,68 @@ const PrinterConnectionTest: React.FC<PrinterConnectionTestProps> = ({ onConnect
         onConnectionSuccess(ip, portNumber);
       }
     } catch (error: any) {
+      console.error(`${action} error:`, error);
+      setResult({
+        connected: false,
+        message: `Error: ${error.message || 'Unknown error'}`
+      });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  // Direct API call without going through the test-direct endpoint
+  const handleDirectPrintTest = async (action: 'print' | 'print-and-open') => {
+    if (!ip) {
+      setResult({
+        connected: false,
+        message: 'Please enter an IP address'
+      });
+      return;
+    }
+
+    setTesting(true);
+    setResult(null);
+
+    try {
+      const portNumber = parseInt(port, 10) || 9100;
+      
+      // Determine the proxy URL
+      const proxyUrl = process.env.NEXT_PUBLIC_PRINTER_PROXY_URL || 'http://localhost:3005';
+      
+      // Determine the endpoint based on the action
+      const endpoint = action === 'print' ? '/test-print' : '/print-and-open';
+      
+      console.log(`Sending direct ${action} request to ${proxyUrl}${endpoint} with IP: ${ip}, Port: ${portNumber}`);
+      
+      const response = await fetch(`${proxyUrl}${endpoint}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(
+          action === 'print' 
+            ? { ip, port: portNumber }
+            : { 
+                type: 'test',
+                data: { ip, port: portNumber }
+              }
+        )
+      });
+      
+      console.log(`Direct ${action} response status:`, response.status);
+      const data = await response.json();
+      console.log(`Direct ${action} response data:`, data);
+      
+      setResult({
+        connected: data.success,
+        message: data.success 
+          ? `${action === 'print' ? 'Print' : 'Print and open drawer'} operation successful` 
+          : `Error: ${data.error || 'Unknown error'}`
+      });
+      
+    } catch (error: any) {
+      console.error(`Direct ${action} error:`, error);
       setResult({
         connected: false,
         message: `Error: ${error.message || 'Unknown error'}`
@@ -144,13 +211,13 @@ const PrinterConnectionTest: React.FC<PrinterConnectionTestProps> = ({ onConnect
         
         <ButtonGroup variant="outlined" disabled={testing}>
           <Button 
-            onClick={() => handlePrintTest('print')}
+            onClick={() => handleDirectPrintTest('print')}
             disabled={testing}
           >
             Print Test
           </Button>
           <Button 
-            onClick={() => handlePrintTest('print-and-open')}
+            onClick={() => handleDirectPrintTest('print-and-open')}
             disabled={testing}
           >
             Print & Open Drawer
