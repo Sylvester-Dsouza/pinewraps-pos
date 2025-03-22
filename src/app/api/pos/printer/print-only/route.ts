@@ -85,7 +85,9 @@ export async function POST(req: NextRequest) {
       body: JSON.stringify({
         ...data,
         ip: printer.ipAddress,
-        port: printer.port
+        port: printer.port,
+        printerIp: printer.ipAddress,
+        printerPort: printer.port
       })
     });
     

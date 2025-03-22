@@ -88,7 +88,9 @@ export async function POST(req: NextRequest) {
           ...data,
           ip: printer.ipAddress,
           port: printer.port
-        }
+        },
+        printerIp: printer.ipAddress,
+        printerPort: printer.port
       })
     });
     
