@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Button, TextField, Paper, Typography, Box, CircularProgress, Alert } from '@mui/material';
+import { Button, TextField, Paper, Typography, Box, CircularProgress, Alert, ButtonGroup } from '@mui/material';
 import { testPrinterConnection } from '../../services/printer';
 
 interface PrinterConnectionTestProps {
@@ -43,6 +43,67 @@ const PrinterConnectionTest: React.FC<PrinterConnectionTestProps> = ({ onConnect
     }
   };
 
+  const handlePrintTest = async (action: 'print' | 'print-and-open') => {
+    if (!ip) {
+      setResult({
+        connected: false,
+        message: 'Please enter an IP address'
+      });
+      return;
+    }
+
+    setTesting(true);
+    setResult(null);
+
+    try {
+      const portNumber = parseInt(port, 10) || 9100;
+      
+      // First test the connection
+      const testResult = await testPrinterConnection(ip, portNumber);
+      
+      if (!testResult.connected) {
+        setResult(testResult);
+        setTesting(false);
+        return;
+      }
+      
+      // If connection is successful, send the print command
+      const endpoint = action === 'print' ? '/api/pos/printer/print-only' : '/api/pos/printer/print-and-open';
+      
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          ipAddress: ip,
+          port: portNumber,
+          action: action
+        })
+      });
+      
+      const data = await response.json();
+      
+      setResult({
+        connected: data.success,
+        message: data.success 
+          ? `${action === 'print' ? 'Print' : 'Print and open drawer'} operation successful` 
+          : `Error: ${data.error || 'Unknown error'}`
+      });
+      
+      if (data.success && onConnectionSuccess) {
+        onConnectionSuccess(ip, portNumber);
+      }
+    } catch (error: any) {
+      setResult({
+        connected: false,
+        message: `Error: ${error.message || 'Unknown error'}`
+      });
+    } finally {
+      setTesting(false);
+    }
+  };
+
   return (
     <Paper elevation={2} sx={{ p: 3, mb: 3 }}>
       <Typography variant="h6" gutterBottom>
@@ -71,14 +132,31 @@ const PrinterConnectionTest: React.FC<PrinterConnectionTestProps> = ({ onConnect
         />
       </Box>
       
-      <Button 
-        variant="contained" 
-        onClick={handleTest}
-        disabled={testing}
-        startIcon={testing ? <CircularProgress size={20} color="inherit" /> : null}
-      >
-        {testing ? 'Testing...' : 'Test Connection'}
-      </Button>
+      <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+        <Button 
+          variant="contained" 
+          onClick={handleTest}
+          disabled={testing}
+          startIcon={testing ? <CircularProgress size={20} color="inherit" /> : null}
+        >
+          {testing ? 'Testing...' : 'Test Connection'}
+        </Button>
+        
+        <ButtonGroup variant="outlined" disabled={testing}>
+          <Button 
+            onClick={() => handlePrintTest('print')}
+            disabled={testing}
+          >
+            Print Test
+          </Button>
+          <Button 
+            onClick={() => handlePrintTest('print-and-open')}
+            disabled={testing}
+          >
+            Print & Open Drawer
+          </Button>
+        </ButtonGroup>
+      </Box>
       
       {result && (
         <Box sx={{ mt: 2 }}>

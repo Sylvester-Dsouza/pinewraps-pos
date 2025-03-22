@@ -31,6 +31,15 @@ export async function POST(req: NextRequest) {
       
       const result = await response.json();
       printer = result.printer;
+    } else if (data.ipAddress) {
+      // Use direct IP address and port if provided (for direct testing)
+      printer = {
+        id: 'direct',
+        name: 'Direct Connection',
+        ipAddress: data.ipAddress,
+        port: data.port || 9100,
+        isActive: true
+      };
     } else {
       // Get all printers and find the default one
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/printers`, {
@@ -65,7 +74,7 @@ export async function POST(req: NextRequest) {
     // Determine the proxy URL - try to use the one from environment variables
     const proxyUrl = process.env.PRINTER_PROXY_URL || 'http://localhost:3005';
     
-    console.log(`Sending print-only request to printer ${printer.name} at ${printer.ipAddress}:${printer.port}`);
+    console.log(`Sending print-only request to printer ${printer.name || 'Direct'} at ${printer.ipAddress}:${printer.port}`);
     
     // Send the request to the printer proxy
     const response = await fetch(`${proxyUrl}/test-print`, {
@@ -74,6 +83,7 @@ export async function POST(req: NextRequest) {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
+        ...data,
         ip: printer.ipAddress,
         port: printer.port
       })
@@ -95,15 +105,18 @@ export async function POST(req: NextRequest) {
       }, { status: response.status });
     }
     
-    // Update the printer connected status via API
-    await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/printers/${printer.id}/status`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${await currentUser.getIdToken()}`
-      },
-      body: JSON.stringify({ connected: true })
-    }).catch(err => console.error('Failed to update printer status:', err));
+    // Only update the printer connected status if it's a stored printer (not direct)
+    if (printer.id !== 'direct') {
+      // Update the printer connected status via API
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/printers/${printer.id}/status`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${await currentUser.getIdToken()}`
+        },
+        body: JSON.stringify({ connected: true })
+      }).catch(err => console.error('Failed to update printer status:', err));
+    }
     
     return NextResponse.json({ 
       success: true, 

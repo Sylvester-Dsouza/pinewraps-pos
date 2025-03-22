@@ -211,9 +211,11 @@ export const testPrinterConnection = async (ip: string, port: number = 9100): Pr
     const url = proxyStatus.url;
     console.log(`Testing printer connection at ${ip}:${port} via proxy ${url}`);
     
-    const response = await fetch(`${url}/check-connection?ip=${encodeURIComponent(ip)}&port=${port}`, {
-      method: 'GET',
+    // Use POST method with JSON body instead of GET with query parameters
+    const response = await fetch(`${url}/check-connection`, {
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ip, port }),
       signal: AbortSignal.timeout(PRINTER_PROXY_CONFIG.connectionTimeout)
     });
     
@@ -221,7 +223,7 @@ export const testPrinterConnection = async (ip: string, port: number = 9100): Pr
       const data = await response.json();
       console.log('Printer connection test result:', data);
       
-      if (data.connected) {
+      if (data.success) {
         return { 
           connected: true, 
           message: `Successfully connected to printer at ${ip}:${port}` 
@@ -229,7 +231,7 @@ export const testPrinterConnection = async (ip: string, port: number = 9100): Pr
       } else {
         return { 
           connected: false, 
-          message: `Failed to connect to printer at ${ip}:${port}` 
+          message: data.message || `Failed to connect to printer at ${ip}:${port}` 
         };
       }
     } else {
