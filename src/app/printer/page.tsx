@@ -7,11 +7,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Plus, Edit, Trash2, ArrowLeft, RefreshCw, Printer } from 'lucide-react';
+import { Plus, Edit, Trash2, ArrowLeft, RefreshCw, Printer, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { api } from '@/lib/api';
 import { useRouter } from 'next/navigation';
+import { testPrinterConnection, detectPrinterProxy } from '@/services/printer';
 
 interface Printer {
   id: string;
@@ -34,6 +35,8 @@ export default function PrinterPage() {
   const [isPrinting, setIsPrinting] = useState(false);
   const [directTestIp, setDirectTestIp] = useState('');
   const [directTestPort, setDirectTestPort] = useState('9100');
+  const [proxyStatus, setProxyStatus] = useState<{ connected: boolean; url?: string; error?: string } | null>(null);
+  const [isCheckingProxy, setIsCheckingProxy] = useState(false);
   const [formData, setFormData] = useState<Partial<Printer>>({
     name: '',
     ipAddress: '',
@@ -82,6 +85,37 @@ export default function PrinterPage() {
       }
     }
   }, []);
+
+  useEffect(() => {
+    if (activeTab === 'direct-test') {
+      checkPrinterProxyStatus();
+    }
+  }, [activeTab]);
+
+  const checkPrinterProxyStatus = async () => {
+    setIsCheckingProxy(true);
+    try {
+      const status = await detectPrinterProxy();
+      setProxyStatus(status);
+      
+      // If proxy is connected and we don't have an IP set, use the last connected printer IP
+      if (status.connected && !directTestIp && printers.length > 0) {
+        const defaultPrinter = printers.find(p => p.isDefault) || printers[0];
+        if (defaultPrinter) {
+          setDirectTestIp(defaultPrinter.ipAddress);
+          setDirectTestPort(defaultPrinter.port.toString());
+        }
+      }
+    } catch (error) {
+      console.error('Error checking printer proxy status:', error);
+      setProxyStatus({
+        connected: false,
+        error: 'Failed to check printer proxy status'
+      });
+    } finally {
+      setIsCheckingProxy(false);
+    }
+  };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, type } = e.target;
@@ -217,6 +251,16 @@ export default function PrinterPage() {
     setIsTestingConnection(true);
     
     try {
+      // First try our new direct connection test using the printer proxy
+      const proxyResult = await testPrinterConnection(directTestIp, parseInt(directTestPort || '9100', 10));
+      
+      if (proxyResult.connected) {
+        toast.success(proxyResult.message);
+        return;
+      }
+      
+      // If direct test fails, fall back to the API endpoint
+      console.log('Direct printer proxy test failed, falling back to API endpoint');
       const response = await api.post('/api/pos/printer/test-direct', {
         ipAddress: directTestIp,
         port: directTestPort || '9100'
@@ -541,6 +585,31 @@ export default function PrinterPage() {
                   Test a printer connection directly without saving it to the database.
                   This is useful for troubleshooting or testing new printers.
                 </p>
+                
+                {/* Printer Proxy Status */}
+                <div className="bg-muted p-3 rounded-md">
+                  <div className="flex justify-between items-center">
+                    <div className="flex items-center space-x-2">
+                      <div className={`h-3 w-3 rounded-full ${isCheckingProxy ? 'bg-yellow-500' : (proxyStatus?.connected ? 'bg-green-500' : 'bg-red-500')}`}></div>
+                      <span className="text-sm font-medium">Printer Proxy Service:</span>
+                      <span className="text-sm">
+                        {isCheckingProxy 
+                          ? 'Checking...' 
+                          : (proxyStatus?.connected 
+                              ? `Connected (${proxyStatus.url})` 
+                              : `Disconnected${proxyStatus?.error ? `: ${proxyStatus.error}` : ''}`)}
+                      </span>
+                    </div>
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      onClick={checkPrinterProxyStatus}
+                      disabled={isCheckingProxy}
+                    >
+                      <RefreshCw className={`h-4 w-4 ${isCheckingProxy ? 'animate-spin' : ''}`} />
+                    </Button>
+                  </div>
+                </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">

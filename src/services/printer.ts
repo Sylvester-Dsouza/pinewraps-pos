@@ -1,3 +1,11 @@
+import { format } from 'date-fns';
+
+// Configuration for printer proxy
+export const PRINTER_PROXY_CONFIG = {
+  defaultUrl: 'http://localhost:3005', // Default URL for the printer proxy
+  connectionTimeout: 5000, // 5 seconds timeout
+};
+
 // Printer configuration
 export const PRINTER_CONFIG = {
   type: 'thermal' as const,
@@ -149,6 +157,94 @@ export const generateReceiptLines = (order: Order): { text: string; alignment?: 
   lines.push({ text: 'www.pinewraps.com', alignment: 'center' });
 
   return lines;
+};
+
+// Function to detect and test connection to the printer proxy
+export const detectPrinterProxy = async (): Promise<{ connected: boolean; url?: string; error?: string }> => {
+  try {
+    // Try to detect the printer proxy on localhost
+    const url = PRINTER_PROXY_CONFIG.defaultUrl;
+    console.log(`Attempting to connect to printer proxy at ${url}`);
+    
+    const response = await fetch(`${url}/status`, { 
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(PRINTER_PROXY_CONFIG.connectionTimeout)
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      console.log('Printer proxy status:', data);
+      return { 
+        connected: true, 
+        url: url
+      };
+    } else {
+      console.error('Failed to connect to printer proxy:', response.statusText);
+      return { 
+        connected: false, 
+        error: `Failed to connect to printer proxy: ${response.statusText}`
+      };
+    }
+  } catch (error: any) {
+    console.error('Error detecting printer proxy:', error);
+    return { 
+      connected: false, 
+      error: `Error connecting to printer proxy: ${error.message || 'Unknown error'}`
+    };
+  }
+};
+
+// Function to test connection to a specific printer through the proxy
+export const testPrinterConnection = async (ip: string, port: number = 9100): Promise<{ connected: boolean; message: string }> => {
+  try {
+    // First check if we can connect to the proxy
+    const proxyStatus = await detectPrinterProxy();
+    if (!proxyStatus.connected) {
+      return { 
+        connected: false, 
+        message: `Cannot connect to printer proxy: ${proxyStatus.error}` 
+      };
+    }
+    
+    // Now test connection to the specific printer
+    const url = proxyStatus.url;
+    console.log(`Testing printer connection at ${ip}:${port} via proxy ${url}`);
+    
+    const response = await fetch(`${url}/check-connection?ip=${encodeURIComponent(ip)}&port=${port}`, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(PRINTER_PROXY_CONFIG.connectionTimeout)
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      console.log('Printer connection test result:', data);
+      
+      if (data.connected) {
+        return { 
+          connected: true, 
+          message: `Successfully connected to printer at ${ip}:${port}` 
+        };
+      } else {
+        return { 
+          connected: false, 
+          message: `Failed to connect to printer at ${ip}:${port}` 
+        };
+      }
+    } else {
+      return { 
+        connected: false, 
+        message: `Error testing printer connection: ${response.statusText}` 
+      };
+    }
+  } catch (error: any) {
+    console.error('Error testing printer connection:', error);
+    return { 
+      connected: false, 
+      message: `Error testing printer connection: ${error.message || 'Unknown error'}` 
+    };
+  }
 };
 
 // Base printer styles
