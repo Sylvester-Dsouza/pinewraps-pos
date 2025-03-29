@@ -839,129 +839,50 @@ export default function CheckoutModal({
           console.log('Cash payment detected - printing receipt and opening drawer');
           
           try {
-            console.log('Generating formatted receipt HTML');
-            // Generate the HTML receipt content using the OrderReceipt component's function
-            const orderData = {
-              orderNumber: response.data?.orderNumber,
-              createdAt: response.data?.createdAt || new Date().toISOString(),
-              customerName: response.data?.customerName || formState.customerName,
-              customerPhone: response.data?.customerPhone || formState.customerPhone,
-              customerEmail: response.data?.customerEmail || formState.customerEmail,
-              status: response.data?.status || 'Completed',
-              deliveryMethod: response.data?.deliveryMethod || 'PICKUP',
-              items: cartItems.map(item => ({
-                productName: item.name,
-                quantity: item.quantity,
-                totalPrice: item.totalPrice,
-                selectedVariations: item.selectedVariations,
-                notes: item.notes
-              })),
-              subtotal: cartSubtotal,
-              totalAmount: cartTotal,
-              payments: paymentsState,
-              notes: formState.notes
-            };
-            
-            const htmlContent = generateReceiptContent(orderData);
-            
-            console.log('Sending HTML receipt to printer proxy');
-            // Call the new endpoint with the HTML content
-            const printResponse = await axios.post(`${proxyUrl}/print-html-receipt`, {
-              htmlContent,
-              openDrawer: true, // Open the cash drawer for cash payments
+            console.log('Calling cash-order endpoint for receipt printing and drawer opening');
+            // Using direct axios call to the cash-order endpoint
+            const cashOrderResponse = await axios.post(`${proxyUrl}/cash-order`, {
+              orderData: {
+                orderNumber: response.data?.orderNumber,
+                payments: paymentsState,
+                orderId: response.data?.id
+              },
               skipConnectivityCheck: true
             });
             
-            console.log('Print response received:', printResponse.data);
+            console.log('Cash order response received:', cashOrderResponse.data);
             
-            if (printResponse.status !== 200) {
-              console.warn('Print request unsuccessful:', printResponse.data?.message || 'Unknown error');
+            if (cashOrderResponse.status !== 200) {
+              console.warn('Cash order request unsuccessful:', cashOrderResponse.data?.message || 'Unknown error');
               toast.warning('Could not open cash drawer or print receipt. Please check printer connection.');
             }
-          } catch (printError) {
-            console.error('Error in print operation:', printError.message || 'fetch failed');
+          } catch (cashOrderError) {
+            console.error('Error in cash order operation:', cashOrderError.message || 'fetch failed');
             toast.warning('Could not open cash drawer or print receipt. Please check printer connection.');
-            
-            // Fallback to the old method if the new one fails
-            try {
-              console.log('Falling back to cash-order endpoint');
-              const cashOrderResponse = await axios.post(`${proxyUrl}/cash-order`, {
-                orderData: {
-                  orderNumber: response.data?.orderNumber,
-                  payments: paymentsState,
-                  orderId: response.data?.id
-                },
-                skipConnectivityCheck: true
-              });
-              
-              console.log('Cash order response received:', cashOrderResponse.data);
-            } catch (fallbackError) {
-              console.error('Fallback also failed:', fallbackError.message);
-            }
           }
         } else {
           console.log('Card payment detected - printing receipt only');
           
           try {
-            console.log('Generating formatted receipt HTML');
-            // Generate the HTML receipt content using the OrderReceipt component's function
-            const orderData = {
-              orderNumber: response.data?.orderNumber,
-              createdAt: response.data?.createdAt || new Date().toISOString(),
-              customerName: response.data?.customerName || formState.customerName,
-              customerPhone: response.data?.customerPhone || formState.customerPhone,
-              customerEmail: response.data?.customerEmail || formState.customerEmail,
-              status: response.data?.status || 'Completed',
-              deliveryMethod: response.data?.deliveryMethod || 'PICKUP',
-              items: cartItems.map(item => ({
-                productName: item.name,
-                quantity: item.quantity,
-                totalPrice: item.totalPrice,
-                selectedVariations: item.selectedVariations,
-                notes: item.notes
-              })),
-              subtotal: cartSubtotal,
-              totalAmount: cartTotal,
-              payments: paymentsState,
-              notes: formState.notes
-            };
-            
-            const htmlContent = generateReceiptContent(orderData);
-            
-            console.log('Sending HTML receipt to printer proxy');
-            // Call the new endpoint with the HTML content
-            const printResponse = await axios.post(`${proxyUrl}/print-html-receipt`, {
-              htmlContent,
-              openDrawer: false, // Don't open the cash drawer for card payments
+            // For card payments - call the print-order endpoint directly
+            const printOrderResponse = await axios.post(`${proxyUrl}/print-order`, {
+              order: {
+                orderNumber: response.data?.orderNumber,
+                payments: paymentsState,
+                orderId: response.data?.id
+              },
               skipConnectivityCheck: true
             });
             
-            console.log('Print response received:', printResponse.data);
+            console.log('Print order response:', printOrderResponse.data);
             
-            if (printResponse.status !== 200) {
-              console.warn('Print request unsuccessful:', printResponse.data?.message || 'Unknown error');
+            if (printOrderResponse.status !== 200) {
+              console.warn('Print order request unsuccessful:', printOrderResponse.data?.message || 'Unknown error');
               toast.warning('Could not print receipt. Please check printer connection.');
             }
-          } catch (printError) {
-            console.error('Error in print operation:', printError.message || 'fetch failed');
+          } catch (printOrderError) {
+            console.error('Error in print order operation:', printOrderError.message || 'fetch failed');
             toast.warning('Could not print receipt. Please check printer connection.');
-            
-            // Fallback to the old method if the new one fails
-            try {
-              console.log('Falling back to print-order endpoint');
-              const printOrderResponse = await axios.post(`${proxyUrl}/print-order`, {
-                order: {
-                  orderNumber: response.data?.orderNumber,
-                  payments: paymentsState,
-                  orderId: response.data?.id
-                },
-                skipConnectivityCheck: true
-              });
-              
-              console.log('Print order response:', printOrderResponse.data);
-            } catch (fallbackError) {
-              console.error('Fallback also failed:', fallbackError.message);
-            }
           }
         }
       } catch (printerError) {
@@ -2236,141 +2157,126 @@ export default function CheckoutModal({
                         <div className="mb-8">
                           <h4 className="text-xl font-medium mb-6">Order Summary</h4>
                           <div className="max-h-[40vh] overflow-y-auto pr-4 space-y-6">
-                            {(() => {
-                              console.log('Rendering cart items in checkout modal:', JSON.stringify(cart, null, 2));
-                              console.log('Cart length:', Array.isArray(cart) ? cart.length : 'cart is not an array');
-                              console.log('Cart total:', cartTotal);
-                              return null;
-                            })()}
-                            
-                            {Array.isArray(cart) && cart.length > 0 ? (
-                              cart.map((item, index) => {
-                                console.log(`Rendering cart item ${index}:`, JSON.stringify(item, null, 2));
-                                
-                                // Skip rendering if product is missing or invalid
-                                if (!item || !item.product) {
-                                  console.error(`Invalid cart item at index ${index}:`, item);
-                                  return null;
-                                }
-                                
-                                // Ensure selectedVariations is an array
-                                const selectedVariations = Array.isArray(item.selectedVariations) 
-                                  ? item.selectedVariations.map(v => {
-                                      if (typeof v === 'object' && v !== null) {
-                                        return {
-                                          id: v.id || '',
-                                          type: v.type,
-                                          value: v.value,
-                                          price: Number(v.price) || 0
-                                        };
-                                      }
+                            {cart.map((item, index) => {
+                              // Skip rendering if product is missing or invalid
+                              if (!item || !item.product) {
+                                console.error(`Invalid cart item at index ${index}:`, item);
+                                return null;
+                              }
+                              
+                              // Ensure selectedVariations is an array
+                              const selectedVariations = Array.isArray(item.selectedVariations) 
+                                ? item.selectedVariations.map(v => {
+                                    if (typeof v === 'object' && v !== null) {
                                       return {
-                                        id: '',
-                                        type: '',
-                                        value: '',
-                                        price: 0
+                                        id: v.id || '',
+                                        type: v.type,
+                                        value: v.value,
+                                        price: Number(v.price) || 0
                                       };
-                                    })
-                                  : [];
+                                    }
+                                    return {
+                                      id: '',
+                                      type: '',
+                                      value: '',
+                                      price: 0
+                                    };
+                                  })
+                                : [];
 
-                                // Ensure customImages is an array
-                                const customImages = Array.isArray(item.customImages) 
-                                  ? item.customImages
-                                  : [];
-                                 
-                                console.log(`Item ${index} allowCustomImages:`, item.product?.allowCustomImages);
-                                console.log(`Item ${index} customImages:`, customImages);
-                                 
-                                return (
-                                  <div
-                                    key={item.id || `item-${index}`}
-                                    className="flex items-start justify-between p-4 bg-gray-50 rounded-lg"
-                                  >
-                                    <div className="flex-1">
-                                      <p className="text-lg font-medium">{item.product?.name || 'Unknown Product'}</p>
-                                      <p className="text-base text-gray-500 mt-2">
-                                        AED {((item.totalPrice || 0) / (item.quantity || 1)).toFixed(2)} × {item.quantity || 0}
-                                      </p>
-                                      {selectedVariations.length > 0 && (
-                                        <div className="mt-2 bg-blue-50 p-2 rounded-md">
-                                          <p className="text-sm font-medium text-blue-700 mb-1">Selected Options:</p>
-                                          {selectedVariations.map((variation, i) => {
-                                            // Ensure variation has the correct structure
-                                            const type = typeof variation === 'object' && variation !== null 
-                                              ? (variation.type || variation.id || '').toString()
-                                              : '';
-                                            const value = typeof variation === 'object' && variation !== null 
-                                              ? (variation.value || variation.id || '').toString()
-                                              : '';
-                                            // Handle price property for variations
-                                            const priceAdjustment = typeof variation === 'object' && variation !== null 
-                                              ? Number((variation as any).price || 0)
-                                              : 0;
-                                            
-                                            return (
-                                              <p
-                                                key={`${item.id}-var-${i}`}
-                                                className="text-sm text-blue-700 flex justify-between"
-                                              >
-                                                <span>{type}: {value}</span>
-                                                {priceAdjustment > 0 && <span>+AED {priceAdjustment.toFixed(2)}</span>}
-                                              </p>
-                                            );
-                                          })}
-                                        </div>
-                                      )}
-                                      {item.notes && (
-                                        <p className="text-sm text-gray-600 mt-2">
-                                          Notes: {item.notes}
-                                        </p>
-                                      )}
-
-                                      {/* Spacer before custom images */}
-                                      <div className="mt-4 border-t border-gray-200"></div>
-
-                                      {/* Custom Images Upload */}
-                                      <div className="mt-6 border-2 border-dashed border-blue-300 p-4 rounded-lg bg-blue-50 hover:border-blue-400 transition-colors relative">
-                                        <div className="absolute -top-3 left-4 bg-white px-2 text-xs font-semibold text-blue-600 flex items-center">
-                                           <Camera className="w-3 h-3 mr-1" /> UPLOAD IMAGES
-                                         </div>
-                                        <div className="flex items-center justify-between mb-2">
-                                          <label className="text-sm font-medium text-gray-800">
-                                            Upload Reference Images
-                                          </label>
-                                          <span className="text-xs text-gray-500">
-                                            Add photos for your order
-                                          </span>
-                                        </div>
-                                        <ImageUpload
-                                          onChange={(images) => {
-                                            console.log('Custom images updated:', images);
-                                            const updatedCart = cart.map(cartItem =>
-                                              cartItem.id === item.id
-                                                ? { ...cartItem, customImages: ensureCustomImagesHaveIds(images) }
-                                                : cartItem
-                                            );
-                                            setCart(updatedCart);
-                                          }}
-                                          value={ensureCustomImagesHaveIds(customImages)}
-                                        />
-                                        {customImages.length > 0 && (
-                                          <div className="mt-2 text-sm text-gray-500">
-                                            {customImages.length} image{customImages.length !== 1 ? 's' : ''} added
-                                          </div>
-                                        )}
-                                      </div>
-                                    </div>
-                                    <p className="text-lg font-medium ml-4">
-                                      AED {(item.product.basePrice * item.quantity).toFixed(2)}
+                              // Ensure customImages is an array
+                              const customImages = Array.isArray(item.customImages) 
+                                ? item.customImages
+                                : [];
+                               
+                              console.log(`Item ${index} allowCustomImages:`, item.product?.allowCustomImages);
+                              console.log(`Item ${index} customImages:`, customImages);
+                               
+                              return (
+                                <div
+                                  key={item.id || `item-${index}`}
+                                  className="flex items-start justify-between p-4 bg-gray-50 rounded-lg"
+                                >
+                                  <div className="flex-1">
+                                    <p className="text-lg font-medium">{item.product?.name || 'Unknown Product'}</p>
+                                    <p className="text-base text-gray-500 mt-2">
+                                      AED {((item.totalPrice || 0) / (item.quantity || 1)).toFixed(2)} × {item.quantity || 0}
                                     </p>
+                                    {selectedVariations.length > 0 && (
+                                      <div className="mt-2 bg-blue-50 p-2 rounded-md">
+                                        <p className="text-sm font-medium text-blue-700 mb-1">Selected Options:</p>
+                                        {selectedVariations.map((variation, i) => {
+                                          // Ensure variation has the correct structure
+                                          const type = typeof variation === 'object' && variation !== null 
+                                            ? (variation.type || variation.id || '').toString()
+                                            : '';
+                                          const value = typeof variation === 'object' && variation !== null 
+                                            ? (variation.value || variation.id || '').toString()
+                                            : '';
+                                          // Handle price property for variations
+                                          const priceAdjustment = typeof variation === 'object' && variation !== null 
+                                            ? Number((variation as any).price || 0)
+                                            : 0;
+                                          
+                                          return (
+                                            <p
+                                              key={`${item.id}-var-${i}`}
+                                              className="text-sm text-blue-700 flex justify-between"
+                                            >
+                                              <span>{type}: {value}</span>
+                                              {priceAdjustment > 0 && <span>+AED {priceAdjustment.toFixed(2)}</span>}
+                                            </p>
+                                          );
+                                        })}
+                                      </div>
+                                    )}
+                                    {item.notes && (
+                                      <p className="text-sm text-gray-600 mt-2">
+                                        Notes: {item.notes}
+                                      </p>
+                                    )}
+
+                                    {/* Spacer before custom images */}
+                                    <div className="mt-4 border-t border-gray-200"></div>
+
+                                    {/* Custom Images Upload */}
+                                    <div className="mt-6 border-2 border-dashed border-blue-300 p-4 rounded-lg bg-blue-50 hover:border-blue-400 transition-colors relative">
+                                      <div className="absolute -top-3 left-4 bg-white px-2 text-xs font-semibold text-blue-600 flex items-center">
+                                         <Camera className="w-3 h-3 mr-1" /> UPLOAD IMAGES
+                                       </div>
+                                      <div className="flex items-center justify-between mb-2">
+                                        <label className="text-sm font-medium text-gray-800">
+                                          Upload Reference Images
+                                        </label>
+                                        <span className="text-xs text-gray-500">
+                                          Add photos for your order
+                                        </span>
+                                      </div>
+                                      <ImageUpload
+                                        onChange={(images) => {
+                                          console.log('Custom images updated:', images);
+                                          const updatedCart = cart.map(cartItem =>
+                                            cartItem.id === item.id
+                                              ? { ...cartItem, customImages: ensureCustomImagesHaveIds(images) }
+                                              : cartItem
+                                          );
+                                          setCart(updatedCart);
+                                        }}
+                                        value={ensureCustomImagesHaveIds(customImages)}
+                                      />
+                                      {customImages.length > 0 && (
+                                        <div className="mt-2 text-sm text-gray-500">
+                                          {customImages.length} image{customImages.length !== 1 ? 's' : ''} added
+                                        </div>
+                                      )}
+                                    </div>
                                   </div>
-                                );
-                              }).filter(Boolean)
-                            ) : (
-                              <div className="text-center py-8 text-gray-500">
-                                No items in cart
-                              </div>
-                            )}
+                                  <p className="text-lg font-medium ml-4">
+                                    AED {(item.product.basePrice * item.quantity).toFixed(2)}
+                                  </p>
+                                </div>
+                              );
+                            }).filter(Boolean)}
                           </div>
 
                           <div className="flex flex-col space-y-4 p-4 bg-gray-50 rounded-lg mt-4">
