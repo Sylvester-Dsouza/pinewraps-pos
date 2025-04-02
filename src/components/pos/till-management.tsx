@@ -79,8 +79,8 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
         console.log('Printer config from API:', data.printer);
         // Return with the parameter names that the printer proxy expects
         return { 
-          ip: data.printer.ipAddress,
-          port: data.printer.port,
+          printerIp: data.printer.ipAddress,
+          printerPort: data.printer.port,
           skipConnectivityCheck: true // Always skip connectivity check for till operations
         };
       }
@@ -88,16 +88,16 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
       // If no printer configuration is found, use default values
       console.warn('No printer configuration found in database, using default values');
       return { 
-        ip: 'localhost', // Default printer IP - use localhost instead of hardcoded IP
-        port: 9100,      // Default printer port
+        printerIp: 'localhost', // Default printer IP - use localhost instead of hardcoded IP
+        printerPort: 9100,      // Default printer port
         skipConnectivityCheck: true 
       };
     } catch (error) {
       console.error('Error fetching printer config:', error);
       // If there's an error, use default values
       return { 
-        ip: 'localhost', // Default printer IP - use localhost instead of hardcoded IP
-        port: 9100,      // Default printer port
+        printerIp: 'localhost', // Default printer IP - use localhost instead of hardcoded IP
+        printerPort: 9100,      // Default printer port
         skipConnectivityCheck: true 
       };
     }
