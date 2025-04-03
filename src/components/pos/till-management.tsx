@@ -71,14 +71,14 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
   // Function to get printer configuration including IP and port
   const getProxyConfig = async () => {
     try {
-      // Fetch the printer configuration directly from the API
-      // Using the same IP and port as the printer test page
-      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://pinewraps-api.onrender.com';
-      const response = await fetch(`${API_URL}/pos/printer/default`);
+      // Fetch the printer configuration directly from the printer proxy
+      // instead of going through the API on Render
+      console.log('Fetching printer config from printer proxy:', `${PRINTER_PROXY_URL}/api/printer/config`);
+      const response = await fetch(`${PRINTER_PROXY_URL}/api/printer/config`);
       const data = await response.json();
       
       if (data && data.success && data.printer) {
-        console.log('Printer config from API:', data.printer);
+        console.log('Printer config from printer proxy:', data.printer);
         // Return with explicit printer IP and port
         return { 
           ip: data.printer.ipAddress,
@@ -87,8 +87,26 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
         };
       }
       
+      // Try to get the printer from the database through the printer proxy
+      console.log('Trying to get printer from database through printer proxy');
+      try {
+        const dbResponse = await fetch(`${PRINTER_PROXY_URL}/api/printer/db-config`);
+        const dbData = await dbResponse.json();
+        
+        if (dbData && dbData.success && dbData.printer) {
+          console.log('Printer config from printer proxy DB:', dbData.printer);
+          return { 
+            ip: dbData.printer.ipAddress,
+            port: dbData.printer.port || 9100,
+            skipConnectivityCheck: true 
+          };
+        }
+      } catch (dbError) {
+        console.error('Error fetching printer config from DB:', dbError);
+      }
+      
       // If no printer configuration is found, use default values
-      console.warn('No printer configuration found in database, using default values');
+      console.warn('No printer configuration found, using default values');
       return { 
         ip: '192.168.1.14', // Default printer IP - using a more likely network address
         port: 9100,          // Default printer port
