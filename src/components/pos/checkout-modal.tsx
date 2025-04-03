@@ -829,7 +829,8 @@ export default function CheckoutModal({
         console.log('All payments:', JSON.stringify(paymentsState, null, 2));
         
         // Check if any payment involves cash with detailed logging
-        const hasCashPayment = paymentsState.some(payment => {
+        // First check the paymentsState array
+        let hasCashPayment = paymentsState.some(payment => {
           const isCashMethod = payment.method === POSPaymentMethod.CASH;
           const hasCashPortion = payment.isSplitPayment && payment.cashPortion && payment.cashPortion > 0;
           
@@ -844,6 +845,23 @@ export default function CheckoutModal({
           return isCashMethod || hasCashPortion;
         });
         
+        // If paymentsState is empty, check the current payment method
+        if (paymentsState.length === 0) {
+          const isCashMethod = currentPaymentMethodState === POSPaymentMethod.CASH;
+          const hasCashPortion = currentPaymentMethodState === POSPaymentMethod.SPLIT && parseFloat(splitCashAmount) > 0;
+          
+          console.log('Current payment method:', {
+            method: currentPaymentMethodState,
+            isCashMethod,
+            isSplitPayment: currentPaymentMethodState === POSPaymentMethod.SPLIT,
+            cashPortion: splitCashAmount,
+            hasCashPortion
+          });
+          
+          // Update hasCashPayment based on current payment method
+          hasCashPayment = isCashMethod || hasCashPortion;
+        }
+        
         console.log('Has cash payment detected:', hasCashPayment);
         
         // Get the printer proxy URL from environment variables
@@ -855,11 +873,38 @@ export default function CheckoutModal({
           
           try {
             console.log('Calling cash-order endpoint for receipt printing and drawer opening');
+            
+            // Create a payment object if paymentsState is empty
+            let paymentData = paymentsState;
+            if (paymentsState.length === 0 && currentPaymentMethodState) {
+              // Create a default payment with the current payment method
+              const defaultPayment: Payment = {
+                id: nanoid(),
+                amount: calculateFinalTotal(),
+                method: currentPaymentMethodState,
+                reference: currentPaymentMethodState === POSPaymentMethod.CARD ? currentPaymentReferenceState || null : null,
+                status: POSPaymentStatus.FULLY_PAID
+              };
+              
+              if (currentPaymentMethodState === POSPaymentMethod.CASH) {
+                defaultPayment.cashAmount = calculateFinalTotal();
+                defaultPayment.changeAmount = 0;
+              } else if (currentPaymentMethodState === POSPaymentMethod.SPLIT && parseFloat(splitCashAmount) > 0) {
+                defaultPayment.isSplitPayment = true;
+                defaultPayment.cashPortion = parseFloat(splitCashAmount) || 0;
+                defaultPayment.cardPortion = parseFloat(splitCardAmount) || 0;
+                defaultPayment.cardReference = splitCardReference || null;
+              }
+              
+              paymentData = [defaultPayment];
+              console.log('Created default payment for cash-order:', paymentData);
+            }
+            
             // Using direct axios call to the cash-order endpoint
             const cashOrderResponse = await axios.post(`${proxyUrl}/cash-order`, {
               orderData: {
                 orderNumber: response.data?.orderNumber,
-                payments: paymentsState,
+                payments: paymentData,
                 orderId: response.data?.id
               },
               skipConnectivityCheck: true
