@@ -9,15 +9,17 @@ import axios from 'axios';
 const PRINTER_PROXY_URL = process.env.NEXT_PUBLIC_PRINTER_PROXY_URL || 'http://localhost:3005';
 console.log('PRINTER_PROXY_URL in order-drawer.service:', PRINTER_PROXY_URL);
 
-// Function to get printer configuration from the database
+// Function to get printer configuration directly from the printer proxy
 async function getPrinterConfig() {
   try {
-    // Fetch the printer configuration from the database
-    const response = await fetch('/api/pos/printer/config');
+    // Fetch the printer configuration directly from the printer proxy
+    // instead of going through the API on Render
+    console.log('Fetching printer config from printer proxy:', `${PRINTER_PROXY_URL}/api/printer/config`);
+    const response = await fetch(`${PRINTER_PROXY_URL}/api/printer/config`);
     const data = await response.json();
     
     if (data && data.success && data.printer) {
-      console.log('Printer config from API:', data.printer);
+      console.log('Printer config from printer proxy:', data.printer);
       // Return with the parameter names that the printer proxy expects
       return { 
         ip: data.printer.ipAddress,
@@ -26,19 +28,37 @@ async function getPrinterConfig() {
       };
     }
     
+    // Try to get the printer from the database through the printer proxy
+    console.log('Trying to get printer from database through printer proxy');
+    try {
+      const dbResponse = await fetch(`${PRINTER_PROXY_URL}/api/printer/db-config`);
+      const dbData = await dbResponse.json();
+      
+      if (dbData && dbData.success && dbData.printer) {
+        console.log('Printer config from printer proxy DB:', dbData.printer);
+        return { 
+          ip: dbData.printer.ipAddress,
+          port: dbData.printer.port || 9100,
+          skipConnectivityCheck: true 
+        };
+      }
+    } catch (dbError) {
+      console.error('Error fetching printer config from DB:', dbError);
+    }
+    
     // If no printer configuration is found, use default values
-    console.warn('No printer configuration found in database, using default values');
+    console.warn('No printer configuration found, using default values');
     return { 
-      ip: 'localhost', // Default printer IP
-      port: 9100,      // Default printer port
+      ip: '192.168.1.14', // Default printer IP - using a more likely network address
+      port: 9100,         // Default printer port
       skipConnectivityCheck: true 
     };
   } catch (error) {
     console.error('Error fetching printer config:', error);
     // If there's an error, use default values
     return { 
-      ip: 'localhost', // Default printer IP
-      port: 9100,      // Default printer port
+      ip: '192.168.1.14', // Default printer IP - using a more likely network address
+      port: 9100,         // Default printer port
       skipConnectivityCheck: true 
     };
   }
@@ -175,13 +195,17 @@ export class OrderDrawerService {
         console.log('Cash payment detected - printing receipt and opening drawer using printer proxy');
         
         try {
-          // Use direct axios calls to printer proxy
+          // Get printer configuration
+          const printerConfig = await getPrinterConfig();
+          
+          // Use direct axios calls to printer proxy with the cash-order endpoint
+          // This endpoint should both open the drawer and print the receipt
           const response = await axios.post(`${PRINTER_PROXY_URL}/cash-order`, {
+            ...printerConfig,
             orderData: {
               orderNumber: orderNumber || 'ORDER-DRAWER',
               payments
-            },
-            skipConnectivityCheck: true
+            }
           });
           
           console.log('Cash order response:', response.data);
@@ -207,6 +231,52 @@ export class OrderDrawerService {
     } catch (error) {
       console.error('Error in handleOrderCashDrawer:', error);
       toast.error(`Error handling cash drawer: ${(error as Error).message}`);
+      return false;
+    }
+  }
+  
+  /**
+   * Handle card payment operations for an order (print only, no drawer opening)
+   * @param payments Array of payments for the order
+   * @param orderNumber Optional order number for reference
+   * @returns Promise resolving to true if successful, false otherwise
+   */
+  public async handleOrderCardPayment(payments: Payment[], orderNumber?: string): Promise<boolean> {
+    try {
+      console.log('Handling card payment operations for order:', orderNumber);
+      
+      try {
+        // Get printer configuration
+        const printerConfig = await getPrinterConfig();
+        
+        // Use direct axios calls to printer proxy with the print-only endpoint
+        // This endpoint should only print the receipt without opening the drawer
+        const response = await axios.post(`${PRINTER_PROXY_URL}/print-only`, {
+          ...printerConfig,
+          orderData: {
+            orderNumber: orderNumber || 'ORDER-CARD',
+            payments
+          }
+        });
+        
+        console.log('Card order print response:', response.data);
+        
+        if (response.data.success) {
+          toast.success('Receipt printed successfully');
+          return true;
+        } else {
+          toast.error(`Failed to print receipt: ${response.data.error || 'Unknown error'}`);
+          console.warn('Printer proxy error:', response.data.error);
+          return false;
+        }
+      } catch (error) {
+        console.error('Error printing receipt for card payment:', error);
+        toast.error(`Error printing receipt: ${(error as Error).message}`);
+        return false;
+      }
+    } catch (error) {
+      console.error('Error in handleOrderCardPayment:', error);
+      toast.error(`Error handling card payment: ${(error as Error).message}`);
       return false;
     }
   }
