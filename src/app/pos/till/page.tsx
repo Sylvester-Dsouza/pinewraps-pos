@@ -181,9 +181,9 @@ export default function TillPage() {
                           <TableRow key={transaction.id}>
                             <TableCell>{new Date(transaction.createdAt).toLocaleString()}</TableCell>
                             <TableCell>
-                              {transaction.type === 'ADD' ? (
+                              {transaction.type === 'ADD' || transaction.type === 'ADD_CASH' ? (
                                 <Badge variant="outline" className="bg-green-100 text-green-800">Pay In</Badge>
-                              ) : transaction.type === 'REMOVE' ? (
+                              ) : transaction.type === 'REMOVE' || transaction.type === 'TAKE_CASH' ? (
                                 <Badge variant="outline" className="bg-red-100 text-red-800">Pay Out</Badge>
                               ) : transaction.type === 'SALE' ? (
                                 <Badge variant="outline" className="bg-blue-100 text-blue-800">Cash Sale</Badge>
@@ -191,8 +191,8 @@ export default function TillPage() {
                                 <Badge variant="outline">{transaction.type}</Badge>
                               )}
                             </TableCell>
-                            <TableCell className={transaction.type === 'ADD' || transaction.type === 'SALE' ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
-                              {transaction.type === 'ADD' || transaction.type === 'SALE' ? '+' : '-'}{formatCurrency(transaction.amount)}
+                            <TableCell className={transaction.type === 'ADD' || transaction.type === 'ADD_CASH' || transaction.type === 'SALE' ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
+                              {transaction.type === 'ADD' || transaction.type === 'ADD_CASH' || transaction.type === 'SALE' ? '+' : '-'}{formatCurrency(transaction.amount)}
                             </TableCell>
                             <TableCell className="max-w-xs truncate">{transaction.notes || '-'}</TableCell>
                           </TableRow>
