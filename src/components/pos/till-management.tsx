@@ -68,27 +68,36 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
     }
   };
 
-  // Modified function to let the proxy handle printer configuration
+  // Function to get printer configuration including IP and port
   const getProxyConfig = async () => {
     try {
-      // We'll still fetch printer config for logging purposes
+      // Fetch the printer configuration from the database
       const response = await fetch('/api/pos/printer/config');
       const data = await response.json();
       
       if (data && data.success && data.printer) {
-        console.log('Printer config from API (for reference only):', data.printer);
-      } else {
-        console.warn('No printer configuration found in database');
+        console.log('Printer config from API:', data.printer);
+        // Return with explicit printer IP and port
+        return { 
+          ip: data.printer.ipAddress,
+          port: data.printer.port,
+          skipConnectivityCheck: true // Always skip connectivity check for till operations
+        };
       }
       
-      // Only send skipConnectivityCheck flag - let the proxy handle printer IP and port
+      // If no printer configuration is found, use default values
+      console.warn('No printer configuration found in database, using default values');
       return { 
-        skipConnectivityCheck: true // Always skip connectivity check for till operations
+        ip: 'localhost', // Default printer IP
+        port: 9100,      // Default printer port
+        skipConnectivityCheck: true 
       };
     } catch (error) {
       console.error('Error fetching printer config:', error);
-      // Return minimal config
+      // If there's an error, use default values
       return { 
+        ip: 'localhost', // Default printer IP
+        port: 9100,      // Default printer port
         skipConnectivityCheck: true 
       };
     }
