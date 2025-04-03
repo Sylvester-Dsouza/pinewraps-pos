@@ -183,13 +183,25 @@ export class OrderDrawerService {
    */
   public async handleOrderCashDrawer(payments: Payment[], orderNumber?: string): Promise<boolean> {
     try {
-      console.log('Handling cash drawer operations for payments:', payments);
+      console.log('Handling cash drawer operations for payments:', JSON.stringify(payments, null, 2));
       
-      // Check if any payment involves cash
-      const hasCashPayment = payments.some(payment => 
-        payment.method === POSPaymentMethod.CASH || 
-        (payment.isSplitPayment && payment.cashPortion && payment.cashPortion > 0)
-      );
+      // Check if any payment involves cash with detailed logging
+      const hasCashPayment = payments.some(payment => {
+        const isCashMethod = payment.method === POSPaymentMethod.CASH;
+        const hasCashPortion = payment.isSplitPayment && payment.cashPortion && payment.cashPortion > 0;
+        
+        console.log(`Payment ${payment.id || 'unknown'}:`, {
+          method: payment.method,
+          isCashMethod,
+          isSplitPayment: payment.isSplitPayment,
+          cashPortion: payment.cashPortion,
+          hasCashPortion
+        });
+        
+        return isCashMethod || hasCashPortion;
+      });
+      
+      console.log('Has cash payment detected in OrderDrawerService:', hasCashPayment);
       
       if (hasCashPayment) {
         console.log('Cash payment detected - printing receipt and opening drawer using printer proxy');

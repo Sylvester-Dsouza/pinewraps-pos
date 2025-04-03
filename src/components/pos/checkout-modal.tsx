@@ -825,11 +825,26 @@ export default function CheckoutModal({
 
       // Handle cash drawer operations for cash payments
       try {
-        // Check if any payment involves cash
-        const hasCashPayment = paymentsState.some(payment => 
-          payment.method === POSPaymentMethod.CASH || 
-          (payment.isSplitPayment && payment.cashPortion && payment.cashPortion > 0)
-        );
+        // Log all payments for debugging
+        console.log('All payments:', JSON.stringify(paymentsState, null, 2));
+        
+        // Check if any payment involves cash with detailed logging
+        const hasCashPayment = paymentsState.some(payment => {
+          const isCashMethod = payment.method === POSPaymentMethod.CASH;
+          const hasCashPortion = payment.isSplitPayment && payment.cashPortion && payment.cashPortion > 0;
+          
+          console.log(`Payment ${payment.id}:`, {
+            method: payment.method,
+            isCashMethod,
+            isSplitPayment: payment.isSplitPayment,
+            cashPortion: payment.cashPortion,
+            hasCashPortion
+          });
+          
+          return isCashMethod || hasCashPortion;
+        });
+        
+        console.log('Has cash payment detected:', hasCashPayment);
         
         // Get the printer proxy URL from environment variables
         const proxyUrl = process.env.NEXT_PUBLIC_PRINTER_PROXY_URL || 'http://localhost:3005';
