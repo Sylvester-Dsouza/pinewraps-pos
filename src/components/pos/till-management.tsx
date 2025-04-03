@@ -68,36 +68,27 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
     }
   };
 
-  // Add a function to get printer configuration
-  const getPrinterConfig = async () => {
+  // Modified function to let the proxy handle printer configuration
+  const getProxyConfig = async () => {
     try {
-      // Fetch the printer configuration from the database
+      // We'll still fetch printer config for logging purposes
       const response = await fetch('/api/pos/printer/config');
       const data = await response.json();
       
       if (data && data.success && data.printer) {
-        console.log('Printer config from API:', data.printer);
-        // Return with the parameter names that the printer proxy expects
-        return { 
-          printerIp: data.printer.ipAddress,
-          printerPort: data.printer.port,
-          skipConnectivityCheck: true // Always skip connectivity check for till operations
-        };
+        console.log('Printer config from API (for reference only):', data.printer);
+      } else {
+        console.warn('No printer configuration found in database');
       }
       
-      // If no printer configuration is found, use default values
-      console.warn('No printer configuration found in database, using default values');
+      // Only send skipConnectivityCheck flag - let the proxy handle printer IP and port
       return { 
-        printerIp: 'localhost', // Default printer IP - use localhost instead of hardcoded IP
-        printerPort: 9100,      // Default printer port
-        skipConnectivityCheck: true 
+        skipConnectivityCheck: true // Always skip connectivity check for till operations
       };
     } catch (error) {
       console.error('Error fetching printer config:', error);
-      // If there's an error, use default values
+      // Return minimal config
       return { 
-        printerIp: 'localhost', // Default printer IP - use localhost instead of hardcoded IP
-        printerPort: 9100,      // Default printer port
         skipConnectivityCheck: true 
       };
     }
@@ -108,14 +99,13 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
     try {
       console.log('Opening till - sending open-drawer command to proxy');
       
-      // Get printer configuration from database
-      const printerConfig = await getPrinterConfig();
+      // Get proxy configuration (without printer IP/port)
+      const proxyConfig = await getProxyConfig();
       
       // Send the open-drawer command to the proxy
       try {
         const response = await axios.post(`${PRINTER_PROXY_URL}/open-drawer`, {
-          ...printerConfig,
-          skipConnectivityCheck: true // Skip connectivity check for till operations
+          ...proxyConfig
         });
 
         if (response.status === 200) {
@@ -191,14 +181,13 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
     try {
       console.log('Closing till - sending open-drawer command to proxy');
 
-      // Get printer configuration from database
-      const printerConfig = await getPrinterConfig();
+      // Get proxy configuration (without printer IP/port)
+      const proxyConfig = await getProxyConfig();
 
       // Open the drawer only, no receipt printing
       try {
         await axios.post(`${PRINTER_PROXY_URL}/open-drawer`, {
-          ...printerConfig,
-          skipConnectivityCheck: true // Skip connectivity check for till operations
+          ...proxyConfig
         });
       } catch (drawerError) {
         console.error('Error opening cash drawer:', drawerError);
@@ -223,8 +212,8 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
         return;
       }
 
-      // Get printer configuration from database
-      const printerConfig = await getPrinterConfig();
+      // Get proxy configuration (without printer IP/port)
+      const proxyConfig = await getProxyConfig();
 
       const amount = parseFloat(closingAmount);
       const response = await drawerService.closeSession(amount);
@@ -248,8 +237,7 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
           await axios.post(`${PRINTER_PROXY_URL}/print-only`, {
             type: 'till_close_final',
             data: closingData,
-            ...(printerConfig || {}),
-            skipConnectivityCheck: true // Skip connectivity check for till operations
+            ...proxyConfig
           });
         } catch (printError) {
           console.error('Error printing closing receipt:', printError);
@@ -286,14 +274,13 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
 
       console.log('Sending open-drawer command for pay-in');
 
-      // Get printer configuration from database
-      const printerConfig = await getPrinterConfig();
+      // Get proxy configuration (without printer IP/port)
+      const proxyConfig = await getProxyConfig();
 
       // First send open drawer command
       try {
         const response = await axios.post(`${PRINTER_PROXY_URL}/open-drawer`, {
-          ...printerConfig,
-          skipConnectivityCheck: true // Skip connectivity check for till operations
+          ...proxyConfig
         });
 
         if (response.status !== 200) {
@@ -337,14 +324,13 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
 
       console.log('Sending open-drawer command for pay-out');
 
-      // Get printer configuration from database
-      const printerConfig = await getPrinterConfig();
+      // Get proxy configuration (without printer IP/port)
+      const proxyConfig = await getProxyConfig();
 
       // First send open drawer command
       try {
         const response = await axios.post(`${PRINTER_PROXY_URL}/open-drawer`, {
-          ...printerConfig,
-          skipConnectivityCheck: true // Skip connectivity check for till operations
+          ...proxyConfig
         });
 
         if (response.status !== 200) {

@@ -2,7 +2,7 @@ const net = require('net');
 
 // Configuration
 const MOCK_PRINTER_PORT = 9101;
-const MOCK_PRINTER_IP = '127.0.0.1'; // localhost
+const MOCK_PRINTER_IP = '192.168.0.14'; // localhost
 
 // Create a TCP server
 const server = net.createServer((socket) => {

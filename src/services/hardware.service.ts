@@ -6,7 +6,7 @@ import axios from 'axios';
 const PRINTER_PROXY_URLS = [
   process.env.NEXT_PUBLIC_PRINTER_PROXY_URL,
   'http://localhost:3005',
-  'http://127.0.0.1:3005',
+  'http://192.168.0.14:3005',
 ];
 
 // Find the first non-empty URL from the list
