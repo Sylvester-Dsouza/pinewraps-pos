@@ -71,8 +71,10 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
   // Function to get printer configuration including IP and port
   const getProxyConfig = async () => {
     try {
-      // Fetch the printer configuration from the database
-      const response = await fetch('/api/pos/printer/config');
+      // Fetch the printer configuration directly from the API
+      // Using the same IP and port as the printer test page
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://pinewraps-api.onrender.com';
+      const response = await fetch(`${API_URL}/pos/printer/default`);
       const data = await response.json();
       
       if (data && data.success && data.printer) {
@@ -88,16 +90,16 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
       // If no printer configuration is found, use default values
       console.warn('No printer configuration found in database, using default values');
       return { 
-        ip: 'localhost', // Default printer IP
-        port: 9100,      // Default printer port
+        ip: '192.168.1.14', // Default printer IP - using a more likely network address
+        port: 9100,          // Default printer port
         skipConnectivityCheck: true 
       };
     } catch (error) {
       console.error('Error fetching printer config:', error);
       // If there's an error, use default values
       return { 
-        ip: 'localhost', // Default printer IP
-        port: 9100,      // Default printer port
+        ip: '192.168.1.14', // Default printer IP - using a more likely network address
+        port: 9100,          // Default printer port
         skipConnectivityCheck: true 
       };
     }
