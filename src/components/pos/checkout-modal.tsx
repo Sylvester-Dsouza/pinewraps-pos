@@ -138,6 +138,16 @@ export default function CheckoutModal({
   const [isPartialPaymentState, setIsPartialPaymentState] = useState(false);
   const [isSplitPaymentState, setIsSplitPaymentState] = useState(false);
   const [partialPaymentMethod, setPartialPaymentMethod] = useState<POSPaymentMethod>(POSPaymentMethod.CASH);
+  
+  // Updated split payment state variables
+  const [splitMethod1, setSplitMethod1] = useState<POSPaymentMethod>(POSPaymentMethod.CASH);
+  const [splitMethod2, setSplitMethod2] = useState<POSPaymentMethod>(POSPaymentMethod.CARD);
+  const [splitAmount1, setSplitAmount1] = useState('');
+  const [splitAmount2, setSplitAmount2] = useState('');
+  const [splitReference1, setSplitReference1] = useState('');
+  const [splitReference2, setSplitReference2] = useState('');
+  
+  // Legacy variables for backward compatibility
   const [splitCashAmount, setSplitCashAmount] = useState('');
   const [splitCardAmount, setSplitCardAmount] = useState('');
   const [splitCardReference, setSplitCardReference] = useState('');
@@ -307,19 +317,33 @@ export default function CheckoutModal({
         defaultPayment.reference = currentPaymentReferenceState || null;
       } else if (currentPaymentMethodState === POSPaymentMethod.SPLIT) {
         defaultPayment.isSplitPayment = true;
-        // Use the actual entered values instead of defaulting to 50/50
-        const cashAmount = parseFloat(splitCashAmount) || 0;
-        const cardAmount = parseFloat(splitCardAmount) || 0;
         
-        // If both amounts are 0, then use the total amount (backward compatibility)
-        if (cashAmount === 0 && cardAmount === 0) {
-          defaultPayment.cashPortion = totalWithDelivery / 2;
-          defaultPayment.cardPortion = totalWithDelivery / 2;
+        // Get the amounts for both payment methods
+        const amount1 = parseFloat(splitAmount1) || 0;
+        const amount2 = parseFloat(splitAmount2) || 0;
+        
+        // Store payment method information
+        defaultPayment.splitMethod1 = splitMethod1;
+        defaultPayment.splitMethod2 = splitMethod2;
+        defaultPayment.splitAmount1 = amount1;
+        defaultPayment.splitAmount2 = amount2;
+        defaultPayment.splitReference1 = splitReference1 || null;
+        defaultPayment.splitReference2 = splitReference2 || null;
+        
+        // For backward compatibility
+        if (splitMethod1 === POSPaymentMethod.CASH || splitMethod2 === POSPaymentMethod.CASH) {
+          defaultPayment.cashPortion = splitMethod1 === POSPaymentMethod.CASH ? amount1 : amount2;
         } else {
-          defaultPayment.cashPortion = cashAmount;
-          defaultPayment.cardPortion = cardAmount;
+          defaultPayment.cashPortion = 0;
         }
-        defaultPayment.cardReference = splitCardReference || currentPaymentReferenceState || null;
+        
+        if (splitMethod1 === POSPaymentMethod.CARD || splitMethod2 === POSPaymentMethod.CARD) {
+          defaultPayment.cardPortion = splitMethod1 === POSPaymentMethod.CARD ? amount1 : amount2;
+          defaultPayment.cardReference = splitMethod1 === POSPaymentMethod.CARD ? splitReference1 : splitReference2;
+        } else {
+          defaultPayment.cardPortion = 0;
+          defaultPayment.cardReference = null;
+        }
       } else if (currentPaymentMethodState === POSPaymentMethod.PARTIAL) {
         defaultPayment.isPartialPayment = true;
         // Default to half now, half later
@@ -674,15 +698,29 @@ export default function CheckoutModal({
     // Use the final total that includes delivery charges and discounts
     const finalTotal = calculateFinalTotal();
     
+    // Validate that the partial payment amount is greater than 0 and less than the total
+    if (amount <= 0) {
+      toast.error('Partial payment amount must be greater than 0');
+      return;
+    }
+    
+    if (amount >= finalTotal) {
+      toast.error('Partial payment amount must be less than the total amount');
+      return;
+    }
+    
     const payment: Payment = {
       id: nanoid(),
       amount,
       method,
-      reference: method === POSPaymentMethod.CARD ? reference || null : null,
+      reference: (method === POSPaymentMethod.CARD || 
+                 method === POSPaymentMethod.BANK_TRANSFER || 
+                 method === POSPaymentMethod.PBL || 
+                 method === POSPaymentMethod.TALABAT) ? reference || null : null,
       status: POSPaymentStatus.PARTIALLY_PAID,
       isPartialPayment: true,
       remainingAmount: finalTotal - amount,
-      futurePaymentMethod: POSPaymentMethod.CARD
+      futurePaymentMethod: method // Set future payment method to the same as current method
     };
 
     if (method === POSPaymentMethod.CASH) {
@@ -702,16 +740,19 @@ export default function CheckoutModal({
       // If current payment method is PARTIAL and amount is entered, add it as a payment first
       if (currentPaymentMethodState === POSPaymentMethod.PARTIAL && currentPaymentAmountState) {
         const amount = parseFloat(currentPaymentAmountState);
-        if (amount && !isNaN(amount)) {
+        if (amount && !isNaN(amount) && amount > 0 && amount < calculateFinalTotal()) {
           const payment: Payment = {
             id: nanoid(),
             amount,
             method: partialPaymentMethod,
-            reference: partialPaymentMethod === POSPaymentMethod.CARD ? currentPaymentReferenceState || null : null,
+            reference: (partialPaymentMethod === POSPaymentMethod.CARD || 
+                      partialPaymentMethod === POSPaymentMethod.BANK_TRANSFER || 
+                      partialPaymentMethod === POSPaymentMethod.PBL || 
+                      partialPaymentMethod === POSPaymentMethod.TALABAT) ? currentPaymentReferenceState || null : null,
             status: POSPaymentStatus.PARTIALLY_PAID,
             isPartialPayment: true,
-            remainingAmount: cartTotal - amount,
-            futurePaymentMethod: POSPaymentMethod.CARD
+            remainingAmount: calculateFinalTotal() - amount,
+            futurePaymentMethod: partialPaymentMethod // Use the same payment method for future payment
           };
           
           if (partialPaymentMethod === POSPaymentMethod.CASH) {
@@ -987,6 +1028,15 @@ export default function CheckoutModal({
       setCurrentPaymentAmountState('');
       setIsPartialPaymentState(false);
       setIsSplitPaymentState(false);
+      // Reset all split payment fields
+      setSplitMethod1(POSPaymentMethod.CASH);
+      setSplitMethod2(POSPaymentMethod.CARD);
+      setSplitAmount1('');
+      setSplitAmount2('');
+      setSplitReference1('');
+      setSplitReference2('');
+      
+      // Reset legacy variables
       setSplitCashAmount('');
       setSplitCardAmount('');
       setSplitCardReference('');
@@ -1607,12 +1657,22 @@ export default function CheckoutModal({
       setIsSplitPaymentState(true);
       setCurrentPaymentMethodState(method);
       
-      // If split amounts are not already set, initialize with reasonable defaults
-      if (!splitCashAmount && !splitCardAmount) {
-        const total = calculateFinalTotal();
-        // Initialize with the full amount as cash by default
-        setSplitCashAmount(total.toString());
-        setSplitCardAmount('0');
+      // Initialize the split payment methods if they haven't been set yet
+      if (!splitAmount1 && !splitAmount2) {
+        // Set default payment methods
+        setSplitMethod1(POSPaymentMethod.CASH);
+        setSplitMethod2(POSPaymentMethod.CARD);
+        
+        // Don't set default amounts - let the user enter them
+        setSplitAmount1('');
+        setSplitAmount2('');
+        setSplitReference1('');
+        setSplitReference2('');
+        
+        // Update legacy variables for backward compatibility
+        setSplitCashAmount('');
+        setSplitCardAmount('');
+        setSplitCardReference('');
       }
     } else {
       setIsSplitPaymentState(false);
@@ -2523,39 +2583,146 @@ export default function CheckoutModal({
                               {/* Split Payment Form */}
                               {isSplitPaymentState && (
                                 <div className="mt-6 space-y-6">
-                                  <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                      <label className="block text-sm font-medium text-gray-700 mb-2">Cash Amount</label>
-                                      <input
-                                        type="number"
-                                        value={splitCashAmount}
-                                        onChange={(e) => setSplitCashAmount(e.target.value)}
-                                        className="block w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4"
-                                        placeholder="Enter cash amount"
-                                      />
-                                    </div>
-                                    <div>
-                                      <label className="block text-sm font-medium text-gray-700 mb-2">Card Amount</label>
-                                      <input
-                                        type="number"
-                                        value={splitCardAmount}
-                                        onChange={(e) => setSplitCardAmount(e.target.value)}
-                                        className="block w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4"
-                                        placeholder="Enter card amount"
-                                      />
-                                    </div>
-                                  </div>
+                                  {/* First Payment (Method and Amount in one row) */}
                                   <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">Card Reference</label>
-                                    <input
-                                      type="text"
-                                      value={splitCardReference}
-                                      onChange={(e) => setSplitCardReference(e.target.value)}
-                                      className="block w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4"
-                                      placeholder="Enter card reference"
-                                    />
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">First Payment</label>
+                                    <div className="grid grid-cols-2 gap-4">
+                                      <select
+                                        value={splitMethod1}
+                                        onChange={(e) => setSplitMethod1(e.target.value as POSPaymentMethod)}
+                                        className="block w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4"
+                                      >
+                                        <option value={POSPaymentMethod.CASH}>Cash</option>
+                                        <option value={POSPaymentMethod.CARD}>Card</option>
+                                        <option value={POSPaymentMethod.BANK_TRANSFER}>Bank Transfer</option>
+                                        <option value={POSPaymentMethod.PBL}>Pay by Link</option>
+                                        <option value={POSPaymentMethod.TALABAT}>Talabat</option>
+                                        <option value={POSPaymentMethod.COD}>Cash on Delivery</option>
+                                      </select>
+                                      <input
+                                        type="number"
+                                        value={splitAmount1}
+                                        onChange={(e) => {
+                                          setSplitAmount1(e.target.value);
+                                          // Update legacy variables for backward compatibility
+                                          if (splitMethod1 === POSPaymentMethod.CASH) {
+                                            setSplitCashAmount(e.target.value);
+                                          } else if (splitMethod1 === POSPaymentMethod.CARD) {
+                                            setSplitCardAmount(e.target.value);
+                                          }
+                                        }}
+                                        className="block w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4"
+                                        placeholder="Amount"
+                                      />
+                                    </div>
                                   </div>
-                                 
+                                  
+                                  {/* First Payment Reference (if needed) */}
+                                  {(splitMethod1 === POSPaymentMethod.CARD || 
+                                    splitMethod1 === POSPaymentMethod.BANK_TRANSFER || 
+                                    splitMethod1 === POSPaymentMethod.PBL || 
+                                    splitMethod1 === POSPaymentMethod.TALABAT) && (
+                                    <div>
+                                      <label className="block text-sm font-medium text-gray-700 mb-2">Reference</label>
+                                      <input
+                                        type="text"
+                                        value={splitReference1}
+                                        onChange={(e) => {
+                                          setSplitReference1(e.target.value);
+                                          // Update legacy variable for backward compatibility
+                                          if (splitMethod1 === POSPaymentMethod.CARD) {
+                                            setSplitCardReference(e.target.value);
+                                          }
+                                        }}
+                                        className="block w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4"
+                                        placeholder="Enter payment reference"
+                                      />
+                                    </div>
+                                  )}
+                                  
+                                  <div className="border-t pt-6">
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">Second Payment</label>
+                                    <div className="grid grid-cols-2 gap-4">
+                                      <select
+                                        value={splitMethod2}
+                                        onChange={(e) => setSplitMethod2(e.target.value as POSPaymentMethod)}
+                                        className="block w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4"
+                                      >
+                                        {/* Filter out the first payment method from options */}
+                                        {Object.values(POSPaymentMethod)
+                                          .filter(method => 
+                                            method !== splitMethod1 && 
+                                            method !== POSPaymentMethod.PARTIAL && 
+                                            method !== POSPaymentMethod.SPLIT
+                                          )
+                                          .map(method => (
+                                            <option key={method} value={method}>
+                                              {method === POSPaymentMethod.CASH && 'Cash'}
+                                              {method === POSPaymentMethod.CARD && 'Card'}
+                                              {method === POSPaymentMethod.BANK_TRANSFER && 'Bank Transfer'}
+                                              {method === POSPaymentMethod.PBL && 'Pay by Link'}
+                                              {method === POSPaymentMethod.TALABAT && 'Talabat'}
+                                              {method === POSPaymentMethod.COD && 'Cash on Delivery'}
+                                            </option>
+                                          ))
+                                        }
+                                      </select>
+                                      <input
+                                        type="number"
+                                        value={splitAmount2}
+                                        onChange={(e) => {
+                                          setSplitAmount2(e.target.value);
+                                          // Update legacy variables for backward compatibility
+                                          if (splitMethod2 === POSPaymentMethod.CASH) {
+                                            setSplitCashAmount(e.target.value);
+                                          } else if (splitMethod2 === POSPaymentMethod.CARD) {
+                                            setSplitCardAmount(e.target.value);
+                                          }
+                                        }}
+                                        className="block w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4"
+                                        placeholder="Amount"
+                                      />
+                                    </div>
+                                  </div>
+                                  
+                                  {/* Second Payment Reference (if needed) */}
+                                  {(splitMethod2 === POSPaymentMethod.CARD || 
+                                    splitMethod2 === POSPaymentMethod.BANK_TRANSFER || 
+                                    splitMethod2 === POSPaymentMethod.PBL || 
+                                    splitMethod2 === POSPaymentMethod.TALABAT) && (
+                                    <div>
+                                      <label className="block text-sm font-medium text-gray-700 mb-2">Reference</label>
+                                      <input
+                                        type="text"
+                                        value={splitReference2}
+                                        onChange={(e) => {
+                                          setSplitReference2(e.target.value);
+                                          // Update legacy variable for backward compatibility
+                                          if (splitMethod2 === POSPaymentMethod.CARD) {
+                                            setSplitCardReference(e.target.value);
+                                          }
+                                        }}
+                                        className="block w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4"
+                                        placeholder="Enter payment reference"
+                                      />
+                                    </div>
+                                  )}
+                                  
+                                  {/* Payment Summary */}
+                                  <div className="bg-gray-50 p-4 rounded-xl">
+                                    <div className="text-sm font-medium text-gray-900">
+                                      Total: AED {calculateFinalTotal().toFixed(2)}
+                                    </div>
+                                    <div className="text-sm text-gray-500">
+                                      First Payment: AED {(parseFloat(splitAmount1) || 0).toFixed(2)} ({splitMethod1})
+                                    </div>
+                                    <div className="text-sm text-gray-500">
+                                      Second Payment: AED {(parseFloat(splitAmount2) || 0).toFixed(2)} ({splitMethod2})
+                                    </div>
+                                    <div className="text-sm text-gray-500">
+                                      Remaining: AED {(calculateFinalTotal() - (parseFloat(splitAmount1) || 0) - (parseFloat(splitAmount2) || 0)).toFixed(2)}
+                                    </div>
+                                  </div>
                                 </div>
                               )}
 
@@ -2574,11 +2741,12 @@ export default function CheckoutModal({
                                   </div>
                                   <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-2">Payment Method for Partial Amount</label>
-                                    <div className="grid grid-cols-2 gap-4">
+                                    {/* First row of payment methods */}
+                                    <div className="grid grid-cols-3 gap-3 mb-3">
                                       <button
                                         type="button"
                                         onClick={() => setPartialPaymentMethod(POSPaymentMethod.CASH)}
-                                        className={`p-4 text-lg font-medium rounded-xl border-2 transition-all ${
+                                        className={`p-3 text-base font-medium rounded-xl border-2 transition-all ${
                                           partialPaymentMethod === POSPaymentMethod.CASH
                                             ? "bg-black text-white"
                                             : "bg-gray-100 text-gray-700"
@@ -2589,7 +2757,7 @@ export default function CheckoutModal({
                                       <button
                                         type="button"
                                         onClick={() => setPartialPaymentMethod(POSPaymentMethod.CARD)}
-                                        className={`p-4 text-lg font-medium rounded-xl border-2 transition-all ${
+                                        className={`p-3 text-base font-medium rounded-xl border-2 transition-all ${
                                           partialPaymentMethod === POSPaymentMethod.CARD
                                             ? "bg-black text-white"
                                             : "bg-gray-100 text-gray-700"
@@ -2597,17 +2765,67 @@ export default function CheckoutModal({
                                       >
                                         Card
                                       </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setPartialPaymentMethod(POSPaymentMethod.BANK_TRANSFER)}
+                                        className={`p-3 text-base font-medium rounded-xl border-2 transition-all ${
+                                          partialPaymentMethod === POSPaymentMethod.BANK_TRANSFER
+                                            ? "bg-black text-white"
+                                            : "bg-gray-100 text-gray-700"
+                                        }`}
+                                      >
+                                        Bank Transfer
+                                      </button>
+                                    </div>
+                                    {/* Second row of payment methods */}
+                                    <div className="grid grid-cols-3 gap-3">
+                                      <button
+                                        type="button"
+                                        onClick={() => setPartialPaymentMethod(POSPaymentMethod.PBL)}
+                                        className={`p-3 text-base font-medium rounded-xl border-2 transition-all ${
+                                          partialPaymentMethod === POSPaymentMethod.PBL
+                                            ? "bg-black text-white"
+                                            : "bg-gray-100 text-gray-700"
+                                        }`}
+                                      >
+                                        Pay by Link
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setPartialPaymentMethod(POSPaymentMethod.TALABAT)}
+                                        className={`p-3 text-base font-medium rounded-xl border-2 transition-all ${
+                                          partialPaymentMethod === POSPaymentMethod.TALABAT
+                                            ? "bg-black text-white"
+                                            : "bg-gray-100 text-gray-700"
+                                        }`}
+                                      >
+                                        Talabat
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setPartialPaymentMethod(POSPaymentMethod.COD)}
+                                        className={`p-3 text-base font-medium rounded-xl border-2 transition-all ${
+                                          partialPaymentMethod === POSPaymentMethod.COD
+                                            ? "bg-black text-white"
+                                            : "bg-gray-100 text-gray-700"
+                                        }`}
+                                      >
+                                        COD
+                                      </button>
                                     </div>
                                   </div>
-                                  {partialPaymentMethod === POSPaymentMethod.CARD && (
+                                  {(partialPaymentMethod === POSPaymentMethod.CARD || 
+                                    partialPaymentMethod === POSPaymentMethod.BANK_TRANSFER || 
+                                    partialPaymentMethod === POSPaymentMethod.PBL || 
+                                    partialPaymentMethod === POSPaymentMethod.TALABAT) && (
                                     <div>
-                                      <label className="block text-sm font-medium text-gray-700 mb-2">Card Reference</label>
+                                      <label className="block text-sm font-medium text-gray-700 mb-2">Payment Reference</label>
                                       <input
                                         type="text"
                                         value={currentPaymentReferenceState}
                                         onChange={(e) => setCurrentPaymentReferenceState(e.target.value)}
                                         className="block w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4"
-                                        placeholder="Enter card reference"
+                                        placeholder="Enter payment reference"
                                       />
                                     </div>
                                   )}

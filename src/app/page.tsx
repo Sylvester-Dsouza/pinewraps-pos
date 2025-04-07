@@ -11,7 +11,21 @@ export default function RootPage() {
   useEffect(() => {
     if (!loading) {
       if (user) {
-        router.replace('/pos');
+        // Check user role from localStorage
+        const isKitchenStaff = localStorage.getItem('isKitchenStaff') === 'true';
+        const isDesignStaff = localStorage.getItem('isDesignStaff') === 'true';
+        const isFinalCheckStaff = localStorage.getItem('isFinalCheckStaff') === 'true';
+        
+        // Redirect based on staff type
+        if (isKitchenStaff) {
+          router.replace('/kitchen');
+        } else if (isDesignStaff) {
+          router.replace('/design');
+        } else if (isFinalCheckStaff) {
+          router.replace('/final-check');
+        } else {
+          router.replace('/pos');
+        }
       } else {
         router.replace('/login');
       }

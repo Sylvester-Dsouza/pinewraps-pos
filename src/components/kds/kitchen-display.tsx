@@ -348,15 +348,76 @@ export default function KitchenDisplay() {
     const isParallelOrder = order.requiresKitchen && order.requiresDesign;
     
     if (isParallelOrder) {
-      // For parallel orders, just ensure the kitchen status is KITCHEN_READY
-      if (order.status !== 'KITCHEN_READY') {
-        await updateOrderStatus(orderId, 'KITCHEN_READY', notes);
-      } else {
-        toast.success('Kitchen is already marked as ready. Waiting for design to complete.');
-      }
+      // For parallel orders, use the parallel processing function
+      await updateParallelOrderStatus(orderId, 'KITCHEN_READY', notes);
     } else {
       // For kitchen-only orders, we can directly send to final check
       await updateOrderStatus(orderId, 'FINAL_CHECK_QUEUE', notes);
+    }
+  };
+
+  // Function to handle parallel processing status updates
+  const updateParallelOrderStatus = async (orderId: string, kitchenStatus: KitchenOrderStatus, teamNotes?: string) => {
+    try {
+      const order = orders.find(o => o.id === orderId);
+      if (!order) {
+        toast.error('Order not found');
+        return;
+      }
+
+      const payload = {
+        parallelProcessing: {
+          kitchenStatus: kitchenStatus,
+          teamNotes: teamNotes || ""
+        }
+      };
+      
+      // Create a custom payload for parallel processing
+      // We'll use the teamNotes field to pass the parallel processing information
+      // since the API doesn't directly support a parallelProcessing field
+      const response = await apiMethods.pos.updateOrderStatus(orderId, {
+        status: order.status, // Keep current status
+        teamNotes: teamNotes || "",
+        notes: JSON.stringify(payload) // Pass parallel processing info in notes field
+      });
+
+      if (response.success) {
+        // Update the local state with the new parallel processing status
+        setOrders(prevOrders =>
+          prevOrders.map(order => {
+            if (order.id === orderId) {
+              // If design is already ready, the backend will move this to final check
+              // Otherwise, it will stay in the current status but with updated parallelProcessing
+              const newOrder = { 
+                ...order,
+                kitchenNotes: teamNotes || order.kitchenNotes,
+                parallelProcessing: {
+                  ...order.parallelProcessing,
+                  kitchenStatus: kitchenStatus
+                }
+              };
+              
+              // If the response includes a new status, update that too
+              if (response.data && response.data.status) {
+                newOrder.status = response.data.status;
+              }
+              
+              return newOrder;
+            }
+            return order;
+          })
+        );
+        
+        // Check if the order is waiting for design or moved to final check
+        if (response.data && response.data.status === 'FINAL_CHECK_QUEUE') {
+          toast.success('Both teams ready! Order sent to Final Check');
+        } else {
+          toast.success('Kitchen marked ready! Waiting for Design team...');
+        }
+      }
+    } catch (error) {
+      console.error('Error updating parallel order status:', error);
+      toast.error('Failed to update order status');
     }
   };
 
@@ -408,7 +469,14 @@ export default function KitchenDisplay() {
       if (newStatus === 'DESIGN_QUEUE') {
         await handleSendToDesign(selectedOrder.id, teamNotes);
       } else if (newStatus === 'FINAL_CHECK_QUEUE') {
-        await handleSendToFinalCheck(selectedOrder.id, teamNotes);
+        // Check if this is a parallel order that requires both kitchen and design
+        if (selectedOrder.requiresKitchen && selectedOrder.requiresDesign) {
+          // Update the kitchen status to ready in the parallel processing object
+          await updateParallelOrderStatus(selectedOrder.id, 'KITCHEN_READY', teamNotes);
+        } else {
+          // For kitchen-only orders, proceed directly to final check
+          await handleSendToFinalCheck(selectedOrder.id, teamNotes);
+        }
       } else {
         await updateOrderStatus(selectedOrder.id, newStatus, teamNotes);
       }
@@ -450,12 +518,25 @@ export default function KitchenDisplay() {
           updateOrderStatus(order.id, 'KITCHEN_READY');
         }
       } else if (action === 'finalCheck') {
-        // Only send to final check if not already there
-        if (order.status !== 'FINAL_CHECK_QUEUE' && 
-            order.status !== 'FINAL_CHECK_PROCESSING') {
-          updateOrderStatus(order.id, 'FINAL_CHECK_QUEUE');
+        // Check if this is a parallel order that requires both kitchen and design
+        if (order.requiresKitchen && order.requiresDesign) {
+          // For parallel orders, update the kitchen status in the parallel processing object
+          // This will either wait for design or move to final check if design is already ready
+          if (order.status !== 'FINAL_CHECK_QUEUE' && 
+              order.status !== 'FINAL_CHECK_PROCESSING') {
+            // Use the new parallel processing function
+            updateParallelOrderStatus(order.id, 'KITCHEN_READY');
+          } else {
+            toast.success('Order is already in final check');
+          }
         } else {
-          toast.success('Order is already in final check');
+          // For kitchen-only orders, proceed directly to final check
+          if (order.status !== 'FINAL_CHECK_QUEUE' && 
+              order.status !== 'FINAL_CHECK_PROCESSING') {
+            updateOrderStatus(order.id, 'FINAL_CHECK_QUEUE');
+          } else {
+            toast.success('Order is already in final check');
+          }
         }
       } else if (action === 'design') {
         setShowNotesInput(true);
@@ -492,6 +573,17 @@ export default function KitchenDisplay() {
             {order.status === 'KITCHEN_QUEUE' ? 'New' : 
              order.status === 'KITCHEN_PROCESSING' ? 'Processing' : 
              'Ready'}
+          </span>
+        )}
+        
+        {/* Show waiting for design badge if kitchen is ready but order is still being processed */}
+        {order.requiresKitchen && order.requiresDesign && 
+         order.parallelProcessing?.kitchenStatus === 'KITCHEN_READY' && 
+         order.status !== 'FINAL_CHECK_QUEUE' && 
+         order.status !== 'FINAL_CHECK_PROCESSING' && (
+          <span className="px-3 py-1 text-xs font-medium rounded-full bg-purple-100 text-purple-800 flex items-center justify-center">
+            <Clock className="w-3 h-3 mr-1" />
+            Waiting for Design
           </span>
         )}
       </div>

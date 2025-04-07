@@ -803,7 +803,7 @@ export const apiMethods = {
       }
     },
 
-    updateOrderStatus: async (orderId: string, { status, notes, teamNotes, qualityControl, partialRefundAmount, returnToKitchenOrDesign }: { status: string, notes?: string, teamNotes?: string, qualityControl?: any, partialRefundAmount?: number, returnToKitchenOrDesign?: boolean }) => {
+    updateOrderStatus: async (orderId: string, { status, notes, teamNotes, qualityControl, partialRefundAmount, returnToKitchenOrDesign, parallelProcessing }: { status: string, notes?: string, teamNotes?: string, qualityControl?: any, partialRefundAmount?: number, returnToKitchenOrDesign?: boolean, parallelProcessing?: { designStatus?: string, kitchenStatus?: string } }) => {
       try {
         console.log('API call: updateOrderStatus', { orderId, status, notes, teamNotes, qualityControl, partialRefundAmount, returnToKitchenOrDesign });
         const response = await api.patch(`/api/pos/orders/${orderId}/status`, {
@@ -812,7 +812,8 @@ export const apiMethods = {
           teamNotes: teamNotes || '',
           qualityControl,
           partialRefundAmount,
-          returnToKitchenOrDesign
+          returnToKitchenOrDesign,
+          parallelProcessing
         });
         return response.data;
       } catch (error: any) {

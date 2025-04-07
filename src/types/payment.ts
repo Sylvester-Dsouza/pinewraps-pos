@@ -24,6 +24,14 @@ export interface Payment {
   cardPortion?: number;
   cardReference?: string;
   
+  // Enhanced split payment fields
+  splitMethod1?: POSPaymentMethod;
+  splitMethod2?: POSPaymentMethod;
+  splitAmount1?: number;
+  splitAmount2?: number;
+  splitReference1?: string | null;
+  splitReference2?: string | null;
+  
   // Partial payment specific fields
   isPartialPayment?: boolean;
   remainingAmount?: number;

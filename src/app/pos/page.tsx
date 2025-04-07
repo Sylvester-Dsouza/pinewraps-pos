@@ -33,6 +33,9 @@ export default function POSPage() {
   const searchParams = useSearchParams();
   const [, setIsFullscreen] = useState(false);
   const { isDrawerOpen, checkDrawerStatus, loading: drawerStatusLoading } = useDrawerStatus();
+  
+  // State for permission check
+  const [hasGeneralPOSAccess, setHasGeneralPOSAccess] = useState<boolean | null>(null);
 
   // State for UI
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -42,6 +45,24 @@ export default function POSPage() {
   const [isCheckoutModalOpen, setIsCheckoutModalOpen] = useState(false);
   const checkoutDetailsRef = useRef<any>(null);
   const [checkoutDetails, setCheckoutDetails] = useState<any>(null);
+
+  // Check if user has general POS access or is specialized staff
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const isKitchenStaff = localStorage.getItem('isKitchenStaff') === 'true';
+      const isDesignStaff = localStorage.getItem('isDesignStaff') === 'true';
+      const isFinalCheckStaff = localStorage.getItem('isFinalCheckStaff') === 'true';
+      const userRole = localStorage.getItem('userRole');
+      
+      // Admin and super admin have access to all screens
+      const hasAdminAccess = userRole === 'ADMIN' || userRole === 'SUPER_ADMIN';
+      
+      // If user is specialized staff and not admin, they don't have access to general POS
+      const isSpecializedStaff = isKitchenStaff || isDesignStaff || isFinalCheckStaff;
+      
+      setHasGeneralPOSAccess(hasAdminAccess || !isSpecializedStaff);
+    }
+  }, []);
 
   // Load cart items from localStorage on mount
   useEffect(() => {
@@ -502,10 +523,56 @@ export default function POSPage() {
   }, []);
 
   // If still loading or no user, show loading state
-  if (authLoading || !user) {
+  if (authLoading || !user || hasGeneralPOSAccess === null) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-white">
         <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-gray-900"></div>
+      </div>
+    );
+  }
+  
+  // Permission denied overlay for specialized staff
+  if (hasGeneralPOSAccess === false) {
+    return (
+      <div className="fixed inset-0 z-50 bg-black bg-opacity-80 flex items-center justify-center">
+        <div className="bg-white p-8 rounded-lg shadow-xl max-w-md w-full text-center">
+          <div className="flex items-center justify-center w-16 h-16 mx-auto mb-4 rounded-full bg-red-100">
+            <svg className="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+            </svg>
+          </div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-4">Access Denied</h2>
+          <p className="text-gray-600 mb-6">
+            You do not have permission to access the POS system. Please use your assigned screen based on your role.
+          </p>
+          <div className="flex flex-col space-y-3">
+            {/* Only show the button for the user's assigned role */}
+            {localStorage.getItem('isKitchenStaff') === 'true' && (
+              <button
+                onClick={() => router.push('/kitchen')}
+                className="w-full px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+              >
+                Go to Kitchen Display
+              </button>
+            )}
+            {localStorage.getItem('isDesignStaff') === 'true' && localStorage.getItem('isKitchenStaff') !== 'true' && (
+              <button
+                onClick={() => router.push('/design')}
+                className="w-full px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
+              >
+                Go to Design Display
+              </button>
+            )}
+            {localStorage.getItem('isFinalCheckStaff') === 'true' && localStorage.getItem('isKitchenStaff') !== 'true' && localStorage.getItem('isDesignStaff') !== 'true' && (
+              <button
+                onClick={() => router.push('/final-check')}
+                className="w-full px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 transition-colors"
+              >
+                Go to Final Check Display
+              </button>
+            )}
+          </div>
+        </div>
       </div>
     );
   }
@@ -521,9 +588,9 @@ export default function POSPage() {
         </div>
       )}
 
-      <div className="flex h-[calc(100vh-3.5rem)]">
+      <div className="flex flex-col md:flex-row h-[calc(100vh-3.5rem)] overflow-hidden">
         {/* Left side - Products */}
-        <div className="flex-1 flex flex-col">
+        <div className="flex-1 flex flex-col overflow-hidden min-w-0">
           {/* Search and Categories */}
           <div className="p-4 border-b border-gray-200">
             {/* Search */}
@@ -650,7 +717,8 @@ export default function POSPage() {
         </div>
 
         {/* Right side - Cart */}
-        <div className="w-96 flex flex-col border-l border-gray-200">
+        <div className="md:w-[350px] lg:w-[400px] xl:w-[450px] flex-shrink-0 flex-grow-0 flex flex-col border-l border-gray-200 overflow-hidden h-full">
+
           <div className="p-4 border-b border-gray-200">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-medium">Cart ({cart.length})</h2>

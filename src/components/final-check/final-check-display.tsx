@@ -330,14 +330,24 @@ export default function FinalCheckDisplay() {
       const response = await apiMethods.pos.getOrders();
       if (response.success) {
         // Filter for final check relevant orders only
-        const finalCheckOrders = response.data.filter((order: any) => 
-          order.status === 'FINAL_CHECK_QUEUE' || 
-          order.status === 'FINAL_CHECK_PROCESSING' || 
-          order.status === 'FINAL_CHECK_COMPLETE' ||
-          order.status === 'COMPLETED' ||
-          order.status === 'KITCHEN_QUEUE' ||
-          order.status === 'DESIGN_QUEUE'
-        );
+        const finalCheckOrders = response.data.filter((order: any) => {
+          // Include all orders with these statuses
+          const statusMatch = order.status === 'FINAL_CHECK_QUEUE' || 
+            order.status === 'FINAL_CHECK_PROCESSING' || 
+            order.status === 'FINAL_CHECK_COMPLETE' ||
+            order.status === 'COMPLETED' ||
+            order.status === 'KITCHEN_QUEUE' ||
+            order.status === 'DESIGN_QUEUE';
+          
+          // Also include orders that are in parallel processing and both teams are ready
+          const parallelReady = order.requiresKitchen && 
+            order.requiresDesign && 
+            order.parallelProcessing && 
+            order.parallelProcessing.kitchenStatus === 'KITCHEN_READY' && 
+            order.parallelProcessing.designStatus === 'DESIGN_READY';
+          
+          return statusMatch || parallelReady;
+        });
 
         // Map orders to include product images
         const ordersWithImages = finalCheckOrders.map((order: any) => ({
@@ -367,13 +377,33 @@ export default function FinalCheckDisplay() {
     try {
       console.log('Updating order status:', { orderId, newStatus, teamNotes });
       
+      // Find the order to get its current state
+      const currentOrder = orders.find(order => order.id === orderId);
+      if (!currentOrder) {
+        toast.error('Order not found');
+        return;
+      }
+      
       // Check if order is being sent back to Kitchen or Design
       const isReturnToKitchenOrDesign = newStatus === 'KITCHEN_QUEUE' || newStatus === 'DESIGN_QUEUE';
+      
+      // Check if this is a parallel processing order moving to final check
+      const isParallelToFinalCheck = 
+        currentOrder.requiresKitchen && 
+        currentOrder.requiresDesign && 
+        currentOrder.parallelProcessing && 
+        currentOrder.parallelProcessing.kitchenStatus === 'KITCHEN_READY' && 
+        currentOrder.parallelProcessing.designStatus === 'DESIGN_READY' && 
+        newStatus === 'FINAL_CHECK_QUEUE';
       
       const response = await apiMethods.pos.updateOrderStatus(orderId, {
         status: newStatus,
         teamNotes: teamNotes || '',
         returnToKitchenOrDesign: isReturnToKitchenOrDesign,
+        parallelProcessing: isParallelToFinalCheck ? {
+          kitchenStatus: 'KITCHEN_READY',
+          designStatus: 'DESIGN_READY'
+        } : undefined
       });
 
       if (response.success) {

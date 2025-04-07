@@ -94,11 +94,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             sameSite: 'strict'
           });
 
+          // Store user role information in localStorage for access across the app
+          localStorage.setItem('userRole', userRole);
+          localStorage.setItem('isKitchenStaff', data.data?.isKitchenStaff ? 'true' : 'false');
+          localStorage.setItem('isDesignStaff', data.data?.isDesignStaff ? 'true' : 'false');
+          localStorage.setItem('isFinalCheckStaff', data.data?.isFinalCheckStaff ? 'true' : 'false');
+
           setUser(user);
           
-          // If on login page, redirect to POS
+          // If on login page, redirect based on staff type
           if (window.location.pathname === '/login') {
-            router.push('/pos');
+            if (data.data?.isKitchenStaff) {
+              router.push('/kitchen');
+            } else if (data.data?.isDesignStaff) {
+              router.push('/design');
+            } else if (data.data?.isFinalCheckStaff) {
+              router.push('/final-check');
+            } else {
+              router.push('/pos');
+            }
           }
         } else {
           // Remove token from cookie

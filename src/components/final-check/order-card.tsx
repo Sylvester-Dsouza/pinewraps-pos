@@ -126,6 +126,16 @@ export default function OrderCard({ order, onUpdateStatus }: OrderCardProps) {
       setNextStatus(newStatus);
       setSendBackTarget(null);
       setIsDialogOpen(true);
+    } else if (newStatus === "FINAL_CHECK_QUEUE" && order.requiresKitchen && order.requiresDesign) {
+      // For parallel processing orders, check if both teams are ready
+      if (order.parallelProcessing?.kitchenStatus === 'KITCHEN_READY' && 
+          order.parallelProcessing?.designStatus === 'DESIGN_READY') {
+        // Both teams are ready, proceed to final check
+        onUpdateStatus?.(order.id, newStatus);
+      } else {
+        // Not all teams are ready yet
+        toast.error('Cannot proceed to final check until both kitchen and design teams are ready');
+      }
     } else {
       // For other statuses, update directly
       onUpdateStatus?.(order.id, newStatus);
@@ -291,15 +301,21 @@ export default function OrderCard({ order, onUpdateStatus }: OrderCardProps) {
                       ? "bg-green-100 text-green-800 border-green-300" 
                       : "bg-amber-100 text-amber-800 border-amber-300"
                   }`}>
-                    Kitchen: {order.parallelProcessing.kitchenStatus === 'KITCHEN_READY' ? 'Done' : 'In Progress'}
+                    Kitchen: {order.parallelProcessing.kitchenStatus === 'KITCHEN_READY' ? 'Ready' : 'In Progress'}
                   </span>
                   <span className={`text-xs font-medium px-2.5 py-1 rounded-full border ${
                     order.parallelProcessing.designStatus === 'DESIGN_READY' 
                       ? "bg-green-100 text-green-800 border-green-300" 
                       : "bg-purple-100 text-purple-800 border-purple-300"
                   }`}>
-                    Design: {order.parallelProcessing.designStatus === 'DESIGN_READY' ? 'Done' : 'In Progress'}
+                    Design: {order.parallelProcessing.designStatus === 'DESIGN_READY' ? 'Ready' : 'In Progress'}
                   </span>
+                  {order.parallelProcessing.kitchenStatus === 'KITCHEN_READY' && 
+                   order.parallelProcessing.designStatus === 'DESIGN_READY' && (
+                    <span className="text-xs font-medium px-2.5 py-1 rounded-full border bg-blue-100 text-blue-800 border-blue-300">
+                      Ready for Final Check
+                    </span>
+                  )}
                 </div>
               )}
               
