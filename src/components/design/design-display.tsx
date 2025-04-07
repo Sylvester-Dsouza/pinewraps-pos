@@ -336,24 +336,40 @@ export default function DesignDisplay() {
           }))
         }));
         
-        // Sort orders by pickup or delivery date (closest dates first)
+        // Sort orders by pickup or delivery date and time (closest dates and times first)
         const sortedOrders = [...ordersWithImages].sort((a, b) => {
-          // Determine the date to use for each order (pickup or delivery)
-          const getOrderDate = (order: any) => {
+          // Determine the date and time to use for each order (pickup or delivery)
+          const getOrderDateTime = (order: any) => {
+            let dateTimeStr = '';
+            
             if (order.deliveryMethod === 'PICKUP' && order.pickupDate) {
-              return new Date(order.pickupDate);
+              // Combine pickup date with time slot
+              dateTimeStr = order.pickupDate;
+              if (order.pickupTimeSlot) {
+                // Time slot is already in the format like "2:00 PM"
+                dateTimeStr = `${order.pickupDate} ${order.pickupTimeSlot}`;
+              }
             } else if (order.deliveryMethod === 'DELIVERY' && order.deliveryDate) {
-              return new Date(order.deliveryDate);
+              // Combine delivery date with time slot
+              dateTimeStr = order.deliveryDate;
+              if (order.deliveryTimeSlot) {
+                // Time slot is already in the format like "2:00 PM"
+                dateTimeStr = `${order.deliveryDate} ${order.deliveryTimeSlot}`;
+              }
+            } else {
+              // If no date is available, use a far future date to put it at the end
+              return new Date('2099-12-31');
             }
-            // If no date is available, use a far future date to put it at the end
-            return new Date('2099-12-31');
+            
+            // Parse the combined date and time string
+            return new Date(dateTimeStr);
           };
           
-          const dateA = getOrderDate(a);
-          const dateB = getOrderDate(b);
+          const dateTimeA = getOrderDateTime(a);
+          const dateTimeB = getOrderDateTime(b);
           
-          // Compare dates
-          return dateA.getTime() - dateB.getTime();
+          // Compare date and time
+          return dateTimeA.getTime() - dateTimeB.getTime();
         });
         
         // Debug log for sorted orders
