@@ -10,13 +10,14 @@ import { apiMethods } from '@/services/api';
 import { toast } from 'react-hot-toast';
 import { getAuth, onAuthStateChanged } from 'firebase/auth';
 import OrderReceipt from '@/components/receipt/OrderReceipt';
+import GiftReceipt from '@/components/receipt/GiftReceipt';
 import Cookies from 'js-cookie';
 import { nanoid } from 'nanoid';
 import { invoiceService } from '@/services/invoice.service';
 import { Order, OrderItem, OrderPayment, POSPaymentMethod, POSPaymentStatus } from '@/types/order';
 import { getPaymentMethodDisplay, getPaymentMethodString } from '@/utils/payment-utils';
 import RemainingPaymentModal from '@/components/pos/RemainingPaymentModal';
-import UpdatePickupDetailsModal from '@/components/pos/UpdatePickupDetailsModal';
+import UpdateOrderDetailsModal from '@/components/pos/UpdateOrderDetailsModal';
 import { useUserRole } from '@/hooks/use-user-role';
 
 const statusColors = {
@@ -70,7 +71,9 @@ const OrdersPage = () => {
   const [selectedDateRange, setSelectedDateRange] = useState('all');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [selectedOrderForGiftReceipt, setSelectedOrderForGiftReceipt] = useState<Order | null>(null);
   const [downloadingInvoices, setDownloadingInvoices] = useState<Record<string, boolean>>({});
+  const [downloadingGiftInvoices, setDownloadingGiftInvoices] = useState<Record<string, boolean>>({});
   const [showCancelConfirm, setShowCancelConfirm] = useState<string | null>(null);
   const [selectedOrderForPayment, setSelectedOrderForPayment] = useState<Order | null>(null);
   const [selectedOrderForPickupUpdate, setSelectedOrderForPickupUpdate] = useState<Order | null>(null);
@@ -417,6 +420,10 @@ const OrdersPage = () => {
     }
   };
 
+  const handleViewGiftReceipt = (order: Order) => {
+    setSelectedOrderForGiftReceipt(order);
+  };
+
   const calculateRemainingAmount = (order: Order) => {
     const totalPaid = order.payments?.reduce((sum, payment) => sum + payment.amount, 0) || 0;
     return Math.max(0, order.totalAmount - totalPaid);
@@ -585,23 +592,42 @@ const OrdersPage = () => {
                               {order.deliveryInstructions && (
                                 <p>Instructions: {order.deliveryInstructions}</p>
                               )}
+                              {/* Add button to update order details */}
+                              {!['COMPLETED', 'CANCELLED'].includes(order.status) && (
+                                <button
+                                  onClick={() => setSelectedOrderForPickupUpdate(order)}
+                                  className="mt-2 px-3 py-1 text-xs font-medium text-indigo-600 bg-indigo-100 rounded-md hover:bg-indigo-200 inline-flex items-center"
+                                >
+                                  <Truck className="h-3 w-3 mr-1" />
+                                  Change Delivery/Pickup
+                                </button>
+                              )}
                             </div>
                           </>
                         ) : order.deliveryMethod === 'PICKUP' && (
                           <>
                             <div className="mt-2 pt-2 border-t border-gray-200">
                               <h4 className="font-semibold text-gray-700">Pickup Details:</h4>
-                              {order.pickupDate && order.pickupTimeSlot && (
-                                <p>Date & Time: {format(new Date(order.pickupDate), 'PP')} - {order.pickupTimeSlot}</p>
+                              {order.deliveryMethod === 'PICKUP' && order.pickupDate && order.pickupTimeSlot && (
+                                <p>Pickup Date & Time: {format(new Date(order.pickupDate), 'PP')} - {order.pickupTimeSlot}</p>
                               )}
-                              {/* Add button to update pickup details */}
+                              {/* Add button to update order details */}
                               {!['COMPLETED', 'CANCELLED'].includes(order.status) && (
                                 <button
                                   onClick={() => setSelectedOrderForPickupUpdate(order)}
                                   className="mt-2 px-3 py-1 text-xs font-medium text-indigo-600 bg-indigo-100 rounded-md hover:bg-indigo-200 inline-flex items-center"
                                 >
-                                  <Clock className="h-3 w-3 mr-1" />
-                                  Change Pickup Time
+                                  {order.deliveryMethod === 'PICKUP' ? (
+                                    <>
+                                      <Clock className="h-3 w-3 mr-1" />
+                                      Change Pickup/Delivery
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Truck className="h-3 w-3 mr-1" />
+                                      Change Delivery Method
+                                    </>
+                                  )}
                                 </button>
                               )}
                             </div>
@@ -786,6 +812,15 @@ const OrdersPage = () => {
                         )}
                         {downloadingInvoices[order.id] ? 'Downloading...' : 'Download Invoice'}
                       </button>
+                      {order.isGift && (
+                        <button
+                          onClick={() => handleViewGiftReceipt(order)}
+                          className="px-3 py-2 text-sm font-medium text-pink-700 bg-pink-100 rounded-md hover:bg-pink-200 flex items-center gap-2"
+                        >
+                          <Download className="h-4 w-4" />
+                          Gift Receipt
+                        </button>
+                      )}
                     {hasPartialPayment(order) && !isFullyPaid(order) && (
                       <button
                         onClick={() => setSelectedOrderForPayment(order)}
@@ -856,6 +891,14 @@ const OrdersPage = () => {
         />
       )}
 
+      {/* Gift Receipt Modal */}
+      {selectedOrderForGiftReceipt && (
+        <GiftReceipt
+          order={selectedOrderForGiftReceipt}
+          onClose={() => setSelectedOrderForGiftReceipt(null)}
+        />
+      )}
+
       {/* Payment Modal */}
       {selectedOrderForPayment && (
         <RemainingPaymentModal
@@ -867,9 +910,9 @@ const OrdersPage = () => {
         />
       )}
 
-      {/* Update Pickup Details Modal */}
+      {/* Update Order Details Modal */}
       {selectedOrderForPickupUpdate && (
-        <UpdatePickupDetailsModal
+        <UpdateOrderDetailsModal
           isOpen={!!selectedOrderForPickupUpdate}
           onClose={() => setSelectedOrderForPickupUpdate(null)}
           order={selectedOrderForPickupUpdate}

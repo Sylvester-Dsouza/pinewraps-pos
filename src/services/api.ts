@@ -352,7 +352,12 @@ export const apiMethods = {
       api.get<APIResponse<Product[]>>('/api/products/public'),
     getCategories: async () => {
       try {
-        const response = await api.get<APIResponse<Category[]>>('/api/categories/public');
+        // Specify POS platform to get appropriate categories based on visibility
+        const response = await api.get<APIResponse<Category[]>>('/api/categories/public', {
+          params: { platform: 'POS' },
+          headers: { 'X-Platform': 'POS' }
+        });
+        
         if (!response.data?.success) {
           throw new Error(response.data?.message || 'Failed to fetch categories');
         }
@@ -1024,6 +1029,17 @@ export const apiMethods = {
       try {
         console.log('API call: updatePickupDetails', { orderId, ...pickupDetails });
         const response = await api.patch<APIResponse<Order>>(`/api/pos/orders/${orderId}/pickup-details`, pickupDetails);
+        return response.data;
+      } catch (error) {
+        handleApiError(error);
+        throw error;
+      }
+    },
+    
+    updateOrderDetails: async (orderId: string, orderDetails: { deliveryMethod: 'PICKUP' | 'DELIVERY', pickupDate?: string, pickupTimeSlot?: string, deliveryDate?: string, deliveryTimeSlot?: string }): Promise<APIResponse<Order>> => {
+      try {
+        console.log('API call: updateOrderDetails', { orderId, ...orderDetails });
+        const response = await api.patch<APIResponse<Order>>(`/api/pos/orders/${orderId}/order-details`, orderDetails);
         return response.data;
       } catch (error) {
         handleApiError(error);
