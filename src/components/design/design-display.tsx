@@ -336,39 +336,55 @@ export default function DesignDisplay() {
           }))
         }));
         
-        // Sort orders by pickup or delivery date and time (closest dates and times first)
+        // Sort orders by pickup or delivery date AND time (closest dates and earlier times first)
         const sortedOrders = [...ordersWithImages].sort((a, b) => {
           // Determine the date and time to use for each order (pickup or delivery)
           const getOrderDateTime = (order: any) => {
-            let dateTimeStr = '';
+            let dateStr = '';
+            let timeSlot = '';
             
             if (order.deliveryMethod === 'PICKUP' && order.pickupDate) {
-              // Combine pickup date with time slot
-              dateTimeStr = order.pickupDate;
-              if (order.pickupTimeSlot) {
-                // Time slot is already in the format like "2:00 PM"
-                dateTimeStr = `${order.pickupDate} ${order.pickupTimeSlot}`;
-              }
+              dateStr = order.pickupDate;
+              timeSlot = order.pickupTimeSlot || '';
             } else if (order.deliveryMethod === 'DELIVERY' && order.deliveryDate) {
-              // Combine delivery date with time slot
-              dateTimeStr = order.deliveryDate;
-              if (order.deliveryTimeSlot) {
-                // Time slot is already in the format like "2:00 PM"
-                dateTimeStr = `${order.deliveryDate} ${order.deliveryTimeSlot}`;
-              }
+              dateStr = order.deliveryDate;
+              timeSlot = order.deliveryTimeSlot || '';
             } else {
               // If no date is available, use a far future date to put it at the end
               return new Date('2099-12-31');
             }
             
-            // Parse the combined date and time string
-            return new Date(dateTimeStr);
+            // Extract the time from the time slot (e.g., "10:00 AM - 11:00 AM" -> "10:00 AM")
+            const startTime = timeSlot.split(' - ')[0] || '';
+            
+            // Create a date object with both date and time
+            if (startTime) {
+              // Combine date and time for accurate sorting
+              const matches = startTime.match(/\d+/g) || ['0', '0'];
+              const hours = matches[0] || '0';
+              const minutes = matches[1] || '0';
+              const isPM = startTime.toLowerCase().includes('pm');
+              
+              // Create a new date object
+              const dateTime = new Date(dateStr);
+              
+              // Set hours (convert to 24-hour format if PM)
+              let hoursNum = parseInt(hours, 10);
+              if (isPM && hoursNum < 12) hoursNum += 12;
+              if (!isPM && hoursNum === 12) hoursNum = 0;
+              
+              dateTime.setHours(hoursNum, parseInt(minutes, 10), 0, 0);
+              return dateTime;
+            }
+            
+            // If no time slot, just use the date
+            return new Date(dateStr);
           };
           
           const dateTimeA = getOrderDateTime(a);
           const dateTimeB = getOrderDateTime(b);
           
-          // Compare date and time
+          // Compare date and time together
           return dateTimeA.getTime() - dateTimeB.getTime();
         });
         

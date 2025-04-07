@@ -276,19 +276,39 @@ export default function FinalCheckDisplay() {
           
           // Extract hour from time slot if available
           if (timeStr) {
-            const match = timeStr.match(/(\d+):(\d+)\s*(AM|PM)/i);
-            if (match) {
-              let hour = parseInt(match[1]);
-              const minute = parseInt(match[2]);
+            // Try first to match time format like "10:00 AM - 11:00 AM"
+            const timeSlotParts = timeStr.split(' - ');
+            const startTime = timeSlotParts[0] || '';
+            
+            if (startTime) {
+              // Try to match standard time format (e.g., "10:00 AM")
+              const match = startTime.match(/(\d+):(\d+)\s*(AM|PM)/i);
               
-              // Convert to 24-hour format
-              if (match[3].toUpperCase() === 'PM' && hour < 12) {
-                hour += 12;
-              } else if (match[3].toUpperCase() === 'AM' && hour === 12) {
-                hour = 0;
+              if (match) {
+                let hour = parseInt(match[1], 10);
+                const minute = parseInt(match[2], 10);
+                
+                // Convert to 24-hour format
+                if (match[3].toUpperCase() === 'PM' && hour < 12) {
+                  hour += 12;
+                } else if (match[3].toUpperCase() === 'AM' && hour === 12) {
+                  hour = 0;
+                }
+                
+                date.setHours(hour, minute, 0, 0);
+              } else {
+                // Alternative approach for other time formats
+                const matches = startTime.match(/\d+/g) || ['0', '0'];
+                const hours = matches[0] || '0';
+                const minutes = matches[1] || '0';
+                const isPM = startTime.toLowerCase().includes('pm');
+                
+                let hoursNum = parseInt(hours, 10);
+                if (isPM && hoursNum < 12) hoursNum += 12;
+                if (!isPM && hoursNum === 12) hoursNum = 0;
+                
+                date.setHours(hoursNum, parseInt(minutes, 10), 0, 0);
               }
-              
-              date.setHours(hour, minute, 0, 0);
             }
           }
           
