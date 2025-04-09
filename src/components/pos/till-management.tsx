@@ -214,8 +214,12 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
       
       // Send the open-drawer command to the proxy
       try {
+        // The printer proxy expects either 'ip' and 'port' or 'printerIp' and 'printerPort'
+        // We need to map our config properties correctly
         const response = await axios.post(`${PRINTER_PROXY_URL}/open-drawer`, {
-          ...proxyConfig
+          ip: proxyConfig.ip,
+          port: proxyConfig.port,
+          skipConnectivityCheck: proxyConfig.skipConnectivityCheck
         });
 
         if (response.status === 200) {
@@ -296,8 +300,11 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
 
       // Open the drawer only, no receipt printing
       try {
+        // Map the config properties correctly for the printer proxy
         await axios.post(`${PRINTER_PROXY_URL}/open-drawer`, {
-          ...proxyConfig
+          ip: proxyConfig.ip,
+          port: proxyConfig.port,
+          skipConnectivityCheck: proxyConfig.skipConnectivityCheck
         });
       } catch (drawerError) {
         console.error('Error opening cash drawer:', drawerError);
@@ -347,7 +354,9 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
           await axios.post(`${PRINTER_PROXY_URL}/print-only`, {
             type: 'till_close_final',
             data: closingData,
-            ...proxyConfig
+            ip: proxyConfig.ip,
+            port: proxyConfig.port,
+            skipConnectivityCheck: proxyConfig.skipConnectivityCheck
           });
         } catch (printError) {
           console.error('Error printing closing receipt:', printError);
@@ -389,8 +398,11 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
 
       // First send open drawer command
       try {
+        // Map the config properties correctly for the printer proxy
         const response = await axios.post(`${PRINTER_PROXY_URL}/open-drawer`, {
-          ...proxyConfig
+          ip: proxyConfig.ip,
+          port: proxyConfig.port,
+          skipConnectivityCheck: proxyConfig.skipConnectivityCheck
         });
 
         if (response.status !== 200) {
@@ -439,8 +451,11 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
 
       // First send open drawer command
       try {
+        // Map the config properties correctly for the printer proxy
         const response = await axios.post(`${PRINTER_PROXY_URL}/open-drawer`, {
-          ...proxyConfig
+          ip: proxyConfig.ip,
+          port: proxyConfig.port,
+          skipConnectivityCheck: proxyConfig.skipConnectivityCheck
         });
 
         if (response.status !== 200) {
