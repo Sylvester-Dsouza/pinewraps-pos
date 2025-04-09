@@ -9,6 +9,38 @@ import { Customer, CustomerAddress, CustomerDetails, DeliveryDetails, PickupDeta
 import { Payment } from "@/types/payment";
 import { nanoid } from 'nanoid';
 import { orderDrawerService } from '@/services/order-drawer.service';
+
+// Function to get printer configuration
+async function getPrinterConfig() {
+  const proxyUrl = process.env.NEXT_PUBLIC_PRINTER_PROXY_URL || 'http://localhost:3005';
+  try {
+    // Try to get printer config from the printer proxy
+    console.log('Fetching printer config from printer proxy');
+    const response = await fetch(`${proxyUrl}/api/printer/config`);
+    const data = await response.json();
+    
+    if (data && data.success && data.printer) {
+      console.log('Using printer config from proxy:', data.printer);
+      return { 
+        ip: data.printer.ipAddress,
+        port: data.printer.port,
+        skipConnectivityCheck: true
+      };
+    }
+    
+    // Fallback to default values
+    return { 
+      skipConnectivityCheck: true
+    };
+  } catch (error) {
+    console.error('Error fetching printer config:', error);
+    // Return default values if there's an error
+    return { 
+      skipConnectivityCheck: true
+    };
+  }
+}
+
 import Image from "next/image";
 import ImageUpload from "./custom-images/image-upload";
 import { useAuth } from "@/providers/auth-provider";
@@ -950,15 +982,27 @@ export default function CheckoutModal({
             while (retryCount <= maxRetries) {
               try {
                 console.log(`Attempt ${retryCount + 1} to call cash-order endpoint`);
-                cashOrderResponse = await axios.post(`${proxyUrl}/cash-order`, {
+                // Get printer configuration from the environment or use default
+                const printerConfig = await getPrinterConfig();
+                
+                // Prepare the request data
+                const requestData = {
+                  // Include printer configuration
+                  ip: printerConfig.ip,
+                  port: printerConfig.port,
+                  // Include order data
                   orderData: {
                     orderNumber: response.data?.orderNumber,
                     payments: paymentData,
                     orderId: response.data?.id
                   },
                   skipConnectivityCheck: true
-                }, {
-                  timeout: 5000 // 5 second timeout
+                };
+                
+                console.log('Sending cash-order request with data:', JSON.stringify(requestData, null, 2));
+                
+                cashOrderResponse = await axios.post(`${proxyUrl}/cash-order`, requestData, {
+                  timeout: 10000 // 10 second timeout
                 });
                 
                 console.log('Cash order response received:', cashOrderResponse.data);

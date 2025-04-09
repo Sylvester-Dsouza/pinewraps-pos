@@ -212,12 +212,26 @@ export class OrderDrawerService {
           
           // Use direct axios calls to printer proxy with the cash-order endpoint
           // This endpoint should both open the drawer and print the receipt
-          const response = await axios.post(`${PRINTER_PROXY_URL}/cash-order`, {
+          console.log('Sending request to cash-order endpoint with data:', {
             ...printerConfig,
             orderData: {
               orderNumber: orderNumber || 'ORDER-DRAWER',
               payments
             }
+          });
+          
+          const response = await axios.post(`${PRINTER_PROXY_URL}/cash-order`, {
+            // Include printer configuration
+            ip: printerConfig.ip,
+            port: printerConfig.port,
+            skipConnectivityCheck: true,
+            // Include order data in the expected format
+            orderData: {
+              orderNumber: orderNumber || 'ORDER-DRAWER',
+              payments: payments
+            }
+          }, {
+            timeout: 10000 // 10 second timeout
           });
           
           console.log('Cash order response:', response.data);
