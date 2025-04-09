@@ -985,7 +985,7 @@ export default function CheckoutModal({
                 // Get printer configuration from the environment or use default
                 const printerConfig = await getPrinterConfig();
                 
-                // Prepare the request data
+                // Prepare the request data - use the same format as till-management.tsx
                 const requestData = {
                   // Include printer configuration
                   ip: printerConfig.ip,
@@ -1001,9 +1001,23 @@ export default function CheckoutModal({
                 
                 console.log('Sending cash-order request with data:', JSON.stringify(requestData, null, 2));
                 
-                cashOrderResponse = await axios.post(`${proxyUrl}/cash-order`, requestData, {
-                  timeout: 10000 // 10 second timeout
+                // Use fetch instead of axios to match the till-management implementation
+                const fetchResponse = await fetch(`${proxyUrl}/cash-order`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json'
+                  },
+                  body: JSON.stringify(requestData)
                 });
+                
+                console.log(`Cash order response status:`, fetchResponse.status);
+                const responseData = await fetchResponse.json();
+                
+                // Create a response object that matches the axios format for compatibility
+                cashOrderResponse = {
+                  status: fetchResponse.status,
+                  data: responseData
+                };
                 
                 console.log('Cash order response received:', cashOrderResponse.data);
                 

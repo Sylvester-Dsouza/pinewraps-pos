@@ -210,17 +210,9 @@ export class OrderDrawerService {
           // Get printer configuration
           const printerConfig = await getPrinterConfig();
           
-          // Use direct axios calls to printer proxy with the cash-order endpoint
+          // Use fetch instead of axios to match the till-management implementation
           // This endpoint should both open the drawer and print the receipt
-          console.log('Sending request to cash-order endpoint with data:', {
-            ...printerConfig,
-            orderData: {
-              orderNumber: orderNumber || 'ORDER-DRAWER',
-              payments
-            }
-          });
-          
-          const response = await axios.post(`${PRINTER_PROXY_URL}/cash-order`, {
+          const requestData = {
             // Include printer configuration
             ip: printerConfig.ip,
             port: printerConfig.port,
@@ -230,9 +222,26 @@ export class OrderDrawerService {
               orderNumber: orderNumber || 'ORDER-DRAWER',
               payments: payments
             }
-          }, {
-            timeout: 10000 // 10 second timeout
+          };
+          
+          console.log('Sending request to cash-order endpoint with data:', JSON.stringify(requestData, null, 2));
+          
+          const fetchResponse = await fetch(`${PRINTER_PROXY_URL}/cash-order`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(requestData)
           });
+          
+          console.log(`Cash order response status:`, fetchResponse.status);
+          const responseData = await fetchResponse.json();
+          
+          // Create a response object that matches the axios format for compatibility
+          const response = {
+            status: fetchResponse.status,
+            data: responseData
+          };
           
           console.log('Cash order response:', response.data);
           
