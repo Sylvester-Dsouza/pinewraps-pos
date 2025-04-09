@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Timer, CheckCircle2, Clock, ChefHat, Bell, RotateCw, Maximize2, Minimize2, AlertCircle } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
+import { Timer, CheckCircle2, Clock, ChefHat, Bell, RotateCw, Maximize2, Minimize2, AlertCircle, AlertTriangle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { apiMethods } from "@/services/api";
 import { wsService } from "@/services/websocket";
@@ -69,6 +70,7 @@ interface DesignOrder {
   customerName: string;
   kitchenNotes?: string;
   designNotes?: string;
+  finalCheckNotes?: string;
   expectedReadyTime?: string;
   kitchenStartTime?: string;
   kitchenEndTime?: string;
@@ -85,6 +87,7 @@ interface DesignOrder {
     designStatus: DesignOrderStatus;
   };
   isSentBack?: boolean;
+  designById?: string;
 }
 
 interface CustomSlide {
@@ -266,17 +269,30 @@ const OrderTimer2 = ({ createdAt }: { createdAt: Date }) => {
 };
 
 export default function DesignDisplay() {
+  const { user, loading: userLoading } = useAuth();
   const [orders, setOrders] = useState<DesignOrder[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [currentImages, setCurrentImages] = useState<CustomSlide[]>([]);
+  const [selectedOrder, setSelectedOrder] = useState<DesignOrder | null>(null);
+  const [showNotesInput, setShowNotesInput] = useState(false);
+  const [teamNotes, setTeamNotes] = useState('');
   const [activeTab, setActiveTab] = useState('queue');
 
+  // Re-fetch orders when user info is loaded
   useEffect(() => {
-    // Initial fetch
-    fetchOrders();
+    if (!userLoading) {
+      fetchOrders();
+    }
+  }, [userLoading, user]);
+
+  useEffect(() => {
+    // Initial fetch only if user is already loaded
+    if (!userLoading) {
+      fetchOrders();
+    }
 
     // Set up WebSocket subscription
     const unsubscribe = wsService.subscribe('ORDER_STATUS_UPDATE', async (data: any) => {
@@ -309,10 +325,38 @@ export default function DesignDisplay() {
       if (response.success) {
         // Filter for design-relevant orders only
         const designOrders = response.data.filter((order: any) => {
-          // Include orders in design queue/processing/ready
-          if (order.status === 'DESIGN_QUEUE' || 
-              order.status === 'DESIGN_PROCESSING' || 
-              order.status === 'DESIGN_READY') {
+          // For DESIGN_PROCESSING and DESIGN_READY orders, only show if assigned to current user
+          if (order.status === 'DESIGN_PROCESSING' || order.status === 'DESIGN_READY') {
+            // If user is not loaded yet, show all processing/ready orders
+            if (userLoading || !user) {
+              return true;
+            }
+            
+            // If designById is null or undefined, show the order (might be legacy data)
+            if (!order.designById) {
+              return true;
+            }
+            // Otherwise, check if the current user is assigned to this order
+            return order.designById === user.id;
+          }
+          
+          // For orders sent back from final check to DESIGN_QUEUE, only show to the original staff member
+          if (order.status === 'DESIGN_QUEUE' && order.isSentBack) {
+            // If user is not loaded yet, show all sent back orders
+            if (userLoading || !user) {
+              return true;
+            }
+            
+            // If designById is null or undefined, show the order (might be legacy data)
+            if (!order.designById) {
+              return true;
+            }
+            // Otherwise, check if the current user is assigned to this order
+            return order.designById === user.id;
+          }
+          
+          // Include orders in design queue
+          if (order.status === 'DESIGN_QUEUE') {
             return true;
           }
           // Include parallel processing orders
@@ -424,7 +468,10 @@ export default function DesignDisplay() {
               ? { 
                   ...order, 
                   status: newStatus,
-                  designNotes: teamNotes || order.designNotes 
+                  designNotes: teamNotes || order.designNotes,
+                  // When moving to processing, assign the current user
+                  // When moving to ready, maintain the same assignment
+                  designById: newStatus === 'DESIGN_PROCESSING' ? user?.id : order.designById
                 }
               : order
           )
@@ -631,16 +678,48 @@ export default function DesignDisplay() {
     };
 
     const handleReadyClick = () => {
-      // For parallel orders, we should only set the design status to DESIGN_READY
-      // The backend will handle moving it to FINAL_CHECK_QUEUE when both kitchen and design are ready
-      const isParallelOrder = order.requiresKitchen && order.requiresDesign;
-      
-      if (isParallelOrder) {
-        // For parallel orders, use the parallel processing function
-        updateParallelOrderStatus(order.id, 'DESIGN_READY');
-      } else {
-        // For design-only orders, we can directly send to final check
-        handleStatusUpdate('FINAL_CHECK_QUEUE');
+      // Always show notes input first when sending to final check
+      setShowNotesInput(true);
+    };
+
+    const handleSubmitNotes = async () => {
+      try {
+        // For parallel orders, we should only set the design status to DESIGN_READY
+        // The backend will handle moving it to FINAL_CHECK_QUEUE when both kitchen and design are ready
+        const isParallelOrder = order.requiresKitchen && order.requiresDesign;
+        
+        if (isParallelOrder) {
+          // For parallel orders, use the parallel processing function
+          await updateParallelOrderStatus(order.id, 'DESIGN_READY', teamNotes);
+        } else {
+          // For design-only orders, we can directly send to final check
+          const payload: UpdateOrderStatusPayload = {
+            status: 'FINAL_CHECK_QUEUE',
+            teamNotes: teamNotes,
+            notes: teamNotes
+          };
+          
+          const response = await apiMethods.pos.updateOrderStatus(order.id, payload);
+
+          if (response.success) {
+            // Update local state
+            setOrders(prevOrders =>
+              prevOrders.map(o =>
+                o.id === order.id
+                  ? { ...o, status: 'FINAL_CHECK_QUEUE' }
+                  : o
+              )
+            );
+            toast.success('Order sent to final check');
+          }
+        }
+        
+        // Reset the notes and hide the input
+        setTeamNotes('');
+        setShowNotesInput(false);
+      } catch (error) {
+        console.error('Error sending order to final check:', error);
+        toast.error('Failed to send order to final check');
       }
     };
 
@@ -752,6 +831,21 @@ export default function DesignDisplay() {
 
           {/* Order Notes Section */}
           <div className="space-y-3">
+            {/* Show Final Check Notes if the order was sent back */}
+            {order.isSentBack && order.finalCheckNotes && (
+              <div className="p-3 bg-red-50 rounded-lg border border-red-100">
+                <div className="flex items-start">
+                  <div className="p-1 bg-red-100 rounded mr-2">
+                    <AlertTriangle className="w-4 h-4 text-red-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-red-800">Final Check Notes:</p>
+                    <p className="text-sm text-red-700">{order.finalCheckNotes}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+            
             {/* Kitchen notes with improved styling */}
             {order.kitchenNotes && (
               <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
@@ -973,18 +1067,19 @@ export default function DesignDisplay() {
               />
               <div className="mt-2 flex justify-end space-x-2">
                 <button
-                  onClick={() => setShowNotesInput(false)}
+                  onClick={() => {
+                    setShowNotesInput(false);
+                    setTeamNotes('');
+                  }}
                   className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
                 >
                   Cancel
                 </button>
                 <button
-                  onClick={() => {
-                    handleStatusUpdate('KITCHEN_QUEUE');
-                  }}
+                  onClick={handleSubmitNotes}
                   className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                 >
-                  Send to Kitchen
+                  Submit Notes
                 </button>
               </div>
             </div>
@@ -1130,6 +1225,9 @@ export default function DesignDisplay() {
                 <div className="w-3 h-3 rounded-full bg-purple-500 mr-2" />
                 Processing
               </h2>
+              <div className="text-xs text-gray-500 mb-2 italic">
+                Only orders you have accepted will appear here
+              </div>
               <div className="space-y-4 max-h-[calc(100vh-180px)] overflow-y-auto">
                 <AnimatePresence>
                   {getOrdersByStatus("DESIGN_PROCESSING").map(order => (
@@ -1179,6 +1277,9 @@ export default function DesignDisplay() {
                   <div className="w-3 h-3 rounded-full bg-purple-500 mr-2" />
                   Processing
                 </h2>
+                <div className="text-xs text-gray-500 mb-2 italic">
+                  Only orders you have accepted will appear here
+                </div>
                 <div className="space-y-4 max-h-[calc(100vh-180px)] overflow-y-auto">
                   <AnimatePresence>
                     {getOrdersByStatus("DESIGN_PROCESSING").map(order => (

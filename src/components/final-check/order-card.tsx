@@ -503,7 +503,7 @@ export default function OrderCard({ order, onUpdateStatus }: OrderCardProps) {
                     {item.kitchenNotes && (
                       <div className="mt-2 ml-8 p-2 bg-blue-50 rounded border border-blue-100">
                         <p className="text-sm text-blue-700">
-                          <span className="font-medium">Notes:</span> {item.kitchenNotes}
+                          <span className="font-medium">Kitchen Notes:</span> {item.kitchenNotes}
                         </p>
                       </div>
                     )}

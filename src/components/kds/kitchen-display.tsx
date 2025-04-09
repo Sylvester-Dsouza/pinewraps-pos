@@ -1,7 +1,19 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { CheckCircle2, Clock, ChefHat, Bell, RotateCw, Maximize2, Minimize2, AlertCircle } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
+import { 
+  CheckCircle2, 
+  Clock, 
+  ChefHat, 
+  Bell, 
+  RotateCw, 
+  Maximize2, 
+  Minimize2, 
+  AlertCircle, 
+  AlertTriangle,
+  Edit3
+} from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { apiMethods } from "@/services/api";
 import { wsService } from "@/services/websocket";
@@ -57,6 +69,7 @@ interface KitchenOrder {
   customerName: string;
   kitchenNotes?: string;
   designNotes?: string;
+  finalCheckNotes?: string;
   expectedReadyTime?: string;
   kitchenStartTime?: string;
   kitchenEndTime?: string;
@@ -75,6 +88,7 @@ interface KitchenOrder {
     kitchenStatus?: KitchenOrderStatus;
   };
   isSentBack?: boolean;
+  kitchenById?: string;
 }
 
 interface UpdateOrderStatusPayload {
@@ -102,6 +116,7 @@ interface CustomSlide {
 }
 
 export default function KitchenDisplay() {
+  const { user, loading: userLoading } = useAuth();
   const [orders, setOrders] = useState<KitchenOrder[]>([]);
   const [onlineOrders, setOnlineOrders] = useState<KitchenOrder[]>([]);
   const [loading, setLoading] = useState(true);
@@ -113,11 +128,23 @@ export default function KitchenDisplay() {
   const [showNotesInput, setShowNotesInput] = useState(false);
   const [teamNotes, setTeamNotes] = useState('');
   const [activeTab, setActiveTab] = useState('queue');
+  const [actionType, setActionType] = useState<'SEND_TO_DESIGN' | 'SEND_TO_FINAL_CHECK' | 'UPDATE_STATUS' | ''>('');
 
   // Fetch initial orders
+  // Re-fetch orders when user info is loaded
   useEffect(() => {
-    fetchOrders();
-    // Set up auto-refresh every 5 minutes
+    if (!userLoading) {
+      fetchOrders();
+    }
+  }, [userLoading, user]);
+
+  useEffect(() => {
+    // Initial fetch only if user is already loaded
+    if (!userLoading) {
+      fetchOrders();
+    }
+
+    // Set up WebSocket subscription-refresh every 5 minutes
     const refreshInterval = setInterval(() => {
       fetchOrders();
     }, 5 * 60 * 1000);
@@ -140,6 +167,29 @@ export default function KitchenDisplay() {
       // Subscribe to 'new_order' event from backend
       const unsubscribeNew = wsService.subscribe('new_order', (data) => {
         console.log('Received new order:', data);
+        
+        // Only add the order if it's in KITCHEN_QUEUE or if it's in KITCHEN_PROCESSING/KITCHEN_READY and assigned to this user
+        if (data.status === 'KITCHEN_PROCESSING' || data.status === 'KITCHEN_READY') {
+          // If user is not loaded yet, show all processing/ready orders
+          if (!userLoading && user) {
+            // If kitchenById is set and doesn't match current user, skip this order
+            if (data.kitchenById && data.kitchenById !== user.id) {
+              return; // Skip this order if it's being processed by another user
+            }
+          }
+        }
+        
+        // For orders sent back from final check to KITCHEN_QUEUE, only show to the original staff member
+        if (data.status === 'KITCHEN_QUEUE' && data.isSentBack) {
+          // If user is not loaded yet, show all sent back orders
+          if (!userLoading && user) {
+            // If kitchenById is set and doesn't match current user, skip this order
+            if (data.kitchenById && data.kitchenById !== user.id) {
+              return; // Skip this order if it's assigned to another user
+            }
+          }
+        }
+        
         setOrders(prev => {
           // Check if order already exists
           if (prev.some(order => order.id === data.id)) {
@@ -159,8 +209,31 @@ export default function KitchenDisplay() {
       });
 
       const unsubscribeUpdate = wsService.subscribe('ORDER_STATUS_UPDATE', async (data) => {
-        // When we receive an update, refetch the orders to get the latest data
-        fetchOrders();
+        // Instead of refetching all orders, update the specific order in state
+        if (data && data.id) {
+          setOrders(prevOrders => {
+            // Check if the order exists in our current state
+            const orderIndex = prevOrders.findIndex(order => order.id === data.id);
+            
+            if (orderIndex === -1) {
+              // If the order doesn't exist in our state but should be visible to this user, add it
+              if (shouldShowOrder(data)) {
+                return [...prevOrders, data];
+              }
+              return prevOrders;
+            }
+            
+            // If the order exists but should no longer be visible, remove it
+            if (!shouldShowOrder(data)) {
+              return prevOrders.filter(order => order.id !== data.id);
+            }
+            
+            // Otherwise, update the order
+            const updatedOrders = [...prevOrders];
+            updatedOrders[orderIndex] = data;
+            return updatedOrders;
+          });
+        }
       });
 
       return () => {
@@ -170,21 +243,55 @@ export default function KitchenDisplay() {
     }
   }, []);
 
+  // Helper function to determine if an order should be shown to the current user
+  const shouldShowOrder = (order: KitchenOrder) => {
+    // Always show orders in KITCHEN_QUEUE unless they're sent back and assigned to someone else
+    if (order.status === 'KITCHEN_QUEUE') {
+      // For orders sent back from final check, only show to the original staff member
+      if (order.isSentBack) {
+        // If user is not loaded yet, show all sent back orders
+        if (userLoading || !user) {
+          return true;
+        }
+        // If kitchenById is set and doesn't match current user, don't show this order
+        if (order.kitchenById && order.kitchenById !== user.id) {
+          return false;
+        }
+      }
+      return true;
+    }
+    
+    // For KITCHEN_PROCESSING and KITCHEN_READY orders, only show if assigned to current user
+    if (order.status === 'KITCHEN_PROCESSING' || order.status === 'KITCHEN_READY') {
+      // If user is not loaded yet, show all processing/ready orders
+      if (userLoading || !user) {
+        return true;
+      }
+      
+      // If kitchenById is null or undefined, show the order (might be legacy data)
+      if (!order.kitchenById) {
+        return true;
+      }
+      
+      // Only show if assigned to current user
+      return order.kitchenById === user?.id;
+    }
+    
+    // Don't show orders in other statuses
+    return false;
+  };
+
   const fetchOrders = async () => {
     try {
       setLoading(true);
       const response = await apiMethods.pos.getOrders();
       if (response.success) {
-        // Filter for kitchen-relevant orders only
-        const kitchenOrders = response.data.filter((order: any) => 
-          // Include orders in kitchen queue/processing/ready
-          (order.status === 'KITCHEN_QUEUE' ||
-           order.status === 'KITCHEN_PROCESSING' ||
-           order.status === 'KITCHEN_READY') ||
-          // Include parallel processing orders
-          order.status === 'PARALLEL_PROCESSING'
-        );
-
+        // Log orders for debugging
+        console.log('Current user ID:', user?.id);
+        
+        // Filter for kitchen-relevant orders only using our shouldShowOrder helper
+        const kitchenOrders = response.data.filter((order: any) => shouldShowOrder(order));
+        
         const ordersWithImages = kitchenOrders.map((order: any) => {
           return {
             ...order,
@@ -291,6 +398,10 @@ export default function KitchenDisplay() {
     try {
       // Find the current order to check its status
       const currentOrder = orders.find(o => o.id === orderId);
+      if (!currentOrder) {
+        toast.error('Order not found');
+        return;
+      }
       
       // Check if we're trying to move an order from final check back to kitchen
       const isReturnFromFinalCheck = currentOrder && 
@@ -302,30 +413,63 @@ export default function KitchenDisplay() {
         newStatus, 
         teamNotes, 
         currentStatus: currentOrder?.status,
-        isReturnFromFinalCheck 
+        isReturnFromFinalCheck,
+        currentUserId: user?.id
       });
       
+      // Create a new order object with the updated status
+      const updatedOrder = { 
+        ...currentOrder, 
+        status: newStatus,
+        kitchenNotes: teamNotes || currentOrder.kitchenNotes,
+        // When moving to processing, assign the current user
+        // When moving to ready, maintain the same assignment
+        kitchenById: newStatus === 'KITCHEN_PROCESSING' ? user?.id : currentOrder.kitchenById
+      };
+      
+      // Update the UI immediately for a responsive experience
+      // This creates a smoother user experience without waiting for the API
+      setOrders(prevOrders => {
+        return prevOrders.map(order => 
+          order.id === orderId ? updatedOrder : order
+        );
+      });
+      
+      // Now make the API call to update the backend
       const response = await apiMethods.pos.updateOrderStatus(orderId, {
         status: newStatus,
         teamNotes: teamNotes || '',
         returnToKitchenOrDesign: isReturnFromFinalCheck
       });
 
+      // Log the response to see what's coming back from the API
+      console.log('API response for updateOrderStatus:', response);
+      
       if (response.success) {
-        // Update local state
-        setOrders(prevOrders =>
-          prevOrders.map(order =>
-            order.id === orderId
-              ? { 
-                  ...order, 
-                  status: newStatus,
-                  kitchenNotes: teamNotes || order.kitchenNotes 
-                }
-              : order
-          )
-        );
+        // If the API call was successful, show a success message
         toast.success('Order status updated');
+        
+        // If the API returned updated data, use that to update our state
+        if (response.data) {
+          const serverUpdatedOrder = {
+            ...updatedOrder,
+            ...response.data
+          };
+          
+          // Update with the server data to ensure consistency
+          setOrders(prevOrders => {
+            return prevOrders.map(order => 
+              order.id === orderId ? serverUpdatedOrder : order
+            );
+          });
+        }
       } else {
+        // If the API call failed, revert our optimistic update
+        setOrders(prevOrders => {
+          return prevOrders.map(order => 
+            order.id === orderId ? currentOrder : order
+          );
+        });
         console.error('Error updating order status:', response.message);
         toast.error(`Failed to update order status: ${response.message}`);
       }
@@ -340,6 +484,15 @@ export default function KitchenDisplay() {
   };
 
   const handleSendToFinalCheck = async (orderId: string, notes?: string) => {
+    // If notes are provided, it means the function is being called after the notes input
+    // If notes are not provided, show the notes input first
+    if (!notes) {
+      setSelectedOrder(orders.find(o => o.id === orderId) || null);
+      setShowNotesInput(true);
+      setActionType('SEND_TO_FINAL_CHECK');
+      return;
+    }
+    
     const order = orders.find(o => o.id === orderId);
     if (!order) return;
 
@@ -365,6 +518,22 @@ export default function KitchenDisplay() {
         return;
       }
 
+      // Create an optimistically updated order object
+      const updatedOrder = { 
+        ...order,
+        kitchenNotes: teamNotes || order.kitchenNotes,
+        parallelProcessing: {
+          ...order.parallelProcessing,
+          kitchenStatus: kitchenStatus
+        }
+      };
+      
+      // Update the UI immediately for a responsive experience
+      setOrders(prevOrders => {
+        return prevOrders.map(o => o.id === orderId ? updatedOrder : o);
+      });
+      
+      // Prepare payload for API call
       const payload = {
         parallelProcessing: {
           kitchenStatus: kitchenStatus,
@@ -372,9 +541,7 @@ export default function KitchenDisplay() {
         }
       };
       
-      // Create a custom payload for parallel processing
-      // We'll use the teamNotes field to pass the parallel processing information
-      // since the API doesn't directly support a parallelProcessing field
+      // Make the API call
       const response = await apiMethods.pos.updateOrderStatus(orderId, {
         status: order.status, // Keep current status
         teamNotes: teamNotes || "",
@@ -382,40 +549,47 @@ export default function KitchenDisplay() {
       });
 
       if (response.success) {
-        // Update the local state with the new parallel processing status
-        setOrders(prevOrders =>
-          prevOrders.map(order => {
-            if (order.id === orderId) {
-              // If design is already ready, the backend will move this to final check
-              // Otherwise, it will stay in the current status but with updated parallelProcessing
-              const newOrder = { 
-                ...order,
-                kitchenNotes: teamNotes || order.kitchenNotes,
-                parallelProcessing: {
-                  ...order.parallelProcessing,
-                  kitchenStatus: kitchenStatus
-                }
-              };
-              
-              // If the response includes a new status, update that too
-              if (response.data && response.data.status) {
-                newOrder.status = response.data.status;
-              }
-              
-              return newOrder;
-            }
-            return order;
-          })
-        );
-        
-        // Check if the order is waiting for design or moved to final check
-        if (response.data && response.data.status === 'FINAL_CHECK_QUEUE') {
-          toast.success('Both teams ready! Order sent to Final Check');
+        // If the API call was successful and returned updated data
+        if (response.data) {
+          const serverUpdatedOrder = {
+            ...updatedOrder
+          };
+          
+          // If the response includes a new status, update that too
+          if (response.data.status) {
+            serverUpdatedOrder.status = response.data.status;
+          }
+          
+          // Update with the server data to ensure consistency
+          setOrders(prevOrders => {
+            return prevOrders.map(o => o.id === orderId ? serverUpdatedOrder : o);
+          });
+          
+          // Show appropriate success message
+          if (response.data.status === 'FINAL_CHECK_QUEUE') {
+            toast.success('Both teams ready! Order sent to Final Check');
+          } else {
+            toast.success('Kitchen marked ready! Waiting for Design team...');
+          }
         } else {
-          toast.success('Kitchen marked ready! Waiting for Design team...');
+          toast.success('Order status updated');
         }
+      } else {
+        // If the API call failed, revert our optimistic update
+        setOrders(prevOrders => {
+          return prevOrders.map(o => o.id === orderId ? order : o);
+        });
+        console.error('Error updating parallel order status:', response.message);
+        toast.error(`Failed to update order status: ${response.message}`);
       }
     } catch (error) {
+      // Revert optimistic update on error
+      const originalOrder = orders.find(o => o.id === orderId);
+      if (originalOrder) {
+        setOrders(prevOrders => {
+          return prevOrders.map(o => o.id === orderId ? originalOrder : o);
+        });
+      }
       console.error('Error updating parallel order status:', error);
       toast.error('Failed to update order status');
     }
@@ -459,6 +633,34 @@ export default function KitchenDisplay() {
       });
   };
 
+  const handleSubmitNotes = async () => {
+    if (!selectedOrder) {
+      toast.error('No order selected');
+      return;
+    }
+
+    try {
+      if (actionType === 'SEND_TO_DESIGN') {
+        await handleSendToDesign(selectedOrder.id, teamNotes);
+        toast.success('Order sent to design with notes');
+      } else if (actionType === 'SEND_TO_FINAL_CHECK') {
+        await handleSendToFinalCheck(selectedOrder.id, teamNotes);
+        toast.success('Order sent to final check with notes');
+      } else if (actionType === 'UPDATE_STATUS') {
+        await updateOrderStatus(selectedOrder.id, selectedOrder.status, teamNotes);
+        toast.success('Notes added to order');
+      }
+
+      // Reset the notes and hide the input
+      setTeamNotes('');
+      setShowNotesInput(false);
+      setActionType('');
+    } catch (error) {
+      console.error('Error processing notes:', error);
+      toast.error('Failed to process notes');
+    }
+  };
+
   const handleStatusUpdate = async (newStatus: KitchenOrderStatus) => {
     if (!selectedOrder) {
       toast.error('No order selected');
@@ -481,17 +683,29 @@ export default function KitchenDisplay() {
         await updateOrderStatus(selectedOrder.id, newStatus, teamNotes);
       }
       
-      // Reset UI state
+      // Reset the notes and hide the input
       setTeamNotes('');
       setShowNotesInput(false);
       setSelectedOrder(null);
+      
+      toast.success(`Order status updated to ${newStatus.replace('_', ' ')}`);
     } catch (error) {
-      console.error('Error updating status:', error);
+      console.error('Error updating order status:', error);
       toast.error('Failed to update order status');
     }
   };
 
   const OrderCard = ({ order }: { order: KitchenOrder }) => {
+    // Local state for this specific order's notes
+    const [showOrderNotes, setShowOrderNotes] = useState(false);
+    const [orderNotes, setOrderNotes] = useState('');
+    
+    // Animation variants for smooth transitions
+    const cardVariants = {
+      initial: { opacity: 0, scale: 0.98 },
+      animate: { opacity: 1, scale: 1, transition: { duration: 0.2 } },
+      exit: { opacity: 0, scale: 0.98, transition: { duration: 0.1 } }
+    };
     const handleImageClick = (images: any[], index: number) => {
       const slides = images.map(img => ({
         src: img.url,
@@ -502,10 +716,7 @@ export default function KitchenDisplay() {
       setLightboxOpen(true);
     };
 
-    const handleOrderAction = (action: 'process' | 'ready' | 'finalCheck' | 'design') => {
-      // Set the selected order for the parent component
-      setSelectedOrder(order);
-      
+    const handleOrderAction = (action: 'process' | 'ready' | 'finalCheck' | 'design' | 'editNotes') => {
       // Check current status to avoid invalid transitions
       console.log('Current order status:', order.status);
       
@@ -518,37 +729,51 @@ export default function KitchenDisplay() {
           updateOrderStatus(order.id, 'KITCHEN_READY');
         }
       } else if (action === 'finalCheck') {
-        // Check if this is a parallel order that requires both kitchen and design
-        if (order.requiresKitchen && order.requiresDesign) {
-          // For parallel orders, update the kitchen status in the parallel processing object
-          // This will either wait for design or move to final check if design is already ready
-          if (order.status !== 'FINAL_CHECK_QUEUE' && 
-              order.status !== 'FINAL_CHECK_PROCESSING') {
-            // Use the new parallel processing function
-            updateParallelOrderStatus(order.id, 'KITCHEN_READY');
-          } else {
-            toast.success('Order is already in final check');
-          }
-        } else {
-          // For kitchen-only orders, proceed directly to final check
-          if (order.status !== 'FINAL_CHECK_QUEUE' && 
-              order.status !== 'FINAL_CHECK_PROCESSING') {
-            updateOrderStatus(order.id, 'FINAL_CHECK_QUEUE');
-          } else {
-            toast.success('Order is already in final check');
-          }
-        }
+        // Toggle notes input for this specific order
+        setShowOrderNotes(!showOrderNotes);
       } else if (action === 'design') {
-        setShowNotesInput(true);
+        // Toggle notes input for this specific order
+        setShowOrderNotes(!showOrderNotes);
+      } else if (action === 'editNotes') {
+        // Pre-populate with existing notes when editing
+        setOrderNotes(order.kitchenNotes || '');
+        setShowOrderNotes(true);
+      }
+    };
+    
+    // Handle submitting notes for this specific order
+    const handleSubmitNotes = async () => {
+      try {
+        if (order.status === 'KITCHEN_READY' && !order.requiresDesign) {
+          // Send to final check with notes
+          await handleSendToFinalCheck(order.id, orderNotes);
+          toast.success('Order sent to final check with notes');
+        } else if (order.status === 'KITCHEN_READY' && order.requiresDesign) {
+          // Send to design with notes
+          await handleSendToDesign(order.id, orderNotes);
+          toast.success('Order sent to design with notes');
+        } else {
+          // Just update the kitchen notes without changing status
+          await updateOrderStatus(order.id, order.status, orderNotes);
+          toast.success('Kitchen notes updated');
+        }
+        
+        // Reset the notes and hide the input
+        setOrderNotes('');
+        setShowOrderNotes(false);
+      } catch (error) {
+        console.error('Error processing notes:', error);
+        toast.error('Failed to process notes');
       }
     };
 
     return (
     <motion.div
       layout
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -20 }}
+      initial="initial"
+      animate="animate"
+      exit="exit"
+      variants={cardVariants}
       className="bg-white rounded-xl shadow-lg p-4 mb-6 border-l-4 overflow-hidden relative"
       style={{
         borderLeftColor: 
@@ -638,6 +863,21 @@ export default function KitchenDisplay() {
 
         {/* Notes Section */}
         <div className="space-y-3">
+          {/* Show Final Check Notes if the order was sent back */}
+          {order.isSentBack && order.finalCheckNotes && (
+            <div className="p-3 bg-red-50 rounded-lg border border-red-100">
+              <div className="flex items-start">
+                <div className="p-1 bg-red-100 rounded mr-2">
+                  <AlertTriangle className="w-4 h-4 text-red-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-red-800">Final Check Notes:</p>
+                  <p className="text-sm text-red-700">{order.finalCheckNotes}</p>
+                </div>
+              </div>
+            </div>
+          )}
+          
           {order.kitchenNotes && (
             <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
               <div className="flex items-start">
@@ -820,17 +1060,51 @@ export default function KitchenDisplay() {
           </div>
         </div>
 
+        {/* Display existing kitchen notes if any */}
+        {order.kitchenNotes && !showOrderNotes && (
+          <div className="mt-4 bg-gray-50 p-3 rounded-lg border border-gray-200">
+            <div className="flex justify-between items-start mb-2">
+              <h5 className="text-sm font-medium text-gray-700">Kitchen Notes:</h5>
+              <button 
+                onClick={() => handleOrderAction('editNotes')}
+                className="text-blue-600 hover:text-blue-800 text-sm flex items-center gap-1"
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+                Edit
+              </button>
+            </div>
+            <p className="text-sm text-gray-600 whitespace-pre-wrap">{order.kitchenNotes}</p>
+          </div>
+        )}
+
         {/* Notes input for team handoff with improved styling */}
-        {showNotesInput && (
+        {showOrderNotes && (
           <div className="mt-4">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Add notes for handoff</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Kitchen Notes</label>
             <textarea
-              value={teamNotes}
-              onChange={(e) => setTeamNotes(e.target.value)}
-              placeholder="Add notes for the next team..."
+              value={orderNotes}
+              onChange={(e) => setOrderNotes(e.target.value)}
+              placeholder="Add notes for the kitchen team..."
               className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
               rows={3}
             />
+            <div className="mt-3 flex gap-2">
+              <button
+                onClick={() => {
+                  setShowOrderNotes(false);
+                  setOrderNotes('');
+                }}
+                className="flex-1 py-2 px-4 bg-gray-200 hover:bg-gray-300 text-gray-800 font-medium rounded-lg flex items-center justify-center gap-2 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSubmitNotes}
+                className="flex-1 py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg flex items-center justify-center gap-2 transition-colors"
+              >
+                Save Notes
+              </button>
+            </div>
           </div>
         )}
 
@@ -969,7 +1243,7 @@ export default function KitchenDisplay() {
             Queue
           </h2>
           <div className="space-y-4 max-h-[calc(100vh-180px)] overflow-y-auto">
-            <AnimatePresence>
+            <AnimatePresence mode="sync">
               {orders
                 .filter(order => order.status === 'KITCHEN_QUEUE')
                 .map(order => (
@@ -988,8 +1262,11 @@ export default function KitchenDisplay() {
             <ChefHat className="w-5 h-5 mr-2" />
             Processing
           </h2>
+          <div className="text-xs text-gray-500 mb-2 italic">
+            Only orders you have accepted will appear here
+          </div>
           <div className="space-y-4 max-h-[calc(100vh-180px)] overflow-y-auto">
-            <AnimatePresence>
+            <AnimatePresence mode="sync">
               {orders
                 .filter(order => order.status === 'KITCHEN_PROCESSING')
                 .map(order => (
@@ -1009,7 +1286,7 @@ export default function KitchenDisplay() {
             Ready
           </h2>
           <div className="space-y-4 max-h-[calc(100vh-180px)] overflow-y-auto">
-            <AnimatePresence>
+            <AnimatePresence mode="sync">
               {orders
                 .filter(order => order.status === 'KITCHEN_READY')
                 .map(order => (
@@ -1032,7 +1309,7 @@ export default function KitchenDisplay() {
               Queue
             </h2>
             <div className="space-y-4 max-h-[calc(100vh-180px)] overflow-y-auto">
-              <AnimatePresence>
+              <AnimatePresence mode="sync">
                 {orders
                   .filter(order => order.status === 'KITCHEN_QUEUE')
                   .map(order => (
@@ -1052,8 +1329,11 @@ export default function KitchenDisplay() {
               <ChefHat className="w-5 h-5 mr-2" />
               Processing
             </h2>
+            <div className="text-xs text-gray-500 mb-2 italic">
+              Only orders you have accepted will appear here
+            </div>
             <div className="space-y-4 max-h-[calc(100vh-180px)] overflow-y-auto">
-              <AnimatePresence>
+              <AnimatePresence mode="sync">
                 {orders
                   .filter(order => order.status === 'KITCHEN_PROCESSING')
                   .map(order => (
@@ -1074,7 +1354,7 @@ export default function KitchenDisplay() {
               Ready
             </h2>
             <div className="space-y-4 max-h-[calc(100vh-180px)] overflow-y-auto">
-              <AnimatePresence>
+              <AnimatePresence mode="sync">
                 {orders
                   .filter(order => order.status === 'KITCHEN_READY')
                   .map(order => (

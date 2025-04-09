@@ -38,10 +38,17 @@ class WebSocketService {
   }
 
   private async getAuthToken(): Promise<string | null> {
+    // First check if we already have a user
     if (this.user) {
-      return this.user.getIdToken();
+      try {
+        return await this.user.getIdToken(true); // Force refresh token
+      } catch (error) {
+        console.error('Error getting token from existing user:', error);
+        // Fall through to other methods
+      }
     }
 
+    // If auth isn't initialized yet, wait for it
     if (!this.authInitialized) {
       console.log('Waiting for auth to initialize...');
       return new Promise((resolve) => {
@@ -50,7 +57,10 @@ class WebSocketService {
           unsubscribe();
           this.user = user;
           if (user) {
-            user.getIdToken().then(resolve);
+            user.getIdToken(true).then(resolve).catch(err => {
+              console.error('Error getting token during auth initialization:', err);
+              resolve(null);
+            });
           } else {
             resolve(null);
           }
@@ -58,16 +68,19 @@ class WebSocketService {
       });
     }
 
+    // Last resort: check current user directly
     try {
       const auth = getAuth();
       const user = auth.currentUser;
       this.user = user;
       if (user) {
-        return await user.getIdToken();
+        return await user.getIdToken(true); // Force refresh token
       }
     } catch (error) {
       console.error('Error getting auth token:', error);
     }
+    
+    // No token available
     return null;
   }
 
@@ -91,7 +104,14 @@ class WebSocketService {
       const token = await this.getAuthToken();
       if (!token) {
         console.error('No auth token available, waiting for authentication...');
-        this.scheduleReconnect();
+        // Only schedule reconnect if we have a user or auth is not initialized yet
+        if (this.user || !this.authInitialized) {
+          this.scheduleReconnect();
+        } else {
+          // If we have no user and auth is initialized, don't keep trying
+          console.log('No user authenticated. WebSocket connection paused until login.');
+          this.isConnecting = false;
+        }
         return;
       }
 
@@ -147,15 +167,32 @@ class WebSocketService {
       clearTimeout(this.reconnectTimer);
     }
 
+    // Check if we should attempt to reconnect
+    const auth = getAuth();
+    const currentUser = auth.currentUser;
+    
+    // Don't reconnect if there's no user and auth is initialized
+    if (!currentUser && this.authInitialized) {
+      console.log('No authenticated user. WebSocket reconnection paused until login.');
+      this.reconnectAttempts = 0;
+      this.reconnectDelay = 1000;
+      return;
+    }
+
     if (this.reconnectAttempts < this.maxReconnectAttempts) {
       console.log(`Scheduling reconnect attempt ${this.reconnectAttempts + 1} in ${this.reconnectDelay}ms`);
       this.reconnectTimer = setTimeout(() => {
         this.reconnectAttempts++;
-        this.reconnectDelay *= 2; // Exponential backoff
+        this.reconnectDelay = Math.min(30000, this.reconnectDelay * 1.5); // Exponential backoff, max 30 seconds
         this.connect();
       }, this.reconnectDelay);
     } else {
-      console.error('Max reconnection attempts reached');
+      console.log(`Max reconnect attempts (${this.maxReconnectAttempts}) reached. Waiting for user interaction.`);
+      // Reset attempts so we can try again if the user interacts
+      setTimeout(() => {
+        this.reconnectAttempts = 0;
+        this.reconnectDelay = 1000;
+      }, 60000); // Reset after 1 minute
     }
   }
 
