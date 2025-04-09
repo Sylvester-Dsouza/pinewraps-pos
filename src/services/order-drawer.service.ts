@@ -12,12 +12,8 @@ console.log('PRINTER_PROXY_URL in order-drawer.service:', PRINTER_PROXY_URL);
 // Function to get printer configuration directly from the printer proxy
 async function getPrinterConfig() {
   try {
-    // Clear any existing printer config to avoid using old values
-    if (typeof window !== 'undefined') {
-      window.localStorage.removeItem('printerConfig');
-    }
-
     // Fetch the printer configuration directly from the printer proxy
+    // instead of going through the API on Render
     console.log('Fetching printer config from printer proxy:', `${PRINTER_PROXY_URL}/api/printer/config`);
     const response = await fetch(`${PRINTER_PROXY_URL}/api/printer/config`);
     const data = await response.json();
@@ -50,19 +46,19 @@ async function getPrinterConfig() {
       console.error('Error fetching printer config from DB:', dbError);
     }
     
-    // Last resort - use localhost instead of hardcoded IP
+    // If no printer configuration is found, use default values
+    console.warn('No printer configuration found, using default values');
     return { 
-      ip: 'localhost', // Default to localhost instead of hardcoded IP
-      port: 9100,       // Default printer port
+      ip: '192.168.1.14', // Default printer IP - using a more likely network address
+      port: 9100,         // Default printer port
       skipConnectivityCheck: true 
     };
   } catch (error) {
     console.error('Error fetching printer config:', error);
-    
-    // Last resort - use localhost instead of hardcoded IP
+    // If there's an error, use default values
     return { 
-      ip: 'localhost', // Default to localhost instead of hardcoded IP
-      port: 9100,       // Default printer port
+      ip: '192.168.1.14', // Default printer IP - using a more likely network address
+      port: 9100,         // Default printer port
       skipConnectivityCheck: true 
     };
   }

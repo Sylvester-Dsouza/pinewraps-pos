@@ -71,9 +71,27 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
   // Function to get printer configuration including IP and port
   const getProxyConfig = async () => {
     try {
-      // IMPORTANT: Clear any existing printer config to avoid using old values
-      if (typeof window !== 'undefined') {
-        window.localStorage.removeItem('printerConfig');
+      // Clear any hardcoded IP from localStorage if it matches the old value
+      const savedPrinterConfig = localStorage.getItem('printerConfig');
+      if (savedPrinterConfig) {
+        try {
+          const parsedConfig = JSON.parse(savedPrinterConfig);
+          if (parsedConfig && parsedConfig.ip === '192.168.1.14') {
+            console.log('Found hardcoded IP in localStorage, removing it');
+            localStorage.removeItem('printerConfig');
+          } else if (parsedConfig && parsedConfig.ip) {
+            console.log('Using printer config from localStorage:', parsedConfig);
+            return {
+              ip: parsedConfig.ip,
+              port: parsedConfig.port || 9100,
+              skipConnectivityCheck: true
+            };
+          }
+        } catch (parseError) {
+          console.error('Error parsing saved printer config:', parseError);
+          localStorage.removeItem('printerConfig');
+          // Continue to other methods if parsing fails
+        }
       }
       
       // Fetch the printer configuration directly from the printer proxy
@@ -83,6 +101,12 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
       
       if (data && data.success && data.printer) {
         console.log('Printer config from printer proxy:', data.printer);
+        // Save to localStorage for future use
+        localStorage.setItem('printerConfig', JSON.stringify({
+          ip: data.printer.ipAddress,
+          port: data.printer.port
+        }));
+        
         return { 
           ip: data.printer.ipAddress,
           port: data.printer.port,
@@ -98,6 +122,13 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
         
         if (dbData && dbData.success && dbData.printer) {
           console.log('Printer config from printer proxy DB:', dbData.printer);
+          
+          // Save to localStorage for future use
+          localStorage.setItem('printerConfig', JSON.stringify({
+            ip: dbData.printer.ipAddress,
+            port: dbData.printer.port || 9100
+          }));
+          
           return { 
             ip: dbData.printer.ipAddress,
             port: dbData.printer.port || 9100,
@@ -114,6 +145,13 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
         const settingsResponse = await axios.get('/api/settings/printer');
         if (settingsResponse.data && settingsResponse.data.ipAddress) {
           console.log('Printer config from settings API:', settingsResponse.data);
+          
+          // Save to localStorage for future use
+          localStorage.setItem('printerConfig', JSON.stringify({
+            ip: settingsResponse.data.ipAddress,
+            port: settingsResponse.data.port || 9100
+          }));
+          
           return {
             ip: settingsResponse.data.ipAddress,
             port: settingsResponse.data.port || 9100,
@@ -128,6 +166,12 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
       console.warn('No printer configuration found, prompting user');
       const userIp = prompt('Please enter printer IP address:');
       if (userIp) {
+        // Save to localStorage for future use
+        localStorage.setItem('printerConfig', JSON.stringify({
+          ip: userIp,
+          port: 9100
+        }));
+        
         return { 
           ip: userIp,
           port: 9100,
