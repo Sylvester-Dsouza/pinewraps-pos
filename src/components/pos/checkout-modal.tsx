@@ -941,20 +941,47 @@ export default function CheckoutModal({
               console.log('Created default payment for cash-order:', paymentData);
             }
             
-            // Using direct axios call to the cash-order endpoint
-            const cashOrderResponse = await axios.post(`${proxyUrl}/cash-order`, {
-              orderData: {
-                orderNumber: response.data?.orderNumber,
-                payments: paymentData,
-                orderId: response.data?.id
-              },
-              skipConnectivityCheck: true
-            });
+            // Using direct axios call to the cash-order endpoint with timeout and retry logic
+            let cashOrderResponse;
+            let retryCount = 0;
+            const maxRetries = 2;
             
-            console.log('Cash order response received:', cashOrderResponse.data);
+            while (retryCount <= maxRetries) {
+              try {
+                console.log(`Attempt ${retryCount + 1} to call cash-order endpoint`);
+                cashOrderResponse = await axios.post(`${proxyUrl}/cash-order`, {
+                  orderData: {
+                    orderNumber: response.data?.orderNumber,
+                    payments: paymentData,
+                    orderId: response.data?.id
+                  },
+                  skipConnectivityCheck: true
+                }, {
+                  timeout: 5000 // 5 second timeout
+                });
+                
+                console.log('Cash order response received:', cashOrderResponse.data);
+                
+                if (cashOrderResponse.status === 200) {
+                  console.log('Cash order request successful');
+                  break; // Success, exit the retry loop
+                } else {
+                  console.warn('Cash order request unsuccessful:', cashOrderResponse.data?.message || 'Unknown error');
+                  retryCount++;
+                }
+              } catch (retryError) {
+                console.error(`Attempt ${retryCount + 1} failed:`, retryError.message);
+                retryCount++;
+                
+                if (retryCount <= maxRetries) {
+                  console.log(`Retrying in 1 second... (${retryCount}/${maxRetries})`);
+                  await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second before retry
+                }
+              }
+            }
             
-            if (cashOrderResponse.status !== 200) {
-              console.warn('Cash order request unsuccessful:', cashOrderResponse.data?.message || 'Unknown error');
+            if (!cashOrderResponse || cashOrderResponse.status !== 200) {
+              console.warn('All cash order attempts failed');
               toast.warning('Could not open cash drawer or print receipt. Please check printer connection.');
             }
           } catch (cashOrderError) {
