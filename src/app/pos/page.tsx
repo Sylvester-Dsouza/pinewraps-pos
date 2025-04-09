@@ -52,15 +52,24 @@ export default function POSPage() {
       const isKitchenStaff = localStorage.getItem('isKitchenStaff') === 'true';
       const isDesignStaff = localStorage.getItem('isDesignStaff') === 'true';
       const isFinalCheckStaff = localStorage.getItem('isFinalCheckStaff') === 'true';
+      const isCashierStaff = localStorage.getItem('isCashierStaff') === 'true';
       const userRole = localStorage.getItem('userRole');
       
       // Admin and super admin have access to all screens
       const hasAdminAccess = userRole === 'ADMIN' || userRole === 'SUPER_ADMIN';
       
-      // If user is specialized staff and not admin, they don't have access to general POS
-      const isSpecializedStaff = isKitchenStaff || isDesignStaff || isFinalCheckStaff;
+      // Check if user has any staff role assigned
+      const hasAnyStaffRole = isKitchenStaff || isDesignStaff || isFinalCheckStaff || isCashierStaff;
       
-      setHasGeneralPOSAccess(hasAdminAccess || !isSpecializedStaff);
+      // Kitchen, Design, and Final Check staff only have access to their specific pages
+      const isSpecializedNonPOSStaff = isKitchenStaff || isDesignStaff || isFinalCheckStaff;
+      
+      // Grant access if:
+      // 1. User is admin/super admin (full access to all screens)
+      // 2. User is cashier staff (access to POS page only)
+      // 3. User is a regular POS user with no staff roles (full access to POS page)
+      // 4. User is not a specialized non-POS staff (kitchen, design, final check)
+      setHasGeneralPOSAccess(hasAdminAccess || isCashierStaff || (!hasAnyStaffRole && userRole === 'POS_USER') || !isSpecializedNonPOSStaff);
     }
   }, []);
 
@@ -588,7 +597,7 @@ export default function POSPage() {
         </div>
       )}
 
-      <div className="flex flex-col md:flex-row h-[calc(100vh-3.5rem)] overflow-hidden">
+      <div className="flex flex-col lg:flex-row h-[calc(100vh-3.5rem)] overflow-hidden">
         {/* Left side - Products */}
         <div className="flex-1 flex flex-col overflow-hidden min-w-0">
           {/* Search and Categories */}
@@ -652,7 +661,7 @@ export default function POSPage() {
           {/* Products Grid */}
           <div className="flex-1 overflow-y-auto p-4">
             {isProductsLoading ? (
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {[...Array(8)].map((_, i) => (
                   <div
                     key={i}
@@ -669,7 +678,7 @@ export default function POSPage() {
                 No products found
               </div>
             ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {filteredProducts?.map((product) => (
                   <button
                     key={product.id}
@@ -717,7 +726,7 @@ export default function POSPage() {
         </div>
 
         {/* Right side - Cart */}
-        <div className="md:w-[350px] lg:w-[400px] xl:w-[450px] flex-shrink-0 flex-grow-0 flex flex-col border-l border-gray-200 overflow-hidden h-full">
+        <div className="md:w-full lg:w-[400px] xl:w-[450px] flex-shrink-0 flex-grow-0 flex flex-col border-t lg:border-t-0 lg:border-l border-gray-200 overflow-hidden h-full">
 
           <div className="p-4 border-b border-gray-200">
             <div className="flex items-center justify-between">

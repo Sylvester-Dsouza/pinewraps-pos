@@ -15,6 +15,7 @@ export default function RootPage() {
         const isKitchenStaff = localStorage.getItem('isKitchenStaff') === 'true';
         const isDesignStaff = localStorage.getItem('isDesignStaff') === 'true';
         const isFinalCheckStaff = localStorage.getItem('isFinalCheckStaff') === 'true';
+        const isCashierStaff = localStorage.getItem('isCashierStaff') === 'true';
         
         // Redirect based on staff type
         if (isKitchenStaff) {
@@ -23,7 +24,11 @@ export default function RootPage() {
           router.replace('/design');
         } else if (isFinalCheckStaff) {
           router.replace('/final-check');
+        } else if (isCashierStaff) {
+          router.replace('/pos');
         } else {
+          // Default for regular POS users with no staff roles
+          // They should have full access to the POS page
           router.replace('/pos');
         }
       } else {

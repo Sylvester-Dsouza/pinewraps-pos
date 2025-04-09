@@ -12,12 +12,22 @@ export default function KitchenPage() {
   useEffect(() => {
     // Check if user has kitchen staff permission
     const isKitchenStaff = localStorage.getItem('isKitchenStaff') === 'true';
+    const isDesignStaff = localStorage.getItem('isDesignStaff') === 'true';
+    const isFinalCheckStaff = localStorage.getItem('isFinalCheckStaff') === 'true';
+    const isCashierStaff = localStorage.getItem('isCashierStaff') === 'true';
     const userRole = localStorage.getItem('userRole');
     
     // Admin and super admin have access to all screens
     const hasAdminAccess = userRole === 'ADMIN' || userRole === 'SUPER_ADMIN';
     
-    setHasPermission(isKitchenStaff || hasAdminAccess);
+    // Check if user has any staff role assigned
+    const hasAnyStaffRole = isKitchenStaff || isDesignStaff || isFinalCheckStaff || isCashierStaff;
+    
+    // Grant access if:
+    // 1. User is admin/super admin (full access to all screens)
+    // 2. User is kitchen staff (access to kitchen page)
+    // 3. User is a regular POS user with no staff roles (full access to all screens)
+    setHasPermission(hasAdminAccess || isKitchenStaff || (!hasAnyStaffRole && userRole === 'POS_USER'));
   }, []);
 
   if (hasPermission === null) {

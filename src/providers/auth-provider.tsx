@@ -99,6 +99,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           localStorage.setItem('isKitchenStaff', data.data?.isKitchenStaff ? 'true' : 'false');
           localStorage.setItem('isDesignStaff', data.data?.isDesignStaff ? 'true' : 'false');
           localStorage.setItem('isFinalCheckStaff', data.data?.isFinalCheckStaff ? 'true' : 'false');
+          localStorage.setItem('isCashierStaff', data.data?.isCashierStaff ? 'true' : 'false');
 
           setUser(user);
           
@@ -110,7 +111,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               router.push('/design');
             } else if (data.data?.isFinalCheckStaff) {
               router.push('/final-check');
+            } else if (data.data?.isCashierStaff) {
+              router.push('/pos');
             } else {
+              // For users with no specific staff role, default to POS
               router.push('/pos');
             }
           }
