@@ -142,8 +142,9 @@ const PrinterConnectionTest: React.FC<PrinterConnectionTestProps> = ({ onConnect
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          printerIp: ip,
-          printerPort: portNumber
+          ip: ip,
+          port: portNumber,
+          skipConnectivityCheck: true
         })
       });
       

@@ -71,12 +71,15 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
   // Function to get printer configuration including IP and port
   const getProxyConfig = async () => {
     try {
-      // First, try to get the printer config from localStorage if available
+      // Clear any hardcoded IP from localStorage if it matches the old value
       const savedPrinterConfig = localStorage.getItem('printerConfig');
       if (savedPrinterConfig) {
         try {
           const parsedConfig = JSON.parse(savedPrinterConfig);
-          if (parsedConfig && parsedConfig.ip) {
+          if (parsedConfig && parsedConfig.ip === '192.168.1.14') {
+            console.log('Found hardcoded IP in localStorage, removing it');
+            localStorage.removeItem('printerConfig');
+          } else if (parsedConfig && parsedConfig.ip) {
             console.log('Using printer config from localStorage:', parsedConfig);
             return {
               ip: parsedConfig.ip,
@@ -86,6 +89,7 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
           }
         } catch (parseError) {
           console.error('Error parsing saved printer config:', parseError);
+          localStorage.removeItem('printerConfig');
           // Continue to other methods if parsing fails
         }
       }
