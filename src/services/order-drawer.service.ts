@@ -46,19 +46,56 @@ async function getPrinterConfig() {
       console.error('Error fetching printer config from DB:', dbError);
     }
     
-    // If no printer configuration is found, use default values
-    console.warn('No printer configuration found, using default values');
+    // If no printer configuration is found, try to get from localStorage
+    console.warn('No printer configuration found, checking localStorage');
+    try {
+      const savedConfig = localStorage.getItem('printerConfig');
+      if (savedConfig) {
+        const parsedConfig = JSON.parse(savedConfig);
+        if (parsedConfig && parsedConfig.ip && parsedConfig.ip !== '192.168.1.14') {
+          console.log('Using printer config from localStorage:', parsedConfig);
+          return {
+            ip: parsedConfig.ip,
+            port: parsedConfig.port || 9100,
+            skipConnectivityCheck: true
+          };
+        }
+      }
+    } catch (e) {
+      console.error('Error reading from localStorage:', e);
+    }
+    
+    // Last resort - use localhost instead of hardcoded IP
     return { 
-      ip: '192.168.1.14', // Default printer IP - using a more likely network address
-      port: 9100,         // Default printer port
+      ip: 'localhost', // Default to localhost instead of hardcoded IP
+      port: 9100,       // Default printer port
       skipConnectivityCheck: true 
     };
   } catch (error) {
     console.error('Error fetching printer config:', error);
-    // If there's an error, use default values
+    
+    // If there's an error, try to get from localStorage first
+    try {
+      const savedConfig = localStorage.getItem('printerConfig');
+      if (savedConfig) {
+        const parsedConfig = JSON.parse(savedConfig);
+        if (parsedConfig && parsedConfig.ip && parsedConfig.ip !== '192.168.1.14') {
+          console.log('Using printer config from localStorage after error:', parsedConfig);
+          return {
+            ip: parsedConfig.ip,
+            port: parsedConfig.port || 9100,
+            skipConnectivityCheck: true
+          };
+        }
+      }
+    } catch (e) {
+      console.error('Error reading from localStorage after fetch error:', e);
+    }
+    
+    // Last resort - use localhost instead of hardcoded IP
     return { 
-      ip: '192.168.1.14', // Default printer IP - using a more likely network address
-      port: 9100,         // Default printer port
+      ip: 'localhost', // Default to localhost instead of hardcoded IP
+      port: 9100,       // Default printer port
       skipConnectivityCheck: true 
     };
   }
