@@ -49,7 +49,7 @@ async function getPrinterConfig() {
     // If no printer configuration is found, use default values
     console.warn('No printer configuration found, using default values');
     return { 
-      ip: '192.168.1.12', // Default printer IP - using a more likely network address
+      ip: '192.168.1.14', // Default printer IP - using a more likely network address
       port: 9100,         // Default printer port
       skipConnectivityCheck: true 
     };
@@ -57,7 +57,7 @@ async function getPrinterConfig() {
     console.error('Error fetching printer config:', error);
     // If there's an error, use default values
     return { 
-      ip: '192.168.1.12', // Default printer IP - using a more likely network address
+      ip: '192.168.1.14', // Default printer IP - using a more likely network address
       port: 9100,         // Default printer port
       skipConnectivityCheck: true 
     };
