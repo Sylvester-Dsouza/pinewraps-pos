@@ -83,6 +83,9 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
         return { 
           ip: data.printer.ipAddress,
           port: data.printer.port,
+          // Also include printerIp and printerPort for compatibility
+          printerIp: data.printer.ipAddress,
+          printerPort: data.printer.port,
           skipConnectivityCheck: true // Always skip connectivity check for till operations
         };
       }
@@ -95,9 +98,13 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
         
         if (dbData && dbData.success && dbData.printer) {
           console.log('Printer config from printer proxy DB:', dbData.printer);
+          const portNumber = dbData.printer.port || 9100;
           return { 
             ip: dbData.printer.ipAddress,
-            port: dbData.printer.port || 9100,
+            port: portNumber,
+            // Also include printerIp and printerPort for compatibility
+            printerIp: dbData.printer.ipAddress,
+            printerPort: portNumber,
             skipConnectivityCheck: true 
           };
         }
@@ -126,14 +133,23 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
     try {
       console.log('Opening till - sending open-drawer command to proxy');
       
-      // Get proxy configuration (without printer IP/port)
-      const proxyConfig = await getProxyConfig();
+      // Get printer configuration from the proxy
+      const printerConfig = await getProxyConfig();
+      
+      // Extract IP and port from the configuration
+      const { ip, port } = printerConfig;
+      
+      console.log(`Sending open-drawer request to ${PRINTER_PROXY_URL}/open-drawer with IP: ${ip}, Port: ${port}`);
       
       // Send the open-drawer command to the proxy
       try {
-        // Always include skipConnectivityCheck parameter
+        // Use the exact same format as the printer test page
         const response = await axios.post(`${PRINTER_PROXY_URL}/open-drawer`, {
-          ...proxyConfig,
+          ip: ip,
+          port: port,
+          // Also include printerIp and printerPort for compatibility
+          printerIp: ip,
+          printerPort: port,
           skipConnectivityCheck: true
         });
 
@@ -210,13 +226,23 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
     try {
       console.log('Closing till - sending open-drawer command to proxy');
 
-      // Get proxy configuration (without printer IP/port)
-      const proxyConfig = await getProxyConfig();
+      // Get printer configuration from the proxy
+      const printerConfig = await getProxyConfig();
+      
+      // Extract IP and port from the configuration
+      const { ip, port } = printerConfig;
+      
+      console.log(`Sending open-drawer request to ${PRINTER_PROXY_URL}/open-drawer with IP: ${ip}, Port: ${port}`);
 
       // Open the drawer only, no receipt printing
       try {
+        // Use the exact same format as the printer test page
         await axios.post(`${PRINTER_PROXY_URL}/open-drawer`, {
-          ...proxyConfig,
+          ip: ip,
+          port: port,
+          // Also include printerIp and printerPort for compatibility
+          printerIp: ip,
+          printerPort: port,
           skipConnectivityCheck: true
         });
       } catch (drawerError) {
@@ -307,10 +333,20 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
       // Get proxy configuration (without printer IP/port)
       const proxyConfig = await getProxyConfig();
 
+      // Extract IP and port from the configuration
+      const { ip, port } = proxyConfig;
+      
+      console.log(`Sending open-drawer request to ${PRINTER_PROXY_URL}/open-drawer with IP: ${ip}, Port: ${port}`);
+      
       // First send open drawer command
       try {
+        // Use the exact same format as the printer test page
         const response = await axios.post(`${PRINTER_PROXY_URL}/open-drawer`, {
-          ...proxyConfig,
+          ip: ip,
+          port: port,
+          // Also include printerIp and printerPort for compatibility
+          printerIp: ip,
+          printerPort: port,
           skipConnectivityCheck: true
         });
 
