@@ -8,6 +8,7 @@ import { POSOrderStatus, POSPaymentMethod, POSPaymentStatus, DeliveryMethod, Ord
 import { Customer, CustomerAddress, CustomerDetails, DeliveryDetails, PickupDetails, GiftDetails } from "@/types/customer";
 import { Payment } from "@/types/payment";
 import { nanoid } from 'nanoid';
+import { orderDrawerService } from '@/services/order-drawer.service';
 import Image from "next/image";
 import ImageUpload from "./custom-images/image-upload";
 import { useAuth } from "@/providers/auth-provider";
@@ -964,6 +965,34 @@ export default function CheckoutModal({
                 
                 if (cashOrderResponse.status === 200) {
                   console.log('Cash order request successful');
+                  
+                  // Record cash transaction in the till
+                  try {
+                    // Calculate total cash amount from all payments
+                    const totalCashAmount = paymentData.reduce((total, payment) => {
+                      if (payment.method === POSPaymentMethod.CASH) {
+                        return total + parseFloat(payment.amount.toString());
+                      } else if (payment.isSplitPayment && payment.cashPortion) {
+                        return total + parseFloat(payment.cashPortion.toString());
+                      }
+                      return total;
+                    }, 0);
+                    
+                    console.log('Recording cash sale in till for amount:', totalCashAmount);
+                    const recordResult = await orderDrawerService.recordCashSale(
+                      totalCashAmount,
+                      response.data?.orderNumber
+                    );
+                    
+                    if (recordResult) {
+                      console.log('Successfully recorded cash sale in till');
+                    } else {
+                      console.error('Failed to record cash sale in till');
+                    }
+                  } catch (recordError) {
+                    console.error('Error recording cash sale in till:', recordError);
+                  }
+                  
                   break; // Success, exit the retry loop
                 } else {
                   console.warn('Cash order request unsuccessful:', cashOrderResponse.data?.message || 'Unknown error');

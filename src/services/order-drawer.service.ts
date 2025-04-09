@@ -305,8 +305,8 @@ export class OrderDrawerService {
       
       // Call the API to record the cash sale
       try {
-        const response = await axios.post('/pos/drawer-session/operation/sale', {
-          amount,
+        const response = await api.post('/api/pos/drawer-session/operation/sale', {
+          amount: amount.toString(),
           notes: `Cash payment received${orderNumber ? ` for order #${orderNumber}` : ''}`,
           orderNumber
         });
