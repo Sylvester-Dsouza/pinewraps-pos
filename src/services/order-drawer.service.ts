@@ -12,8 +12,12 @@ console.log('PRINTER_PROXY_URL in order-drawer.service:', PRINTER_PROXY_URL);
 // Function to get printer configuration directly from the printer proxy
 async function getPrinterConfig() {
   try {
+    // Clear any existing printer config to avoid using old values
+    if (typeof window !== 'undefined') {
+      window.localStorage.removeItem('printerConfig');
+    }
+
     // Fetch the printer configuration directly from the printer proxy
-    // instead of going through the API on Render
     console.log('Fetching printer config from printer proxy:', `${PRINTER_PROXY_URL}/api/printer/config`);
     const response = await fetch(`${PRINTER_PROXY_URL}/api/printer/config`);
     const data = await response.json();
@@ -46,25 +50,6 @@ async function getPrinterConfig() {
       console.error('Error fetching printer config from DB:', dbError);
     }
     
-    // If no printer configuration is found, try to get from localStorage
-    console.warn('No printer configuration found, checking localStorage');
-    try {
-      const savedConfig = localStorage.getItem('printerConfig');
-      if (savedConfig) {
-        const parsedConfig = JSON.parse(savedConfig);
-        if (parsedConfig && parsedConfig.ip && parsedConfig.ip !== '192.168.1.14') {
-          console.log('Using printer config from localStorage:', parsedConfig);
-          return {
-            ip: parsedConfig.ip,
-            port: parsedConfig.port || 9100,
-            skipConnectivityCheck: true
-          };
-        }
-      }
-    } catch (e) {
-      console.error('Error reading from localStorage:', e);
-    }
-    
     // Last resort - use localhost instead of hardcoded IP
     return { 
       ip: 'localhost', // Default to localhost instead of hardcoded IP
@@ -73,24 +58,6 @@ async function getPrinterConfig() {
     };
   } catch (error) {
     console.error('Error fetching printer config:', error);
-    
-    // If there's an error, try to get from localStorage first
-    try {
-      const savedConfig = localStorage.getItem('printerConfig');
-      if (savedConfig) {
-        const parsedConfig = JSON.parse(savedConfig);
-        if (parsedConfig && parsedConfig.ip && parsedConfig.ip !== '192.168.1.14') {
-          console.log('Using printer config from localStorage after error:', parsedConfig);
-          return {
-            ip: parsedConfig.ip,
-            port: parsedConfig.port || 9100,
-            skipConnectivityCheck: true
-          };
-        }
-      }
-    } catch (e) {
-      console.error('Error reading from localStorage after fetch error:', e);
-    }
     
     // Last resort - use localhost instead of hardcoded IP
     return { 
