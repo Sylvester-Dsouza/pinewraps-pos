@@ -143,20 +143,27 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
       
       // Send the open-drawer command to the proxy
       try {
-        // Use the exact same format as the printer test page
-        const response = await axios.post(`${PRINTER_PROXY_URL}/open-drawer`, {
-          ip: ip,
-          port: port,
-          // Also include printerIp and printerPort for compatibility
-          printerIp: ip,
-          printerPort: port,
-          skipConnectivityCheck: true
+        // Use the exact same implementation as the printer test page with fetch
+        const response = await fetch(`${PRINTER_PROXY_URL}/open-drawer`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            ip: ip,
+            port: port,
+            skipConnectivityCheck: true
+          })
         });
+        
+        console.log(`Open drawer response status:`, response.status);
+        const data = await response.json();
+        console.log(`Open drawer response data:`, data);
 
         if (response.status === 200) {
           console.log('Drawer opened successfully');
         } else {
-          console.error('Failed to open drawer:', response.statusText);
+          console.error('Failed to open drawer:', data.error || 'Unknown error');
         }
       } catch (drawerError) {
         console.error('Error opening cash drawer:', drawerError);
@@ -236,15 +243,26 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
 
       // Open the drawer only, no receipt printing
       try {
-        // Use the exact same format as the printer test page
-        await axios.post(`${PRINTER_PROXY_URL}/open-drawer`, {
-          ip: ip,
-          port: port,
-          // Also include printerIp and printerPort for compatibility
-          printerIp: ip,
-          printerPort: port,
-          skipConnectivityCheck: true
+        // Use the exact same implementation as the printer test page with fetch
+        const response = await fetch(`${PRINTER_PROXY_URL}/open-drawer`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            ip: ip,
+            port: port,
+            skipConnectivityCheck: true
+          })
         });
+        
+        console.log(`Open drawer response status:`, response.status);
+        const data = await response.json();
+        console.log(`Open drawer response data:`, data);
+        
+        if (response.status !== 200) {
+          console.error('Failed to open drawer:', data.error || 'Unknown error');
+        }
       } catch (drawerError) {
         console.error('Error opening cash drawer:', drawerError);
         // Continue with closing the till dialog even if drawer fails
@@ -340,18 +358,25 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
       
       // First send open drawer command
       try {
-        // Use the exact same format as the printer test page
-        const response = await axios.post(`${PRINTER_PROXY_URL}/open-drawer`, {
-          ip: ip,
-          port: port,
-          // Also include printerIp and printerPort for compatibility
-          printerIp: ip,
-          printerPort: port,
-          skipConnectivityCheck: true
+        // Use the exact same implementation as the printer test page with fetch
+        const response = await fetch(`${PRINTER_PROXY_URL}/open-drawer`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            ip: ip,
+            port: port,
+            skipConnectivityCheck: true
+          })
         });
+        
+        console.log(`Open drawer response status:`, response.status);
+        const data = await response.json();
+        console.log(`Open drawer response data:`, data);
 
         if (response.status !== 200) {
-          console.error('Failed to open drawer:', response.statusText);
+          console.error('Failed to open drawer:', data.error || 'Unknown error');
         }
       } catch (printerError) {
         console.error('Error opening cash drawer:', printerError);
