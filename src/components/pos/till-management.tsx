@@ -346,42 +346,7 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
         return;
       }
 
-      console.log('Sending open-drawer command for pay-in');
-
-      // Get proxy configuration (without printer IP/port)
-      const proxyConfig = await getProxyConfig();
-
-      // Extract IP and port from the configuration
-      const { ip, port } = proxyConfig;
-      
-      console.log(`Sending open-drawer request to ${PRINTER_PROXY_URL}/open-drawer with IP: ${ip}, Port: ${port}`);
-      
-      // First send open drawer command
-      try {
-        // Use the exact same implementation as the printer test page with fetch
-        const response = await fetch(`${PRINTER_PROXY_URL}/open-drawer`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            ip: ip,
-            port: port,
-            skipConnectivityCheck: true
-          })
-        });
-        
-        console.log(`Open drawer response status:`, response.status);
-        const data = await response.json();
-        console.log(`Open drawer response data:`, data);
-
-        if (response.status !== 200) {
-          console.error('Failed to open drawer:', data.error || 'Unknown error');
-        }
-      } catch (printerError) {
-        console.error('Error opening cash drawer:', printerError);
-        // Continue with the pay-in operation even if drawer fails
-      }
+      // No need to open the drawer here as it's already opened when the Pay In button is clicked
 
       const amount = parseFloat(payAmount);
       await drawerService.payIn(amount, note || 'Pay In transaction');
@@ -414,24 +379,7 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
         return;
       }
 
-      console.log('Sending open-drawer command for pay-out');
-
-      // Get proxy configuration (without printer IP/port)
-      const proxyConfig = await getProxyConfig();
-
-      // First send open drawer command
-      try {
-        const response = await axios.post(`${PRINTER_PROXY_URL}/open-drawer`, {
-          ...proxyConfig
-        });
-
-        if (response.status !== 200) {
-          console.error('Failed to open drawer:', response.statusText);
-        }
-      } catch (printerError) {
-        console.error('Error opening cash drawer:', printerError);
-        // Continue with the pay-out operation even if drawer fails
-      }
+      // No need to open the drawer here as it's already opened when the Pay Out button is clicked
 
       const amount = parseFloat(payAmount);
       await drawerService.payOut(amount, note || 'Pay Out transaction');
@@ -583,7 +531,40 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
                   </Button>
                   <Button 
                     variant="outline" 
-                    onClick={() => setIsPayInModalOpen(true)}
+                    onClick={async () => {
+                      // First open the cash drawer
+                      try {
+                        console.log('Opening cash drawer for Pay In');
+                        const printerConfig = await getProxyConfig();
+                        const { ip, port } = printerConfig;
+                        
+                        const response = await fetch(`${PRINTER_PROXY_URL}/open-drawer`, {
+                          method: 'POST',
+                          headers: {
+                            'Content-Type': 'application/json'
+                          },
+                          body: JSON.stringify({
+                            ip: ip,
+                            port: port,
+                            skipConnectivityCheck: true
+                          })
+                        });
+                        
+                        console.log(`Open drawer response status:`, response.status);
+                        const data = await response.json();
+                        console.log(`Open drawer response data:`, data);
+                        
+                        if (response.status !== 200) {
+                          console.error('Failed to open drawer:', data.error || 'Unknown error');
+                        }
+                      } catch (drawerError) {
+                        console.error('Error opening cash drawer for Pay In:', drawerError);
+                        // Continue with opening the dialog even if drawer fails
+                      }
+                      
+                      // Then show the dialog
+                      setIsPayInModalOpen(true);
+                    }}
                     className="flex items-center gap-2 border-green-500 text-green-600 hover:bg-green-50"
                   >
                     <PlusIcon className="h-4 w-4" />
@@ -591,7 +572,40 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
                   </Button>
                   <Button 
                     variant="outline" 
-                    onClick={() => setIsPayOutModalOpen(true)}
+                    onClick={async () => {
+                      // First open the cash drawer
+                      try {
+                        console.log('Opening cash drawer for Pay Out');
+                        const printerConfig = await getProxyConfig();
+                        const { ip, port } = printerConfig;
+                        
+                        const response = await fetch(`${PRINTER_PROXY_URL}/open-drawer`, {
+                          method: 'POST',
+                          headers: {
+                            'Content-Type': 'application/json'
+                          },
+                          body: JSON.stringify({
+                            ip: ip,
+                            port: port,
+                            skipConnectivityCheck: true
+                          })
+                        });
+                        
+                        console.log(`Open drawer response status:`, response.status);
+                        const data = await response.json();
+                        console.log(`Open drawer response data:`, data);
+                        
+                        if (response.status !== 200) {
+                          console.error('Failed to open drawer:', data.error || 'Unknown error');
+                        }
+                      } catch (drawerError) {
+                        console.error('Error opening cash drawer for Pay Out:', drawerError);
+                        // Continue with opening the dialog even if drawer fails
+                      }
+                      
+                      // Then show the dialog
+                      setIsPayOutModalOpen(true);
+                    }}
                     className="flex items-center gap-2 border-red-500 text-red-600 hover:bg-red-50"
                   >
                     <MinusIcon className="h-4 w-4" />
