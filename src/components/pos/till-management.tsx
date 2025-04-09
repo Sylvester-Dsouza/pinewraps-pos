@@ -71,15 +71,38 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
   // Function to get printer configuration including IP and port
   const getProxyConfig = async () => {
     try {
+      // First, try to get the printer config from localStorage if available
+      const savedPrinterConfig = localStorage.getItem('printerConfig');
+      if (savedPrinterConfig) {
+        try {
+          const parsedConfig = JSON.parse(savedPrinterConfig);
+          if (parsedConfig && parsedConfig.ip) {
+            console.log('Using printer config from localStorage:', parsedConfig);
+            return {
+              ip: parsedConfig.ip,
+              port: parsedConfig.port || 9100,
+              skipConnectivityCheck: true
+            };
+          }
+        } catch (parseError) {
+          console.error('Error parsing saved printer config:', parseError);
+          // Continue to other methods if parsing fails
+        }
+      }
+      
       // Fetch the printer configuration directly from the printer proxy
-      // instead of going through the API on Render
       console.log('Fetching printer config from printer proxy:', `${PRINTER_PROXY_URL}/api/printer/config`);
       const response = await fetch(`${PRINTER_PROXY_URL}/api/printer/config`);
       const data = await response.json();
       
       if (data && data.success && data.printer) {
         console.log('Printer config from printer proxy:', data.printer);
-        // Return with explicit printer IP and port
+        // Save to localStorage for future use
+        localStorage.setItem('printerConfig', JSON.stringify({
+          ip: data.printer.ipAddress,
+          port: data.printer.port
+        }));
+        
         return { 
           ip: data.printer.ipAddress,
           port: data.printer.port,
@@ -95,6 +118,13 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
         
         if (dbData && dbData.success && dbData.printer) {
           console.log('Printer config from printer proxy DB:', dbData.printer);
+          
+          // Save to localStorage for future use
+          localStorage.setItem('printerConfig', JSON.stringify({
+            ip: dbData.printer.ipAddress,
+            port: dbData.printer.port || 9100
+          }));
+          
           return { 
             ip: dbData.printer.ipAddress,
             port: dbData.printer.port || 9100,
@@ -105,19 +135,70 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
         console.error('Error fetching printer config from DB:', dbError);
       }
       
-      // If no printer configuration is found, use default values
-      console.warn('No printer configuration found, using default values');
+      // If no printer configuration is found, try to get from settings API
+      try {
+        console.log('Trying to get printer from settings API');
+        const settingsResponse = await axios.get('/api/settings/printer');
+        if (settingsResponse.data && settingsResponse.data.ipAddress) {
+          console.log('Printer config from settings API:', settingsResponse.data);
+          
+          // Save to localStorage for future use
+          localStorage.setItem('printerConfig', JSON.stringify({
+            ip: settingsResponse.data.ipAddress,
+            port: settingsResponse.data.port || 9100
+          }));
+          
+          return {
+            ip: settingsResponse.data.ipAddress,
+            port: settingsResponse.data.port || 9100,
+            skipConnectivityCheck: true
+          };
+        }
+      } catch (settingsError) {
+        console.error('Error fetching printer from settings API:', settingsError);
+      }
+      
+      // If still no printer configuration, prompt user for IP address
+      console.warn('No printer configuration found, prompting user');
+      const userIp = prompt('Please enter printer IP address:');
+      if (userIp) {
+        // Save to localStorage for future use
+        localStorage.setItem('printerConfig', JSON.stringify({
+          ip: userIp,
+          port: 9100
+        }));
+        
+        return { 
+          ip: userIp,
+          port: 9100,
+          skipConnectivityCheck: true 
+        };
+      }
+      
+      // Last resort - use localhost
+      console.warn('No printer IP provided, using localhost');
       return { 
-        ip: '192.168.1.14', // Default printer IP - using a more likely network address
-        port: 9100,          // Default printer port
+        ip: 'localhost',
+        port: 9100,
         skipConnectivityCheck: true 
       };
     } catch (error) {
       console.error('Error fetching printer config:', error);
-      // If there's an error, use default values
+      
+      // If there's an error, prompt the user
+      const userIp = prompt('Error getting printer. Please enter printer IP address:');
+      if (userIp) {
+        return { 
+          ip: userIp,
+          port: 9100,
+          skipConnectivityCheck: true 
+        };
+      }
+      
+      // Last resort - use localhost
       return { 
-        ip: '192.168.1.14', // Default printer IP - using a more likely network address
-        port: 9100,          // Default printer port
+        ip: 'localhost',
+        port: 9100,
         skipConnectivityCheck: true 
       };
     }
