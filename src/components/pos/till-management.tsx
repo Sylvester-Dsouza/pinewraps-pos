@@ -131,8 +131,10 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
       
       // Send the open-drawer command to the proxy
       try {
+        // Always include skipConnectivityCheck parameter
         const response = await axios.post(`${PRINTER_PROXY_URL}/open-drawer`, {
-          ...proxyConfig
+          ...proxyConfig,
+          skipConnectivityCheck: true
         });
 
         if (response.status === 200) {
@@ -214,7 +216,8 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
       // Open the drawer only, no receipt printing
       try {
         await axios.post(`${PRINTER_PROXY_URL}/open-drawer`, {
-          ...proxyConfig
+          ...proxyConfig,
+          skipConnectivityCheck: true
         });
       } catch (drawerError) {
         console.error('Error opening cash drawer:', drawerError);
@@ -307,7 +310,8 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
       // First send open drawer command
       try {
         const response = await axios.post(`${PRINTER_PROXY_URL}/open-drawer`, {
-          ...proxyConfig
+          ...proxyConfig,
+          skipConnectivityCheck: true
         });
 
         if (response.status !== 200) {
