@@ -17,17 +17,22 @@ export default function FinalCheckPage() {
     const isCashierStaff = localStorage.getItem('isCashierStaff') === 'true';
     const userRole = localStorage.getItem('userRole');
     
-    // Admin and super admin have access to all screens
-    const hasAdminAccess = userRole === 'ADMIN' || userRole === 'SUPER_ADMIN';
+    // Only super admin has automatic access to all screens
+    const hasSuperAdminAccess = userRole === 'SUPER_ADMIN';
     
     // Check if user has any staff role assigned
     const hasAnyStaffRole = isKitchenStaff || isDesignStaff || isFinalCheckStaff || isCashierStaff;
     
     // Grant access if:
-    // 1. User is admin/super admin (full access to all screens)
-    // 2. User is final check staff (access to final check page)
+    // 1. User is super admin (full access to all screens)
+    // 2. User is final check staff (access to final check page) - applies to both ADMIN and POS_USER
     // 3. User is a regular POS user with no staff roles (full access to all screens)
-    setHasPermission(hasAdminAccess || isFinalCheckStaff || (!hasAnyStaffRole && userRole === 'POS_USER'));
+    // 4. User is a regular ADMIN user with no staff roles (full access to all screens)
+    setHasPermission(
+      hasSuperAdminAccess || 
+      isFinalCheckStaff || 
+      (!hasAnyStaffRole && (userRole === 'POS_USER' || userRole === 'ADMIN'))
+    );
   }, []);
 
   if (hasPermission === null) {

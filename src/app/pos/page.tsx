@@ -55,8 +55,8 @@ export default function POSPage() {
       const isCashierStaff = localStorage.getItem('isCashierStaff') === 'true';
       const userRole = localStorage.getItem('userRole');
       
-      // Admin and super admin have access to all screens
-      const hasAdminAccess = userRole === 'ADMIN' || userRole === 'SUPER_ADMIN';
+      // Only super admin has automatic access to all screens
+      const hasSuperAdminAccess = userRole === 'SUPER_ADMIN';
       
       // Check if user has any staff role assigned
       const hasAnyStaffRole = isKitchenStaff || isDesignStaff || isFinalCheckStaff || isCashierStaff;
@@ -65,11 +65,17 @@ export default function POSPage() {
       const isSpecializedNonPOSStaff = isKitchenStaff || isDesignStaff || isFinalCheckStaff;
       
       // Grant access if:
-      // 1. User is admin/super admin (full access to all screens)
-      // 2. User is cashier staff (access to POS page only)
+      // 1. User is super admin (full access to all screens)
+      // 2. User is cashier staff (access to POS page only) - applies to both ADMIN and POS_USER
       // 3. User is a regular POS user with no staff roles (full access to POS page)
-      // 4. User is not a specialized non-POS staff (kitchen, design, final check)
-      setHasGeneralPOSAccess(hasAdminAccess || isCashierStaff || (!hasAnyStaffRole && userRole === 'POS_USER') || !isSpecializedNonPOSStaff);
+      // 4. User is a regular ADMIN user with no staff roles (full access to POS page)
+      // 5. User is not a specialized non-POS staff (kitchen, design, final check)
+      setHasGeneralPOSAccess(
+        hasSuperAdminAccess || 
+        isCashierStaff || 
+        (!hasAnyStaffRole && (userRole === 'POS_USER' || userRole === 'ADMIN')) || 
+        !isSpecializedNonPOSStaff
+      );
     }
   }, []);
 
