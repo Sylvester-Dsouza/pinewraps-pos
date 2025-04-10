@@ -457,9 +457,9 @@ export default function CheckoutModal({
       paymentReference: currentPaymentReferenceState || '',
 
       // Customer details
-      customerName: sanitizedCustomerDetails.name,
+      customerName: sanitizedCustomerDetails.name || 'Walk-in Customer',
       customerEmail: sanitizedCustomerDetails.email || '',
-      customerPhone: sanitizedCustomerDetails.phone,
+      customerPhone: sanitizedCustomerDetails.phone || '',
 
       // Processing flags based on order flow
       requiresKitchen,
@@ -576,7 +576,7 @@ export default function CheckoutModal({
 
   // Sanitize functions for checkout details
   const sanitizeCustomerDetails = () => ({
-    name: customerDetailsState.name?.trim() || '',
+    name: customerDetailsState.name?.trim() || 'Walk-in Customer',
     email: customerDetailsState.email?.trim() || '',
     phone: customerDetailsState.phone?.trim() || ''
   });
@@ -1010,7 +1010,7 @@ export default function CheckoutModal({
                       notes: item.notes || ''
                     })),
                     // Include customer details
-                    customerName: customerDetails?.name || '',
+                    customerName: customerDetails?.name || 'Walk-in Customer',
                     customerEmail: customerDetails?.email || '',
                     customerPhone: customerDetails?.phone || '',
                     // Include totals
@@ -1140,7 +1140,7 @@ export default function CheckoutModal({
                   notes: item.notes || ''
                 })),
                 // Include customer details
-                customerName: customerDetails?.name || '',
+                customerName: customerDetails?.name || 'Walk-in Customer',
                 customerEmail: customerDetails?.email || '',
                 customerPhone: customerDetails?.phone || '',
                 // Include totals
