@@ -118,8 +118,20 @@ export class OrderDrawerService {
         type: 'order',
         orderId,
         paymentMethod,
-        // Include the complete order object if available
-        ...(completeOrderData && { order: completeOrderData })
+        // Always include the order object with customer details
+        order: {
+          ...completeOrderData,
+          // Ensure customer details are explicitly included
+          customerName: completeOrderData?.customerName || 'Walk-in Customer',
+          customerEmail: completeOrderData?.customerEmail || '',
+          customerPhone: completeOrderData?.customerPhone || '',
+          // Ensure delivery details are included
+          deliveryMethod: completeOrderData?.deliveryMethod || 'PICKUP',
+          deliveryDate: completeOrderData?.deliveryDate || completeOrderData?.date || new Date().toISOString(),
+          deliveryTimeSlot: completeOrderData?.deliveryTimeSlot || completeOrderData?.timeSlot || '',
+          // Include order ID even if we couldn't fetch complete data
+          id: orderId
+        }
       };
       
       console.log('Sending print-and-open request with data:', JSON.stringify(requestData, null, 2));
@@ -273,22 +285,20 @@ export class OrderDrawerService {
               id: orderId,
               orderId: orderId,
               payments: payments,
-              // If complete order data is provided, include it
-              ...(orderData && {
-                items: orderData.items,
-                customerName: orderData.customerName,
-                customerEmail: orderData.customerEmail,
-                customerPhone: orderData.customerPhone,
-                subtotal: orderData.subtotal,
-                total: orderData.total,
-                deliveryMethod: orderData.deliveryMethod,
-                deliveryDate: orderData.deliveryDate,
-                deliveryTimeSlot: orderData.deliveryTimeSlot,
-                isGift: orderData.isGift,
-                giftMessage: orderData.giftMessage,
-                giftRecipientName: orderData.giftRecipientName,
-                giftRecipientPhone: orderData.giftRecipientPhone
-              })
+              // Always include customer details, with defaults if not provided
+              items: orderData?.items || [],
+              customerName: orderData?.customerName || 'Walk-in Customer',
+              customerEmail: orderData?.customerEmail || '',
+              customerPhone: orderData?.customerPhone || '',
+              subtotal: orderData?.subtotal || 0,
+              total: orderData?.total || 0,
+              deliveryMethod: orderData?.deliveryMethod || 'PICKUP',
+              deliveryDate: orderData?.deliveryDate || orderData?.date || new Date().toISOString(),
+              deliveryTimeSlot: orderData?.deliveryTimeSlot || orderData?.timeSlot || '',
+              isGift: orderData?.isGift || false,
+              giftMessage: orderData?.giftMessage || '',
+              giftRecipientName: orderData?.giftRecipientName || '',
+              giftRecipientPhone: orderData?.giftRecipientPhone || ''
             }
           };
           
@@ -367,22 +377,20 @@ export class OrderDrawerService {
             id: orderId,
             orderId: orderId,
             payments: payments,
-            // If complete order data is provided, include it
-            ...(orderData && {
-              items: orderData.items,
-              customerName: orderData.customerName,
-              customerEmail: orderData.customerEmail,
-              customerPhone: orderData.customerPhone,
-              subtotal: orderData.subtotal,
-              total: orderData.total,
-              deliveryMethod: orderData.deliveryMethod,
-              deliveryDate: orderData.deliveryDate,
-              deliveryTimeSlot: orderData.deliveryTimeSlot,
-              isGift: orderData.isGift,
-              giftMessage: orderData.giftMessage,
-              giftRecipientName: orderData.giftRecipientName,
-              giftRecipientPhone: orderData.giftRecipientPhone
-            })
+            // Always include customer details, with defaults if not provided
+            items: orderData?.items || [],
+            customerName: orderData?.customerName || 'Walk-in Customer',
+            customerEmail: orderData?.customerEmail || '',
+            customerPhone: orderData?.customerPhone || '',
+            subtotal: orderData?.subtotal || 0,
+            total: orderData?.total || 0,
+            deliveryMethod: orderData?.deliveryMethod || 'PICKUP',
+            deliveryDate: orderData?.deliveryDate || orderData?.date || new Date().toISOString(),
+            deliveryTimeSlot: orderData?.deliveryTimeSlot || orderData?.timeSlot || '',
+            isGift: orderData?.isGift || false,
+            giftMessage: orderData?.giftMessage || '',
+            giftRecipientName: orderData?.giftRecipientName || '',
+            giftRecipientPhone: orderData?.giftRecipientPhone || ''
           }
         };
         
