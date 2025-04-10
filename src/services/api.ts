@@ -114,6 +114,7 @@ export const authApi = {
       
       // Add error handling and logging
       console.log("Attempting login with:", email);
+      console.log("Password length:", password.length);
       
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const token = await userCredential.user.getIdToken();
@@ -155,7 +156,20 @@ export const authApi = {
           sameSite: 'strict'
         });
         
-        return { success: true, data: userData };
+        // Store staff role flags in localStorage
+        localStorage.setItem('isKitchenStaff', String(userData?.isKitchenStaff || false));
+        localStorage.setItem('isDesignStaff', String(userData?.isDesignStaff || false));
+        localStorage.setItem('isFinalCheckStaff', String(userData?.isFinalCheckStaff || false));
+        localStorage.setItem('isCashierStaff', String(userData?.isCashierStaff || false));
+        
+        console.log('Staff roles stored in localStorage:', {
+          isKitchenStaff: userData?.isKitchenStaff || false,
+          isDesignStaff: userData?.isDesignStaff || false,
+          isFinalCheckStaff: userData?.isFinalCheckStaff || false,
+          isCashierStaff: userData?.isCashierStaff || false
+        });
+        
+        return { success: true, data: userData, message: 'Login successful' };
       } catch (verifyError: any) {
         console.error('Backend verification failed:', verifyError);
         
@@ -201,8 +215,15 @@ export const authApi = {
       console.error('Login error details:', {
         code: error.code,
         message: error.message,
-        response: error.response?.data
+        response: error.response?.data,
+        stack: error.stack
       });
+      
+      // Log the specific Firebase error
+      if (error.code && error.code.startsWith('auth/')) {
+        console.error(`Firebase auth error: ${error.code}`);
+        console.error(`Error message: ${error.message}`);
+      }
       throw error; // Let the login page handle the error
     }
   },

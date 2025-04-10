@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/hooks/use-auth";
-import { Timer, CheckCircle2, Clock, ChefHat, Bell, RotateCw, Maximize2, Minimize2, AlertCircle, AlertTriangle } from "lucide-react";
+import Cookies from "js-cookie";
+import { Timer, CheckCircle2, Clock, ChefHat, Bell, RotateCw, Maximize2, Minimize2, AlertCircle, AlertTriangle, LogOut, User } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { apiMethods } from "@/services/api";
 import { wsService } from "@/services/websocket";
@@ -269,7 +270,7 @@ const OrderTimer2 = ({ createdAt }: { createdAt: Date }) => {
 };
 
 export default function DesignDisplay() {
-  const { user, loading: userLoading } = useAuth();
+  const { user, logout, loading: userLoading } = useAuth();
   const [orders, setOrders] = useState<DesignOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -1137,8 +1138,38 @@ export default function DesignDisplay() {
     <div className="min-h-screen bg-gray-100 p-2 sm:p-4">
       {/* Header */}
       <div className="mb-4 sm:mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-0">
-        <div>
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
           <h1 className="text-xl sm:text-2xl font-bold text-gray-800">Design Screen</h1>
+          
+          {/* User name display */}
+          <div className="flex items-center bg-white px-3 py-2 rounded-lg shadow-sm">
+            <User className="w-4 h-4 text-gray-500 mr-2" />
+            <span className="text-sm font-medium text-gray-700">
+              {user?.name ? user.name : user?.email || 'Staff'}
+            </span>
+          </div>
+          
+          {/* Logout button with text */}
+          <a
+            href="/login?logout=true"
+            onClick={(e) => {
+              e.preventDefault();
+              // Clear all auth data
+              Cookies.remove('firebase-token');
+              localStorage.clear();
+              sessionStorage.clear();
+              
+              // Use window.open to force a new window/tab which bypasses service worker cache
+              const newWindow = window.open('/login?logout=true', '_self');
+              if (newWindow) {
+                newWindow.opener = null;
+              }
+            }}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 transition-colors"
+          >
+            <LogOut className="w-4 h-4" />
+            <span className="text-sm font-medium">Logout</span>
+          </a>
         </div>
         
         <div className="flex items-center space-x-4 self-end sm:self-auto">

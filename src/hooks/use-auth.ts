@@ -35,9 +35,43 @@ export function useAuth() {
     verifyToken();
   }, []);
 
-  const logout = () => {
+  const logout = async () => {
+    // Remove the auth token
     Cookies.remove('firebase-token');
+    
+    // Clear any staff role flags from localStorage
+    localStorage.removeItem('isKitchenStaff');
+    localStorage.removeItem('isDesignStaff');
+    localStorage.removeItem('isFinalCheckStaff');
+    localStorage.removeItem('isCashierStaff');
+    localStorage.removeItem('userRole');
+    
+    // Reset user state
     setUser(null);
+    
+    // Unregister service worker to prevent caching issues
+    if ('serviceWorker' in navigator) {
+      try {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        for (const registration of registrations) {
+          await registration.unregister();
+          console.log('Service Worker unregistered');
+        }
+        
+        // Clear caches to ensure fresh data after login
+        if ('caches' in window) {
+          const cacheNames = await caches.keys();
+          await Promise.all(cacheNames.map(cacheName => caches.delete(cacheName)));
+          console.log('Caches cleared');
+        }
+      } catch (error) {
+        console.error('Error during service worker cleanup:', error);
+      }
+    }
+    
+    // Force redirect to login page using window.location
+    // This is the most reliable way to ensure a complete navigation
+    window.location.href = '/login';
   };
 
   return { user, loading, logout };

@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useRouter } from "next/navigation";
+import Cookies from "js-cookie";
 import { 
   CheckCircle2, 
   Clock, 
@@ -1194,17 +1195,26 @@ export default function KitchenDisplay() {
           </div>
           
           {/* Logout button with text */}
-          <button
-            onClick={() => {
-              logout();
-              // Redirect to login page after logout
-              router.push('/login');
+          <a
+            href="/login?logout=true"
+            onClick={(e) => {
+              e.preventDefault();
+              // Clear all auth data
+              Cookies.remove('firebase-token');
+              localStorage.clear();
+              sessionStorage.clear();
+              
+              // Use window.open to force a new window/tab which bypasses service worker cache
+              const newWindow = window.open('/login?logout=true', '_self');
+              if (newWindow) {
+                newWindow.opener = null;
+              }
             }}
             className="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 transition-colors"
           >
             <LogOut className="w-4 h-4" />
             <span className="text-sm font-medium">Logout</span>
-          </button>
+          </a>
         </div>
         
         {/* Control buttons */}

@@ -13,24 +13,62 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
-  // Check if user is already authenticated
+  // Force logout if needed
   useEffect(() => {
+    // Check if this is a logout request (from URL parameter)
+    const urlParams = new URLSearchParams(window.location.search);
+    const isLogout = urlParams.get('logout') === 'true';
+    
+    if (isLogout) {
+      console.log('Logout requested, clearing auth state...');
+      const auth = getAuth();
+      auth.signOut().then(() => {
+        console.log('Firebase signOut successful');
+        // Clear all storage
+        Cookies.remove('firebase-token');
+        localStorage.clear();
+        sessionStorage.clear();
+        
+        // Remove the logout parameter from URL
+        window.history.replaceState({}, document.title, '/login');
+      }).catch(err => {
+        console.error('Error during signOut:', err);
+      });
+      return;
+    }
+    
+    // Normal authentication check
     const auth = getAuth();
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (user) {
+      if (user && !isLogout) {
         try {
           // Get fresh token and verify with backend
           const token = await user.getIdToken(true);
           const response = await authApi.verify();
           
           if (response.data.success) {
-            // Store token and redirect
+            // Store token and redirect based on staff role
             Cookies.set('firebase-token', token, {
               expires: 7,
               secure: process.env.NODE_ENV === 'production',
               sameSite: 'strict'
             });
-            router.replace('/pos');
+            
+            // Check user's staff roles
+            const userData = response.data.data || response.data.user;
+            
+            if (userData?.isKitchenStaff) {
+              router.replace('/kitchen');
+            } else if (userData?.isDesignStaff) {
+              router.replace('/design');
+            } else if (userData?.isFinalCheckStaff) {
+              router.replace('/final-check');
+            } else if (userData?.isCashierStaff) {
+              router.replace('/pos');
+            } else {
+              // Default for regular POS users
+              router.replace('/pos');
+            }
           }
         } catch (error) {
           console.error('Verification failed:', error);
@@ -52,23 +90,35 @@ export default function LoginPage() {
       // Login with email/password
       const response = await authApi.login(email, password);
       
-      if (!response.data.success) {
-        throw new Error(response.data.message || 'Login failed');
+      if (response && !response.success) {
+        throw new Error(response.message || 'Login failed');
       }
 
       // Redirect will be handled by the useEffect above
     } catch (error: any) {
       console.error('Login error:', error);
+      
+      // Handle different types of errors
       if (error.response?.data?.message) {
+        // API error with message
         setError(error.response.data.message);
       } else if (error.code === 'auth/wrong-password') {
+        // Firebase auth errors
         setError('Invalid password');
       } else if (error.code === 'auth/user-not-found') {
         setError('User not found');
       } else if (error.code === 'auth/too-many-requests') {
         setError('Too many login attempts. Please try again later.');
+      } else if (error.code === 'auth/invalid-credential') {
+        setError('Invalid credentials. Please check your email and password.');
+      } else if (error.code === 'auth/invalid-email') {
+        setError('Invalid email format.');
+      } else if (error.message) {
+        // Generic error with message
+        setError(error.message);
       } else {
-        setError(error.message || 'Failed to login. Please check your credentials.');
+        // Fallback error message
+        setError('Failed to login. Please check your credentials.');
       }
     } finally {
       setLoading(false);

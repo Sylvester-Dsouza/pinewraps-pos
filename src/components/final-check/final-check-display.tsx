@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { FileCheck, Bell, RotateCw, Maximize2, Minimize2 } from "lucide-react";
+import { FileCheck, Bell, RotateCw, Maximize2, Minimize2, LogOut, User } from "lucide-react";
+import Cookies from "js-cookie";
 import { AnimatePresence } from "framer-motion";
 import OrderCard from "@/components/final-check/order-card";
 import { apiMethods } from "@/services/api";
@@ -82,7 +83,7 @@ export default function FinalCheckDisplay() {
   const [loading, setLoading] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [activeTab, setActiveTab] = useState('queue');
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
   const router = useRouter();
 
   // Check if user is authenticated and has final check staff access
@@ -452,9 +453,41 @@ export default function FinalCheckDisplay() {
       <div className="w-full">
         {/* Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 sm:mb-8 gap-2 sm:gap-0">
-          <div>
-            <h1 className="text-xl sm:text-3xl font-bold text-gray-900">Final Check Display</h1>
-            <p className="text-sm sm:text-base text-gray-500 mt-1">Review orders and ensure quality before completion</p>
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+            <div>
+              <h1 className="text-xl sm:text-3xl font-bold text-gray-900">Final Check Display</h1>
+              <p className="text-sm sm:text-base text-gray-500 mt-1">Review orders and ensure quality before completion</p>
+            </div>
+            
+            {/* User name display */}
+            <div className="flex items-center bg-white px-3 py-2 rounded-lg shadow-sm ml-0 sm:ml-4">
+              <User className="w-4 h-4 text-gray-500 mr-2" />
+              <span className="text-sm font-medium text-gray-700">
+                {user?.displayName || user?.email || 'Staff'}
+              </span>
+            </div>
+            
+            {/* Logout button with text */}
+            <a
+              href="/login?logout=true"
+              onClick={(e) => {
+                e.preventDefault();
+                // Clear all auth data
+                Cookies.remove('firebase-token');
+                localStorage.clear();
+                sessionStorage.clear();
+                
+                // Use window.open to force a new window/tab which bypasses service worker cache
+                const newWindow = window.open('/login?logout=true', '_self');
+                if (newWindow) {
+                  newWindow.opener = null;
+                }
+              }}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 transition-colors ml-0 sm:ml-2"
+            >
+              <LogOut className="w-4 h-4" />
+              <span className="text-sm font-medium">Logout</span>
+            </a>
           </div>
           <div className="flex items-center gap-2 sm:gap-3 self-end sm:self-auto">
             <button
