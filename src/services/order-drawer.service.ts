@@ -179,9 +179,11 @@ export class OrderDrawerService {
    * Handle cash drawer operations for an order
    * @param payments Array of payments for the order
    * @param orderNumber Optional order number for reference
+   * @param orderId Optional order ID for fetching complete order data
+   * @param orderData Optional complete order data
    * @returns Promise resolving to true if successful, false otherwise
    */
-  public async handleOrderCashDrawer(payments: Payment[], orderNumber?: string): Promise<boolean> {
+  public async handleOrderCashDrawer(payments: Payment[], orderNumber?: string, orderId?: string, orderData?: any): Promise<boolean> {
     try {
       console.log('Handling cash drawer operations for payments:', JSON.stringify(payments, null, 2));
       
@@ -217,10 +219,28 @@ export class OrderDrawerService {
             ip: printerConfig.ip,
             port: printerConfig.port,
             skipConnectivityCheck: true,
-            // Include order data in the expected format
+            // Include complete order data in the expected format
             orderData: {
               orderNumber: orderNumber || 'ORDER-DRAWER',
-              payments: payments
+              id: orderId,
+              orderId: orderId,
+              payments: payments,
+              // If complete order data is provided, include it
+              ...(orderData && {
+                items: orderData.items,
+                customerName: orderData.customerName,
+                customerEmail: orderData.customerEmail,
+                customerPhone: orderData.customerPhone,
+                subtotal: orderData.subtotal,
+                total: orderData.total,
+                deliveryMethod: orderData.deliveryMethod,
+                deliveryDate: orderData.deliveryDate,
+                deliveryTimeSlot: orderData.deliveryTimeSlot,
+                isGift: orderData.isGift,
+                giftMessage: orderData.giftMessage,
+                giftRecipientName: orderData.giftRecipientName,
+                giftRecipientPhone: orderData.giftRecipientPhone
+              })
             }
           };
           
@@ -274,9 +294,11 @@ export class OrderDrawerService {
    * Handle card payment operations for an order (print only, no drawer opening)
    * @param payments Array of payments for the order
    * @param orderNumber Optional order number for reference
+   * @param orderId Optional order ID for fetching complete order data
+   * @param orderData Optional complete order data
    * @returns Promise resolving to true if successful, false otherwise
    */
-  public async handleOrderCardPayment(payments: Payment[], orderNumber?: string): Promise<boolean> {
+  public async handleOrderCardPayment(payments: Payment[], orderNumber?: string, orderId?: string, orderData?: any): Promise<boolean> {
     try {
       console.log('Handling card payment operations for order:', orderNumber);
       
@@ -284,15 +306,56 @@ export class OrderDrawerService {
         // Get printer configuration
         const printerConfig = await getPrinterConfig();
         
-        // Use direct axios calls to printer proxy with the print-only endpoint
+        // Use fetch instead of axios to match the till-management implementation
         // This endpoint should only print the receipt without opening the drawer
-        const response = await axios.post(`${PRINTER_PROXY_URL}/print-only`, {
-          ...printerConfig,
+        const requestData = {
+          // Include printer configuration
+          ip: printerConfig.ip,
+          port: printerConfig.port,
+          skipConnectivityCheck: true,
+          // Include complete order data in the expected format
           orderData: {
             orderNumber: orderNumber || 'ORDER-CARD',
-            payments
+            id: orderId,
+            orderId: orderId,
+            payments: payments,
+            // If complete order data is provided, include it
+            ...(orderData && {
+              items: orderData.items,
+              customerName: orderData.customerName,
+              customerEmail: orderData.customerEmail,
+              customerPhone: orderData.customerPhone,
+              subtotal: orderData.subtotal,
+              total: orderData.total,
+              deliveryMethod: orderData.deliveryMethod,
+              deliveryDate: orderData.deliveryDate,
+              deliveryTimeSlot: orderData.deliveryTimeSlot,
+              isGift: orderData.isGift,
+              giftMessage: orderData.giftMessage,
+              giftRecipientName: orderData.giftRecipientName,
+              giftRecipientPhone: orderData.giftRecipientPhone
+            })
           }
+        };
+        
+        console.log('Sending request to print-only endpoint with data:', JSON.stringify(requestData, null, 2));
+        
+        const fetchResponse = await fetch(`${PRINTER_PROXY_URL}/print-order`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(requestData)
         });
+        
+        console.log(`Print-order response status:`, fetchResponse.status);
+        const responseData = await fetchResponse.json();
+        
+        // Create a response object that matches the axios format for compatibility
+        const response = {
+          status: fetchResponse.status,
+          data: responseData
+        };
         
         console.log('Card order print response:', response.data);
         

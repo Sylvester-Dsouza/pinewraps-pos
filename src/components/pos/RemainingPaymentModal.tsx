@@ -32,24 +32,97 @@ export default function RemainingPaymentModal({
       const PRINTER_PROXY_URL = process.env.NEXT_PUBLIC_PRINTER_PROXY_URL || 'http://localhost:3005';
       console.log('Using printer proxy at:', PRINTER_PROXY_URL);
       
-      // Print receipt and open drawer directly using the printer proxy
-      const response = await axios.post(`${PRINTER_PROXY_URL}/print-and-open`, { 
+      // Get printer configuration
+      const printerConfig = await getPrinterConfig(PRINTER_PROXY_URL);
+      
+      // Prepare complete order data for printing
+      const requestData = {
+        // Include printer configuration
+        ip: printerConfig.ip,
+        port: printerConfig.port,
+        skipConnectivityCheck: true,
+        // Include complete order data
         type: 'order',
         orderId: order.id,
-        skipConnectivityCheck: true
-      }, {
-        timeout: 30000 // 30 second timeout for better reliability
+        // Include the complete order object
+        order: order
+      };
+      
+      console.log('Sending print-and-open request with complete order data');
+      
+      // Use fetch instead of axios for better reliability
+      const fetchResponse = await fetch(`${PRINTER_PROXY_URL}/print-and-open`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(requestData)
       });
       
-      if (response.data?.success) {
+      console.log(`Print-and-open response status:`, fetchResponse.status);
+      const responseData = await fetchResponse.json();
+      
+      if (responseData?.success) {
         console.log('Receipt printed and drawer opened successfully');
       } else {
-        console.error('Failed to print receipt and open drawer:', response.data?.error);
+        console.error('Failed to print receipt and open drawer:', responseData?.error);
         toast.error('Failed to print receipt and open drawer');
       }
     } catch (error) {
       console.error('Error printing receipt and opening drawer:', error);
       toast.error('Error printing receipt and opening drawer');
+    }
+  };
+  
+  // Function to get printer configuration
+  const getPrinterConfig = async (proxyUrl: string) => {
+    try {
+      console.log('Fetching printer config from printer proxy');
+      const response = await fetch(`${proxyUrl}/api/printer/config`);
+      const data = await response.json();
+      
+      if (data && data.success && data.printer) {
+        console.log('Printer config from printer proxy:', data.printer);
+        return { 
+          ip: data.printer.ipAddress,
+          port: data.printer.port,
+          skipConnectivityCheck: true
+        };
+      }
+      
+      // Try to get the printer from the database through the printer proxy
+      console.log('Trying to get printer from database');
+      try {
+        const dbResponse = await fetch(`${proxyUrl}/api/printer/db-config`);
+        const dbData = await dbResponse.json();
+        
+        if (dbData && dbData.success && dbData.printer) {
+          console.log('Printer config from printer proxy DB:', dbData.printer);
+          return { 
+            ip: dbData.printer.ipAddress,
+            port: dbData.printer.port || 9100,
+            skipConnectivityCheck: true 
+          };
+        }
+      } catch (dbError) {
+        console.error('Error fetching printer config from DB:', dbError);
+      }
+      
+      // If no printer configuration is found, use default values
+      console.warn('No printer configuration found, using default values');
+      return { 
+        ip: '192.168.1.14', // Default printer IP
+        port: 9100,         // Default printer port
+        skipConnectivityCheck: true 
+      };
+    } catch (error) {
+      console.error('Error fetching printer config:', error);
+      // If there's an error, use default values
+      return { 
+        ip: '192.168.1.14', // Default printer IP
+        port: 9100,         // Default printer port
+        skipConnectivityCheck: true 
+      };
     }
   };
 
