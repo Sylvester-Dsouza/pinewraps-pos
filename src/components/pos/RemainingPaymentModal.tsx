@@ -111,7 +111,7 @@ export default function RemainingPaymentModal({
       // If no printer configuration is found, use default values
       console.warn('No printer configuration found, using default values');
       return { 
-        ip: '192.168.1.14', // Default printer IP
+        ip: '192.168.0.12', // Default printer IP
         port: 9100,         // Default printer port
         skipConnectivityCheck: true 
       };
@@ -119,7 +119,7 @@ export default function RemainingPaymentModal({
       console.error('Error fetching printer config:', error);
       // If there's an error, use default values
       return { 
-        ip: '192.168.1.14', // Default printer IP
+        ip: '192.168.0.12', // Default printer IP
         port: 9100,         // Default printer port
         skipConnectivityCheck: true 
       };

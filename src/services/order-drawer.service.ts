@@ -88,24 +88,59 @@ export class OrderDrawerService {
     // Get the printer configuration
     const printerConfig = await getPrinterConfig();
     
-    // Use the printer proxy directly - this is the only approach that works in production
     try {
+      // First, fetch the complete order data to ensure we have all details
+      console.log('Fetching complete order data for receipt printing...');
+      let completeOrderData = null;
+      
+      try {
+        const orderResponse = await api.get(`/api/pos/orders/${orderId}`);
+        if (orderResponse.data && orderResponse.data.id) {
+          completeOrderData = orderResponse.data;
+          console.log('Successfully fetched complete order data:', completeOrderData);
+        } else {
+          console.warn('Order data response was empty or invalid');
+        }
+      } catch (orderError) {
+        console.error('Error fetching order data:', orderError);
+        // Continue with the print process even if we can't fetch the order data
+      }
+      
       console.log('Attempting to print receipt and open drawer using printer proxy');
       
-      const response = await axios.post(`${PRINTER_PROXY_URL}/print-and-open`, {
-        ...printerConfig,
+      // Prepare the request data with complete order information
+      const requestData = {
+        // Include printer configuration
+        ip: printerConfig.ip,
+        port: printerConfig.port,
+        skipConnectivityCheck: true,
+        // Include order metadata
         type: 'order',
         orderId,
-        paymentMethod
+        paymentMethod,
+        // Include the complete order object if available
+        ...(completeOrderData && { order: completeOrderData })
+      };
+      
+      console.log('Sending print-and-open request with data:', JSON.stringify(requestData, null, 2));
+      
+      // Use fetch instead of axios for better reliability
+      const fetchResponse = await fetch(`${PRINTER_PROXY_URL}/print-and-open`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(requestData)
       });
       
-      console.log('Printer proxy response:', response.data);
+      console.log(`Print-and-open response status:`, fetchResponse.status);
+      const responseData = await fetchResponse.json();
       
-      if (response.data.success) {
+      if (responseData.success) {
         console.log('Successfully printed receipt and opened drawer via printer proxy');
         return true;
       } else {
-        console.warn('Printer proxy returned unsuccessful response:', response.data.error || 'Unknown error');
+        console.warn('Printer proxy returned unsuccessful response:', responseData.error || 'Unknown error');
         toast.error('Could not open cash drawer or print receipt. Please check printer connection.');
         
         // If it's a cash payment, still try just opening the drawer as a fallback
@@ -137,18 +172,31 @@ export class OrderDrawerService {
     try {
       console.log('Attempting to open drawer directly as last resort');
       
-      const response = await axios.post(`${PRINTER_PROXY_URL}/open-drawer`, {
-        ...printerConfig,
+      const requestData = {
+        ip: printerConfig.ip,
+        port: printerConfig.port,
         skipConnectivityCheck: true
+      };
+      
+      console.log('Sending open-drawer request with data:', JSON.stringify(requestData, null, 2));
+      
+      // Use fetch instead of axios for better reliability
+      const fetchResponse = await fetch(`${PRINTER_PROXY_URL}/open-drawer`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(requestData)
       });
       
-      console.log('Open drawer response:', response.data);
+      console.log(`Open drawer response status:`, fetchResponse.status);
+      const responseData = await fetchResponse.json();
       
-      if (response.data.success) {
+      if (responseData.success) {
         console.log('Successfully opened drawer directly');
         return true;
       } else {
-        console.warn('Open drawer request unsuccessful:', response.data.error || 'Unknown error');
+        console.warn('Open drawer request unsuccessful:', responseData.error || 'Unknown error');
         return false;
       }
     } catch (drawerError) {
