@@ -990,11 +990,41 @@ export default function CheckoutModal({
                   // Include printer configuration
                   ip: printerConfig.ip,
                   port: printerConfig.port,
-                  // Include order data
+                  // Include complete order data
                   orderData: {
+                    // Basic order info
                     orderNumber: response.data?.orderNumber,
+                    id: response.data?.id,
+                    orderId: response.data?.id,
+                    // Include payments
                     payments: paymentData,
-                    orderId: response.data?.id
+                    // Include order items
+                    items: cart.map(item => ({
+                      productId: item.product.id,
+                      productName: item.product.name,
+                      quantity: item.quantity,
+                      // Use product's basePrice as unitPrice
+                      unitPrice: item.product.basePrice,
+                      totalPrice: item.totalPrice,
+                      selectedVariations: item.selectedVariations || [],
+                      notes: item.notes || ''
+                    })),
+                    // Include customer details
+                    customerName: customerDetails?.name || '',
+                    customerEmail: customerDetails?.email || '',
+                    customerPhone: customerDetails?.phone || '',
+                    // Include totals
+                    subtotal: cartTotal, // Use cartTotal from props instead of calculateSubtotal
+                    total: calculateFinalTotal(),
+                    // Include delivery/pickup details
+                    deliveryMethod: deliveryMethodState,
+                    deliveryDate: deliveryMethodState === 'DELIVERY' ? deliveryDetailsState?.date : pickupDetailsState?.date,
+                    deliveryTimeSlot: deliveryMethodState === 'DELIVERY' ? deliveryDetailsState?.timeSlot : pickupDetailsState?.timeSlot,
+                    // Include gift details if applicable
+                    isGift: giftDetailsState?.isGift || false,
+                    giftMessage: giftDetailsState?.message,
+                    giftRecipientName: giftDetailsState?.recipientName,
+                    giftRecipientPhone: giftDetailsState?.recipientPhone
                   },
                   skipConnectivityCheck: true
                 };
@@ -1080,20 +1110,74 @@ export default function CheckoutModal({
           
           try {
             // For card payments - call the print-order endpoint directly
-            const printOrderResponse = await axios.post(`${proxyUrl}/print-order`, {
+            console.log('Calling print-order endpoint for receipt printing');
+            
+            // Get printer configuration
+            const printerConfig = await getPrinterConfig();
+            
+            // Prepare the request data - use the same format as till-management.tsx
+            const requestData = {
+              // Include printer configuration
+              ip: printerConfig.ip,
+              port: printerConfig.port,
+              // Include complete order data
               order: {
+                // Basic order info
                 orderNumber: response.data?.orderNumber,
+                id: response.data?.id,
+                orderId: response.data?.id,
+                // Include payments
                 payments: paymentsState,
-                orderId: response.data?.id
+                // Include order items
+                items: cart.map(item => ({
+                  productId: item.product.id,
+                  productName: item.product.name,
+                  quantity: item.quantity,
+                  // Use product's basePrice as unitPrice
+                  unitPrice: item.product.basePrice,
+                  totalPrice: item.totalPrice,
+                  selectedVariations: item.selectedVariations || [],
+                  notes: item.notes || ''
+                })),
+                // Include customer details
+                customerName: customerDetails?.name || '',
+                customerEmail: customerDetails?.email || '',
+                customerPhone: customerDetails?.phone || '',
+                // Include totals
+                subtotal: cartTotal,
+                total: calculateFinalTotal(),
+                // Include delivery/pickup details
+                deliveryMethod: deliveryMethodState,
+                deliveryDate: deliveryMethodState === 'DELIVERY' ? deliveryDetailsState?.date : pickupDetailsState?.date,
+                deliveryTimeSlot: deliveryMethodState === 'DELIVERY' ? deliveryDetailsState?.timeSlot : pickupDetailsState?.timeSlot,
+                // Include gift details if applicable
+                isGift: giftDetailsState?.isGift || false,
+                giftMessage: giftDetailsState?.message,
+                giftRecipientName: giftDetailsState?.recipientName,
+                giftRecipientPhone: giftDetailsState?.recipientPhone
               },
               skipConnectivityCheck: true
+            };
+            
+            console.log('Sending print-order request with data:', JSON.stringify(requestData, null, 2));
+            
+            // Use fetch instead of axios to match the till-management implementation
+            const fetchResponse = await fetch(`${proxyUrl}/print-order`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify(requestData)
             });
             
-            console.log('Print order response:', printOrderResponse.data);
+            console.log(`Print order response status:`, fetchResponse.status);
+            const responseData = await fetchResponse.json();
             
-            if (printOrderResponse.status !== 200) {
-              console.warn('Print order request unsuccessful:', printOrderResponse.data?.message || 'Unknown error');
+            if (fetchResponse.status !== 200) {
+              console.warn('Print order request unsuccessful:', responseData?.message || 'Unknown error');
               toast.warning('Could not print receipt. Please check printer connection.');
+            } else {
+              console.log('Print order successful:', responseData);
             }
           } catch (printOrderError) {
             console.error('Error in print order operation:', printOrderError.message || 'fetch failed');
