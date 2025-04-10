@@ -1126,6 +1126,8 @@ export default function CheckoutModal({
                 orderNumber: response.data?.orderNumber,
                 id: response.data?.id,
                 orderId: response.data?.id,
+                // Include payment method explicitly
+                paymentMethod: currentPaymentMethodState,
                 // Include payments
                 payments: paymentsState,
                 // Include order items

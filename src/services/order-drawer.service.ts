@@ -106,7 +106,17 @@ export class OrderDrawerService {
         // Continue with the print process even if we can't fetch the order data
       }
       
-      console.log('Attempting to print receipt and open drawer using printer proxy');
+      // Choose the appropriate endpoint based on payment method
+      let endpoint = '/print-order'; // Default for non-cash payments
+      
+      if (paymentMethod === POSPaymentMethod.CASH) {
+        endpoint = '/cash-order'; // For cash payments, use cash-order endpoint
+        console.log('Cash payment detected - using cash-order endpoint');
+      } else {
+        console.log('Non-cash payment detected - using print-order endpoint');
+      }
+      
+      console.log(`Attempting to print receipt${paymentMethod === POSPaymentMethod.CASH ? ' and open drawer' : ''} using printer proxy`);
       
       // Prepare the request data with complete order information
       const requestData = {
@@ -134,10 +144,10 @@ export class OrderDrawerService {
         }
       };
       
-      console.log('Sending print-and-open request with data:', JSON.stringify(requestData, null, 2));
+      console.log(`Sending ${endpoint} request with data:`, JSON.stringify(requestData, null, 2));
       
       // Use fetch instead of axios for better reliability
-      const fetchResponse = await fetch(`${PRINTER_PROXY_URL}/print-and-open`, {
+      const fetchResponse = await fetch(`${PRINTER_PROXY_URL}${endpoint}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
