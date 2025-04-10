@@ -1010,9 +1010,9 @@ export default function CheckoutModal({
                       notes: item.notes || ''
                     })),
                     // Include customer details
-                    customerName: customerDetails?.name || 'Walk-in Customer',
-                    customerEmail: customerDetails?.email || '',
-                    customerPhone: customerDetails?.phone || '',
+                    customerName: customerDetailsState.name || 'Walk-in Customer',
+                    customerEmail: customerDetailsState.email || '',
+                    customerPhone: customerDetailsState.phone || '',
                     // Include totals
                     subtotal: cartTotal, // Use cartTotal from props instead of calculateSubtotal
                     total: calculateFinalTotal(),
@@ -1140,9 +1140,9 @@ export default function CheckoutModal({
                   notes: item.notes || ''
                 })),
                 // Include customer details
-                customerName: customerDetails?.name || 'Walk-in Customer',
-                customerEmail: customerDetails?.email || '',
-                customerPhone: customerDetails?.phone || '',
+                customerName: customerDetailsState.name || 'Walk-in Customer',
+                customerEmail: customerDetailsState.email || '',
+                customerPhone: customerDetailsState.phone || '',
                 // Include totals
                 subtotal: cartTotal,
                 total: calculateFinalTotal(),
