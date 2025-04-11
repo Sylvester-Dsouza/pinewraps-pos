@@ -299,6 +299,7 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
         
         // Print closing receipt
         try {
+          console.log('Preparing to print closing receipt...');
           const closingData = {
             closingAmount: amount,
             sessionId: response.id,
@@ -308,13 +309,34 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
             user: response.user
           };
           
-          await axios.post(`${PRINTER_PROXY_URL}/print-only`, {
-            type: 'till_close_final',
-            data: closingData,
-            ...proxyConfig
+          console.log('Sending print request to printer proxy with data:', JSON.stringify(closingData, null, 2));
+          
+          // Use fetch instead of axios for better reliability with the printer proxy
+          // This follows the memory guidance about using fetch for printer proxy requests
+          const printResponse = await fetch(`${PRINTER_PROXY_URL}/print-only`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              type: 'till_close_final',
+              data: closingData,
+              ...proxyConfig
+            })
           });
+          
+          const printResult = await printResponse.json();
+          console.log('Print response:', printResult);
+          
+          if (printResponse.ok) {
+            console.log('Till closing receipt printed successfully');
+          } else {
+            console.error('Failed to print till closing receipt:', printResult.error || 'Unknown error');
+            toast.error('Till closed but receipt printing failed');
+          }
         } catch (printError) {
           console.error('Error printing closing receipt:', printError);
+          toast.error('Till closed but receipt printing failed');
           // Continue even if printing fails
         }
         

@@ -4,7 +4,7 @@ import React from 'react';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Header from '@/components/header/header';
-import { Search, RefreshCcw, Clock, CheckCircle, XCircle, RotateCcw, Truck, Store, Download, Loader2 } from 'lucide-react';
+import { Search, RefreshCcw, Clock, CheckCircle, XCircle, RotateCcw, Truck, Store, Download, Loader2, Gift } from 'lucide-react';
 import { format } from 'date-fns';
 import { apiMethods } from '@/services/api';
 import { toast } from 'react-hot-toast';
@@ -632,6 +632,38 @@ const OrdersPage = () => {
                               )}
                             </div>
                           </>
+                        )}
+                        
+                        {/* Gift Information Section */}
+                        {order.isGift && (
+                          <div className="mt-2 pt-2 border-t border-gray-200">
+                            <div className="flex items-center gap-1 mb-1">
+                              <Gift className="h-4 w-4 text-pink-500" />
+                              <h4 className="font-semibold text-gray-700">Gift Information:</h4>
+                            </div>
+                            {order.giftRecipientName && (
+                              <p className="text-sm">Recipient: {order.giftRecipientName}</p>
+                            )}
+                            {order.giftRecipientPhone && (
+                              <p className="text-sm">Recipient Phone: {order.giftRecipientPhone}</p>
+                            )}
+                            {order.giftMessage && (
+                              <p className="text-sm">Message: "{order.giftMessage}"</p>
+                            )}
+                            {order.giftCashAmount && parseFloat(String(order.giftCashAmount)) > 0 && (
+                              <p className="text-sm">Cash Gift: AED {parseFloat(String(order.giftCashAmount)).toFixed(2)}</p>
+                            )}
+                            {/* Add button to update gift details */}
+                            {!['COMPLETED', 'CANCELLED'].includes(order.status) && (
+                              <button
+                                onClick={() => setSelectedOrderForPickupUpdate(order)}
+                                className="mt-2 px-3 py-1 text-xs font-medium text-pink-600 bg-pink-100 rounded-md hover:bg-pink-200 inline-flex items-center"
+                              >
+                                <Gift className="h-3 w-3 mr-1" />
+                                Update Gift Details
+                              </button>
+                            )}
+                          </div>
                         )}
                       </div>
                     </div>

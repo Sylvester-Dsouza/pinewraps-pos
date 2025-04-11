@@ -178,7 +178,7 @@ export interface POSOrderData {
   giftRecipientName?: string;
   giftRecipientPhone?: string;
   giftMessage?: string;
-  giftCashAmount?: string;
+  giftCashAmount?: number;
 
   // Payment details
   paymentMethod?: POSPaymentMethod;
@@ -298,7 +298,7 @@ export interface Order {
   giftRecipientName?: string;
   giftRecipientPhone?: string;
   giftMessage?: string;
-  giftCashAmount?: string;
+  giftCashAmount?: number;
 
   // General notes
   notes?: string;

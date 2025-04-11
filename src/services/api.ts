@@ -1099,7 +1099,18 @@ export const apiMethods = {
       }
     },
     
-    updateOrderDetails: async (orderId: string, orderDetails: { deliveryMethod: 'PICKUP' | 'DELIVERY', pickupDate?: string, pickupTimeSlot?: string, deliveryDate?: string, deliveryTimeSlot?: string }): Promise<APIResponse<Order>> => {
+    updateOrderDetails: async (orderId: string, orderDetails: { 
+      deliveryMethod: 'PICKUP' | 'DELIVERY', 
+      pickupDate?: string, 
+      pickupTimeSlot?: string, 
+      deliveryDate?: string, 
+      deliveryTimeSlot?: string,
+      isGift?: boolean,
+      giftRecipientName?: string,
+      giftRecipientPhone?: string,
+      giftMessage?: string,
+      giftCashAmount?: number
+    }): Promise<APIResponse<Order>> => {
       try {
         console.log('API call: updateOrderDetails', { orderId, ...orderDetails });
         const response = await api.patch<APIResponse<Order>>(`/api/pos/orders/${orderId}/order-details`, orderDetails);

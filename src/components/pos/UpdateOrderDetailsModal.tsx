@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import { Fragment } from 'react';
-import { XCircle, Calendar, Clock, Truck, Store } from 'lucide-react';
+import { XCircle, Calendar, Clock, Truck, Store, Gift } from 'lucide-react';
 import { apiMethods } from '@/services/api';
 import { toast } from 'react-hot-toast';
 import { Order } from '@/types/order';
@@ -56,6 +56,16 @@ const UpdateOrderDetailsModal: React.FC<UpdateOrderDetailsModalProps> = ({
     order.deliveryTimeSlot || timeSlots[0]
   );
   
+  // Gift details
+  const [isGift, setIsGift] = useState<boolean>(order.isGift || false);
+  const [giftRecipientName, setGiftRecipientName] = useState<string>(order.giftRecipientName || '');
+  const [giftRecipientPhone, setGiftRecipientPhone] = useState<string>(order.giftRecipientPhone || '');
+  const [giftMessage, setGiftMessage] = useState<string>(order.giftMessage || '');
+  const [giftCashAmount, setGiftCashAmount] = useState<string>(
+    order.giftCashAmount ? order.giftCashAmount.toString() : '0'
+  );
+  const [includeCash, setIncludeCash] = useState<boolean>(order.giftCashAmount > 0);
+  
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -79,7 +89,12 @@ const UpdateOrderDetailsModal: React.FC<UpdateOrderDetailsModalProps> = ({
         pickupDate: deliveryMethod === 'PICKUP' ? pickupDate : undefined,
         pickupTimeSlot: deliveryMethod === 'PICKUP' ? pickupTimeSlot : undefined,
         deliveryDate: deliveryMethod === 'DELIVERY' ? deliveryDate : undefined,
-        deliveryTimeSlot: deliveryMethod === 'DELIVERY' ? deliveryTimeSlot : undefined
+        deliveryTimeSlot: deliveryMethod === 'DELIVERY' ? deliveryTimeSlot : undefined,
+        isGift,
+        giftRecipientName: isGift ? giftRecipientName : undefined,
+        giftRecipientPhone: isGift ? giftRecipientPhone : undefined,
+        giftMessage: isGift ? giftMessage : undefined,
+        giftCashAmount: isGift && includeCash ? parseFloat(giftCashAmount) : 0
       });
       
       if (response.success) {
@@ -248,6 +263,96 @@ const UpdateOrderDetailsModal: React.FC<UpdateOrderDetailsModalProps> = ({
                           </div>
                         </>
                       )}
+                      
+                      {/* Gift Information Section */}
+                      <div className="mt-6 border-t pt-4">
+                        <div className="flex items-center mb-4">
+                          <input
+                            type="checkbox"
+                            id="isGift"
+                            checked={isGift}
+                            onChange={(e) => setIsGift(e.target.checked)}
+                            className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                          />
+                          <label htmlFor="isGift" className="ml-2 block text-sm font-medium text-gray-700 flex items-center">
+                            <Gift className="h-4 w-4 mr-1" />
+                            This is a gift order
+                          </label>
+                        </div>
+                        
+                        {isGift && (
+                          <div className="space-y-4 pl-6 border-l-2 border-indigo-100">
+                            <div>
+                              <label className="text-sm font-medium text-gray-700 mb-1 block">
+                                Recipient Name
+                              </label>
+                              <input
+                                type="text"
+                                value={giftRecipientName}
+                                onChange={(e) => setGiftRecipientName(e.target.value)}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                                placeholder="Recipient's name"
+                              />
+                            </div>
+                            
+                            <div>
+                              <label className="text-sm font-medium text-gray-700 mb-1 block">
+                                Recipient Phone
+                              </label>
+                              <input
+                                type="tel"
+                                value={giftRecipientPhone}
+                                onChange={(e) => setGiftRecipientPhone(e.target.value)}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                                placeholder="Recipient's phone number"
+                              />
+                            </div>
+                            
+                            <div>
+                              <label className="text-sm font-medium text-gray-700 mb-1 block">
+                                Gift Message
+                              </label>
+                              <textarea
+                                value={giftMessage}
+                                onChange={(e) => setGiftMessage(e.target.value)}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                                rows={3}
+                                placeholder="Your gift message"
+                              />
+                            </div>
+                            
+                            <div className="flex items-center mb-2">
+                              <input
+                                type="checkbox"
+                                id="includeCash"
+                                checked={includeCash}
+                                onChange={(e) => setIncludeCash(e.target.checked)}
+                                className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                              />
+                              <label htmlFor="includeCash" className="ml-2 block text-sm font-medium text-gray-700">
+                                Include Cash Gift
+                              </label>
+                            </div>
+                            
+                            {includeCash && (
+                              <div>
+                                <label className="text-sm font-medium text-gray-700 mb-1 block">
+                                  Cash Amount (AED)
+                                </label>
+                                <input
+                                  type="number"
+                                  value={giftCashAmount}
+                                  onChange={(e) => setGiftCashAmount(e.target.value)}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                                  min="0"
+                                  step="1"
+                                  placeholder="Cash amount"
+                                />
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
                     
                     <div className="mt-6 flex justify-end space-x-3">
