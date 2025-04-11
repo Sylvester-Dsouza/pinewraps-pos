@@ -370,13 +370,28 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
       
       let errorMessage = 'Failed to close till';
       
-      if (error.response && error.response.data && error.response.data.error) {
+      // Handle the specific case where only the user who opened the till can close it
+      if (error.response && error.response.status === 403 && 
+          error.response.data && error.response.data.error && 
+          error.response.data.error.includes('can close this till session')) {
+        
+        // Extract the name of the user who can close the till
+        const match = error.response.data.error.match(/Only (.+?) can close this till session/);
+        const userName = match ? match[1] : 'another user';
+        
+        errorMessage = `Only ${userName} can close this till because they opened it. Please ask them to close it.`;
+        
+        // Show a more helpful toast message
+        toast.error(errorMessage, { duration: 5000 });
+      } else if (error.response && error.response.data && error.response.data.error) {
         errorMessage = error.response.data.error;
+        toast.error(errorMessage);
       } else if (error.message) {
         errorMessage = error.message;
+        toast.error(errorMessage);
+      } else {
+        toast.error(errorMessage);
       }
-      
-      toast.error(errorMessage);
       
       // Close the modal even if there's an error to prevent UI being stuck
       setIsCloseTillModalOpen(false);
