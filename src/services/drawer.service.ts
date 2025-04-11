@@ -114,20 +114,40 @@ export class DrawerService {
       
       // First get the current session
       const currentSession = await this.getCurrentSession();
+      console.log('Current session before closing:', currentSession);
+      
       if (!currentSession || !currentSession.data) {
         throw new Error('No active drawer session found');
       }
       
-      // Close the session
-      const response = await api.post('/api/pos/drawer-session/close', {
+      // Prepare the payload with the exact format expected by the API
+      const payload = {
         closingAmount: closingAmount.toString()
-      });
+      };
       
-      // Ensure we return null for currentSession after closing
+      console.log('Sending close session request with payload:', payload);
+      
+      // Close the session
+      const response = await api.post('/api/pos/drawer-session/close', payload);
+      
+      console.log('Close session response:', response);
+      console.log('Close session response data:', response.data);
+      
+      if (!response.data) {
+        throw new Error('No data returned from close session API');
+      }
+      
+      // Refresh the session data
       await this.getCurrentSession();
+      
+      // Return the response data
       return response.data;
     } catch (error) {
       console.error('Error closing session:', error);
+      if (error.response) {
+        console.error('Response status:', error.response.status);
+        console.error('Response data:', error.response.data);
+      }
       throw error;
     }
   }

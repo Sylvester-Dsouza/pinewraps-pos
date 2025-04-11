@@ -283,59 +283,73 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
     try {
       if (!closingAmount || isNaN(parseFloat(closingAmount))) {
         toast.error('Please enter a valid closing amount');
+        setIsSubmitting(false);
         return;
       }
 
       // Get proxy configuration (without printer IP/port)
       const proxyConfig = await getProxyConfig();
+      console.log('Printer proxy config:', proxyConfig);
 
       const amount = parseFloat(closingAmount);
+      console.log('Attempting to close session with amount:', amount);
+      
+      // Close the session
       const response = await drawerService.closeSession(amount);
+      console.log('Close session response:', response);
+      
+      // Always close the modal and reset the amount, even if the response is incomplete
+      setIsCloseTillModalOpen(false);
+      setClosingAmount('');
       
       if (response) {
         toast.success('Till closed successfully');
-        setIsCloseTillModalOpen(false);
-        setClosingAmount('');
         
-        // Print closing receipt
+        // Print closing receipt - do this immediately to ensure it happens
         try {
           console.log('Preparing to print closing receipt...');
+          
+          // Prepare closing data with safe fallbacks for all fields
           const closingData = {
             closingAmount: amount,
-            sessionId: response.id,
-            openingAmount: parseFloat(response.openingAmount),
-            closedAt: response.closedAt,
-            operations: response.operations,
-            user: response.user
+            sessionId: response.id || 'unknown',
+            openingAmount: response.openingAmount ? parseFloat(response.openingAmount) : 0,
+            closedAt: response.closedAt || new Date().toISOString(),
+            operations: response.operations || [],
+            user: response.user || { firstName: 'Unknown', lastName: 'User' }
           };
           
           console.log('Sending print request to printer proxy with data:', JSON.stringify(closingData, null, 2));
           
-          // Use fetch instead of axios for better reliability with the printer proxy
-          // This follows the memory guidance about using fetch for printer proxy requests
-          const printResponse = await fetch(`${PRINTER_PROXY_URL}/print-only`, {
+          // Use fetch as it's more reliable for printer proxy requests (per memory guidance)
+          fetch(`${PRINTER_PROXY_URL}/print-only`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-              type: 'till_close_final',
+              type: 'till_close', // Use till_close instead of till_close_final to match proxy handler
               data: closingData,
-              ...proxyConfig
+              ...proxyConfig,
+              skipConnectivityCheck: true // Add this to skip connectivity check
             })
-          });
-          
-          const printResult = await printResponse.json();
-          console.log('Print response:', printResult);
-          
-          if (printResponse.ok) {
-            console.log('Till closing receipt printed successfully');
-          } else {
-            console.error('Failed to print till closing receipt:', printResult.error || 'Unknown error');
+          })
+          .then(response => response.json())
+          .then(result => {
+            console.log('Print response:', result);
+            if (result.success) {
+              console.log('Till closing receipt printed successfully');
+            } else {
+              console.error('Failed to print till closing receipt:', result.error || 'Unknown error');
+              toast.error('Till closed but receipt printing failed');
+            }
+          })
+          .catch(printError => {
+            console.error('Error printing closing receipt:', printError);
             toast.error('Till closed but receipt printing failed');
-          }
+          });
         } catch (printError) {
-          console.error('Error printing closing receipt:', printError);
+          console.error('Error setting up print request:', printError);
           toast.error('Till closed but receipt printing failed');
           // Continue even if printing fails
         }
@@ -346,6 +360,14 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
       }
     } catch (error) {
       console.error('Error closing till:', error);
+      console.error('Full error details:', JSON.stringify(error, null, 2));
+      
+      // Log the specific error type and structure
+      if (error.response) {
+        console.error('Response status:', error.response.status);
+        console.error('Response data:', JSON.stringify(error.response.data, null, 2));
+      }
+      
       let errorMessage = 'Failed to close till';
       
       if (error.response && error.response.data && error.response.data.error) {
@@ -355,6 +377,10 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
       }
       
       toast.error(errorMessage);
+      
+      // Close the modal even if there's an error to prevent UI being stuck
+      setIsCloseTillModalOpen(false);
+      setClosingAmount('');
     } finally {
       setIsSubmitting(false);
     }
