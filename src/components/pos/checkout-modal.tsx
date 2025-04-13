@@ -497,7 +497,7 @@ export default function CheckoutModal({
       giftRecipientPhone: giftDetailsState?.isGift ? giftDetailsState.recipientPhone?.trim() || '' : undefined,
       giftMessage: giftDetailsState?.isGift ? giftDetailsState.message?.trim() || '' : undefined,
       giftCashAmount: giftDetailsState?.isGift && giftDetailsState.includeCash ? 
-        giftDetailsState.cashAmount?.trim() || '0' : 
+        Number(giftDetailsState.cashAmount?.trim() || '0') : 
         undefined,
 
       // Additional metadata for routing
@@ -1566,10 +1566,8 @@ export default function CheckoutModal({
     const dates = [];
     const today = new Date();
     
-    // For pickup, include today and next 7 days
-    // For delivery - Dubai: Next day delivery, Other emirates: 2 days advance delivery
-    const startDays = deliveryMethodState === DeliveryMethod.PICKUP ? 0 : 
-                      (emirate === 'DUBAI' ? 1 : 2);
+    // For both pickup and delivery, include today and next 7 days
+    const startDays = 0; // Start from today for all delivery methods
     
     for (let i = startDays; i < startDays + 7; i++) {
       const date = new Date(today);

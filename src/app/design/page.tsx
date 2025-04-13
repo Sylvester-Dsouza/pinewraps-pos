@@ -7,32 +7,37 @@ import { AlertCircle } from 'lucide-react';
 
 export default function DesignPage() {
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
+  const [staffRoles, setStaffRoles] = useState({
+    isKitchenStaff: false,
+    isDesignStaff: false,
+    isFinalCheckStaff: false,
+    isCashierStaff: false
+  });
   const router = useRouter();
 
   useEffect(() => {
-    // Check if user has design staff permission
+    // Check all staff permissions
     const isKitchenStaff = localStorage.getItem('isKitchenStaff') === 'true';
     const isDesignStaff = localStorage.getItem('isDesignStaff') === 'true';
     const isFinalCheckStaff = localStorage.getItem('isFinalCheckStaff') === 'true';
     const isCashierStaff = localStorage.getItem('isCashierStaff') === 'true';
     const userRole = localStorage.getItem('userRole');
     
-    // Only super admin has automatic access to all screens
+    // Save all staff roles
+    setStaffRoles({
+      isKitchenStaff,
+      isDesignStaff,
+      isFinalCheckStaff,
+      isCashierStaff
+    });
+    
+    // Super admin always has access to all screens
     const hasSuperAdminAccess = userRole === 'SUPER_ADMIN';
     
-    // Check if user has any staff role assigned
-    const hasAnyStaffRole = isKitchenStaff || isDesignStaff || isFinalCheckStaff || isCashierStaff;
-    
-    // Grant access if:
-    // 1. User is super admin (full access to all screens)
-    // 2. User is design staff (access to design page) - applies to both ADMIN and POS_USER
-    // 3. User is a regular POS user with no staff roles (full access to all screens)
-    // 4. User is a regular ADMIN user with no staff roles (full access to all screens)
-    setHasPermission(
-      hasSuperAdminAccess || 
-      isDesignStaff || 
-      (!hasAnyStaffRole && (userRole === 'POS_USER' || userRole === 'ADMIN'))
-    );
+    // Grant access if user is super admin or has design staff role
+    // This allows users with multiple roles to access the design screen
+    // as long as they have design staff permission
+    setHasPermission(hasSuperAdminAccess || isDesignStaff);
   }, []);
 
   if (hasPermission === null) {
@@ -64,5 +69,5 @@ export default function DesignPage() {
   }
 
   // User has permission
-  return <DesignDisplay />;
+  return <DesignDisplay staffRoles={staffRoles} router={router} />;
 }

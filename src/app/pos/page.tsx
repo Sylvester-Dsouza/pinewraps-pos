@@ -49,33 +49,15 @@ export default function POSPage() {
   // Check if user has general POS access or is specialized staff
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const isKitchenStaff = localStorage.getItem('isKitchenStaff') === 'true';
-      const isDesignStaff = localStorage.getItem('isDesignStaff') === 'true';
-      const isFinalCheckStaff = localStorage.getItem('isFinalCheckStaff') === 'true';
       const isCashierStaff = localStorage.getItem('isCashierStaff') === 'true';
       const userRole = localStorage.getItem('userRole');
       
-      // Only super admin has automatic access to all screens
+      // Super admin always has access to all screens
       const hasSuperAdminAccess = userRole === 'SUPER_ADMIN';
       
-      // Check if user has any staff role assigned
-      const hasAnyStaffRole = isKitchenStaff || isDesignStaff || isFinalCheckStaff || isCashierStaff;
-      
-      // Kitchen, Design, and Final Check staff only have access to their specific pages
-      const isSpecializedNonPOSStaff = isKitchenStaff || isDesignStaff || isFinalCheckStaff;
-      
-      // Grant access if:
-      // 1. User is super admin (full access to all screens)
-      // 2. User is cashier staff (access to POS page only) - applies to both ADMIN and POS_USER
-      // 3. User is a regular POS user with no staff roles (full access to POS page)
-      // 4. User is a regular ADMIN user with no staff roles (full access to POS page)
-      // 5. User is not a specialized non-POS staff (kitchen, design, final check)
-      setHasGeneralPOSAccess(
-        hasSuperAdminAccess || 
-        isCashierStaff || 
-        (!hasAnyStaffRole && (userRole === 'POS_USER' || userRole === 'ADMIN')) || 
-        !isSpecializedNonPOSStaff
-      );
+      // Grant access if user is super admin, has cashier staff role, or has a general POS_USER or ADMIN role
+      // This allows users with multiple roles to access the POS screen
+      setHasGeneralPOSAccess(hasSuperAdminAccess || isCashierStaff || userRole === 'POS_USER' || userRole === 'ADMIN');
     }
   }, []);
 
@@ -365,7 +347,7 @@ export default function POSPage() {
     handleAddToCart(product, quantity, selectedVariations, null, notes, customImages);
   };
 
-  // Handle quick add to cart (without opening modal)
+  // Handle quick add to cart (opens product details modal for all products)
   const handleQuickAddToCart = (product: Product) => {
     if (!isDrawerOpen) {
       toast.error('Cash drawer is not open. Please open the till before adding products to the cart.');
@@ -373,41 +355,8 @@ export default function POSPage() {
       return;
     }
     
-    // If product has variants or options, show the product details modal
-    if (product.options && product.options.length > 0) {
-      setSelectedProduct(product);
-      return;
-    }
-    
-    // Otherwise, add directly to cart with no variations
-    const totalPrice = product.basePrice;
-    
-    const cartItem: CartItem = {
-      id: nanoid(),
-      product: {
-        id: product.id,
-        name: product.name,
-        basePrice: product.basePrice,
-        status: product.status,
-        images: product.images || [],
-        allowCustomPrice: product.allowCustomPrice,
-        requiresDesign: product.requiresDesign,
-        requiresKitchen: product.requiresKitchen,
-        allowCustomImages: product.allowCustomImages
-      },
-      quantity: 1,
-      selectedVariations: [],
-      totalPrice: totalPrice,
-      customImages: [],
-      notes: ''
-    };
-
-    setCart(prevCart => {
-      const updatedCart = [...prevCart, cartItem];
-      localStorage.setItem('pos-cart', JSON.stringify(updatedCart));
-      return updatedCart;
-    });
-    toast.success('Added to cart');
+    // Always show the product details modal regardless of whether the product has options or not
+    setSelectedProduct(product);
   };
 
   // Handle adding product to cart

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { FileCheck, Bell, RotateCw, Maximize2, Minimize2, LogOut, User } from "lucide-react";
+import { FileCheck, Bell, RotateCw, Maximize2, Minimize2, LogOut, User, ChefHat, Palette, ShoppingCart } from "lucide-react";
 import Cookies from "js-cookie";
 import { AnimatePresence } from "framer-motion";
 import OrderCard from "@/components/final-check/order-card";
@@ -78,13 +78,24 @@ export interface UpdateOrderStatusPayload {
 }
 
 // This is just a UI placeholder - full functionality will be implemented later
-export default function FinalCheckDisplay() {
+interface FinalCheckDisplayProps {
+  staffRoles?: {
+    isKitchenStaff: boolean;
+    isDesignStaff: boolean;
+    isFinalCheckStaff: boolean;
+    isCashierStaff: boolean;
+  };
+  router?: any;
+}
+
+export default function FinalCheckDisplay({ staffRoles, router: externalRouter }: FinalCheckDisplayProps = {}) {
   const [orders, setOrders] = useState<FinalCheckOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [activeTab, setActiveTab] = useState('queue');
   const { user, signOut } = useAuth();
-  const router = useRouter();
+  const internalRouter = useRouter();
+  const router = externalRouter || internalRouter;
 
   // Check if user is authenticated and has final check staff access
   useEffect(() => {
@@ -456,7 +467,6 @@ export default function FinalCheckDisplay() {
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
             <div>
               <h1 className="text-xl sm:text-3xl font-bold text-gray-900">Final Check Display</h1>
-              <p className="text-sm sm:text-base text-gray-500 mt-1">Review orders and ensure quality before completion</p>
             </div>
             
             {/* User name display */}
@@ -466,6 +476,39 @@ export default function FinalCheckDisplay() {
                 {user?.displayName || user?.email || 'Staff'}
               </span>
             </div>
+            
+            {/* Navigation buttons for staff with multiple roles */}
+            {staffRoles && (staffRoles.isKitchenStaff || staffRoles.isDesignStaff || staffRoles.isCashierStaff) && (
+              <div className="flex items-center gap-2">
+                {staffRoles.isKitchenStaff && (
+                  <button
+                    onClick={() => router.push('/kitchen')}
+                    className="flex items-center gap-1 px-3 py-2 rounded-lg bg-orange-50 hover:bg-orange-100 text-orange-600 transition-colors"
+                  >
+                    <ChefHat className="w-4 h-4" />
+                    <span className="text-sm font-medium">Kitchen</span>
+                  </button>
+                )}
+                {staffRoles.isDesignStaff && (
+                  <button
+                    onClick={() => router.push('/design')}
+                    className="flex items-center gap-1 px-3 py-2 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 transition-colors"
+                  >
+                    <Palette className="w-4 h-4" />
+                    <span className="text-sm font-medium">Design</span>
+                  </button>
+                )}
+                {staffRoles.isCashierStaff && (
+                  <button
+                    onClick={() => router.push('/pos')}
+                    className="flex items-center gap-1 px-3 py-2 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-600 transition-colors"
+                  >
+                    <ShoppingCart className="w-4 h-4" />
+                    <span className="text-sm font-medium">POS</span>
+                  </button>
+                )}
+              </div>
+            )}
             
             {/* Logout button with text */}
             <a

@@ -7,32 +7,37 @@ import { AlertCircle } from 'lucide-react';
 
 export default function KitchenPage() {
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
+  const [staffRoles, setStaffRoles] = useState({
+    isKitchenStaff: false,
+    isDesignStaff: false,
+    isFinalCheckStaff: false,
+    isCashierStaff: false
+  });
   const router = useRouter();
 
   useEffect(() => {
-    // Check if user has kitchen staff permission
+    // Check all staff permissions
     const isKitchenStaff = localStorage.getItem('isKitchenStaff') === 'true';
     const isDesignStaff = localStorage.getItem('isDesignStaff') === 'true';
     const isFinalCheckStaff = localStorage.getItem('isFinalCheckStaff') === 'true';
     const isCashierStaff = localStorage.getItem('isCashierStaff') === 'true';
     const userRole = localStorage.getItem('userRole');
     
-    // Only super admin has automatic access to all screens
+    // Save all staff roles
+    setStaffRoles({
+      isKitchenStaff,
+      isDesignStaff,
+      isFinalCheckStaff,
+      isCashierStaff
+    });
+    
+    // Super admin always has access to all screens
     const hasSuperAdminAccess = userRole === 'SUPER_ADMIN';
     
-    // Check if user has any staff role assigned
-    const hasAnyStaffRole = isKitchenStaff || isDesignStaff || isFinalCheckStaff || isCashierStaff;
-    
-    // Grant access if:
-    // 1. User is super admin (full access to all screens)
-    // 2. User is kitchen staff (access to kitchen page) - applies to both ADMIN and POS_USER
-    // 3. User is a regular POS user with no staff roles (full access to all screens)
-    // 4. User is a regular ADMIN user with no staff roles (full access to all screens)
-    setHasPermission(
-      hasSuperAdminAccess || 
-      isKitchenStaff || 
-      (!hasAnyStaffRole && (userRole === 'POS_USER' || userRole === 'ADMIN'))
-    );
+    // Grant access if user is super admin or has kitchen staff role
+    // This allows users with multiple roles to access the kitchen screen
+    // as long as they have kitchen staff permission
+    setHasPermission(hasSuperAdminAccess || isKitchenStaff);
   }, []);
 
   if (hasPermission === null) {
@@ -64,5 +69,5 @@ export default function KitchenPage() {
   }
 
   // User has permission
-  return <KitchenDisplay />;
+  return <KitchenDisplay staffRoles={staffRoles} router={router} />;
 }

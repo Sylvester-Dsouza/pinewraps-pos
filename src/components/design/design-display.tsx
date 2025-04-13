@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import Cookies from "js-cookie";
-import { Timer, CheckCircle2, Clock, ChefHat, Bell, RotateCw, Maximize2, Minimize2, AlertCircle, AlertTriangle, LogOut, User } from "lucide-react";
+import { Timer, CheckCircle2, Clock, ChefHat, Bell, RotateCw, Maximize2, Minimize2, AlertCircle, AlertTriangle, LogOut, User, ShoppingCart } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { apiMethods } from "@/services/api";
 import { wsService } from "@/services/websocket";
@@ -269,8 +269,19 @@ const OrderTimer2 = ({ createdAt }: { createdAt: Date }) => {
   );
 };
 
-export default function DesignDisplay() {
+interface DesignDisplayProps {
+  staffRoles?: {
+    isKitchenStaff: boolean;
+    isDesignStaff: boolean;
+    isFinalCheckStaff: boolean;
+    isCashierStaff: boolean;
+  };
+  router?: any;
+}
+
+export default function DesignDisplay({ staffRoles, router: externalRouter }: DesignDisplayProps = {}) {
   const { user, logout, loading: userLoading } = useAuth();
+  const router = externalRouter;
   const [orders, setOrders] = useState<DesignOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -1148,6 +1159,39 @@ export default function DesignDisplay() {
               {user?.name ? user.name : user?.email || 'Staff'}
             </span>
           </div>
+          
+          {/* Navigation buttons for staff with multiple roles */}
+          {staffRoles && (staffRoles.isKitchenStaff || staffRoles.isFinalCheckStaff || staffRoles.isCashierStaff) && (
+            <div className="flex items-center gap-2">
+              {staffRoles.isKitchenStaff && (
+                <button
+                  onClick={() => router.push('/kitchen')}
+                  className="flex items-center gap-1 px-3 py-2 rounded-lg bg-orange-50 hover:bg-orange-100 text-orange-600 transition-colors"
+                >
+                  <ChefHat className="w-4 h-4" />
+                  <span className="text-sm font-medium">Kitchen</span>
+                </button>
+              )}
+              {staffRoles.isFinalCheckStaff && (
+                <button
+                  onClick={() => router.push('/final-check')}
+                  className="flex items-center gap-1 px-3 py-2 rounded-lg bg-green-50 hover:bg-green-100 text-green-600 transition-colors"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span className="text-sm font-medium">Final Check</span>
+                </button>
+              )}
+              {staffRoles.isCashierStaff && (
+                <button
+                  onClick={() => router.push('/pos')}
+                  className="flex items-center gap-1 px-3 py-2 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-600 transition-colors"
+                >
+                  <ShoppingCart className="w-4 h-4" />
+                  <span className="text-sm font-medium">POS</span>
+                </button>
+              )}
+            </div>
+          )}
           
           {/* Logout button with text */}
           <a
