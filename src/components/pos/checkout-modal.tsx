@@ -957,7 +957,7 @@ export default function CheckoutModal({
                 amount: calculateFinalTotal(),
                 method: currentPaymentMethodState,
                 reference: currentPaymentMethodState === POSPaymentMethod.CARD ? currentPaymentReferenceState || null : null,
-                status: POSPaymentStatus.FULLY_PAID
+                status: currentPaymentMethodState === POSPaymentMethod.PAY_LATER ? POSPaymentStatus.PENDING : POSPaymentStatus.FULLY_PAID
               };
               
               if (currentPaymentMethodState === POSPaymentMethod.CASH) {
@@ -2756,6 +2756,21 @@ export default function CheckoutModal({
                                   }`}
                                 >
                                   Cash on Delivery
+                                </button>
+                              </div>
+                              
+                              {/* Pay Later Row */}
+                              <div className="flex mt-3">
+                                <button
+                                  type="button"
+                                  onClick={() => handlePaymentMethodSelect(POSPaymentMethod.PAY_LATER)}
+                                  className={`flex-1 py-3 px-2 text-base font-medium rounded-xl border-2 transition-all ${
+                                    currentPaymentMethodState === POSPaymentMethod.PAY_LATER
+                                      ? "bg-black text-white"
+                                      : "bg-gray-100 text-gray-700"
+                                  }`}
+                                >
+                                  Pay Later
                                 </button>
                               </div>
 

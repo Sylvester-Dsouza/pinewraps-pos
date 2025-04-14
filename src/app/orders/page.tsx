@@ -425,7 +425,34 @@ const OrdersPage = () => {
   };
 
   const calculateRemainingAmount = (order: Order) => {
-    const totalPaid = order.payments?.reduce((sum, payment) => sum + payment.amount, 0) || 0;
+    // For orders with pending payments, we need to handle them differently
+    if (hasPendingPayment(order)) {
+      // Find pending payments
+      const pendingPayments = order.payments?.filter(p => 
+        p.status === POSPaymentStatus.PENDING || 
+        p.method === POSPaymentMethod.PAY_LATER
+      );
+      
+      // If there are pending payments, use their amount as the remaining amount
+      if (pendingPayments && pendingPayments.length > 0) {
+        return pendingPayments.reduce((sum, payment) => sum + payment.amount, 0);
+      }
+      
+      // If order has PENDING_PAYMENT status but no pending payments, use the total amount
+      if (order.status === 'PENDING_PAYMENT') {
+        return order.totalAmount;
+      }
+    }
+    
+    // For partial payments, calculate the difference between total and paid
+    const totalPaid = order.payments?.reduce((sum, payment) => {
+      // Only count payments that are not pending
+      if (payment.status !== POSPaymentStatus.PENDING && payment.method !== POSPaymentMethod.PAY_LATER) {
+        return sum + payment.amount;
+      }
+      return sum;
+    }, 0) || 0;
+    
     return Math.max(0, order.totalAmount - totalPaid);
   };
 
@@ -434,8 +461,19 @@ const OrdersPage = () => {
     const totalPaid = order.payments?.reduce((sum, payment) => sum + payment.amount, 0) || 0;
     return hasPartialStatus || (totalPaid > 0 && totalPaid < order.totalAmount);
   };
+  
+  const hasPendingPayment = (order: Order) => {
+    return order.payments?.some(p => p.status === POSPaymentStatus.PENDING) || 
+           order.payments?.some(p => p.method === POSPaymentMethod.PAY_LATER) ||
+           order.status === 'PENDING_PAYMENT';
+  };
 
   const isFullyPaid = (order: Order) => {
+    // If any payment has PENDING status, the order is not fully paid regardless of amount
+    if (hasPendingPayment(order)) {
+      return false;
+    }
+    
     const totalPaid = order.payments?.reduce((sum, payment) => sum + payment.amount, 0) || 0;
     return Math.abs(totalPaid - order.totalAmount) < 0.01; // Using a small epsilon for floating point comparison
   };
@@ -730,10 +768,20 @@ const OrdersPage = () => {
                       <div className="mt-3 pt-2 border-t border-gray-200">
                         <p className="font-medium text-gray-700">Payment Details:</p>
                         <div className="space-y-1 mt-1">
-                          {/* Show payment status at the top if fully paid */}
+                          {/* Show payment status at the top */}
                           {isFullyPaid(order) && (
                             <div className="text-sm font-medium text-green-600 mb-2">
                               Status: Fully Paid
+                            </div>
+                          )}
+                          {hasPendingPayment(order) && (
+                            <div className="text-sm font-medium text-orange-600 mb-2">
+                              Status: Payment Pending
+                            </div>
+                          )}
+                          {!isFullyPaid(order) && !hasPendingPayment(order) && hasPartialPayment(order) && (
+                            <div className="text-sm font-medium text-orange-600 mb-2">
+                              Status: Partially Paid
                             </div>
                           )}
                           
@@ -743,7 +791,9 @@ const OrdersPage = () => {
                                 <span className="font-medium">
                                   {payment.status === POSPaymentStatus.PARTIALLY_PAID 
                                     ? 'Partial Payment' 
-                                    : getPaymentMethodString(payment.method)}
+                                    : payment.status === POSPaymentStatus.PENDING
+                                      ? `${getPaymentMethodString(payment.method)} (Pending)` 
+                                      : getPaymentMethodString(payment.method)}
                                 </span>
                                 
                                 {/* For Card payments, always show reference */}
@@ -759,6 +809,14 @@ const OrdersPage = () => {
                                     <div>Cash portion: AED {Number(payment.cashPortion).toFixed(2)}</div>
                                     <div>Card portion: AED {Number(payment.cardPortion).toFixed(2)}</div>
                                     {(payment.cardReference || payment.reference) && <div>Card Ref: {payment.cardReference || payment.reference}</div>}
+                                  </div>
+                                )}
+                                
+                                {/* For Pay Later payments, show pending status */}
+                                {payment.status === POSPaymentStatus.PENDING && (
+                                  <div className="text-orange-600 mt-1 ml-2">
+                                    <div>Status: Payment Pending</div>
+                                    <div>Amount Due: AED {payment.amount.toFixed(2)}</div>
                                   </div>
                                 )}
                                 
@@ -853,12 +911,12 @@ const OrdersPage = () => {
                           Gift Receipt
                         </button>
                       )}
-                    {hasPartialPayment(order) && !isFullyPaid(order) && (
+                    {(hasPartialPayment(order) || hasPendingPayment(order)) && !isFullyPaid(order) && (
                       <button
                         onClick={() => setSelectedOrderForPayment(order)}
-                        className="px-4 py-2 text-sm font-medium text-indigo-600 bg-indigo-100 rounded-md hover:bg-indigo-200 flex-1"
+                        className="px-4 py-2 text-sm font-medium text-indigo-600 bg-indigo-100 rounded-md hover:bg-indigo-200 flex-1 flex items-center justify-center gap-2"
                       >
-                        Pay Remaining
+                        {hasPendingPayment(order) ? '💰 Pay Now' : '💰 Pay Remaining'}
                       </button>
                     )}
                     {order.status === 'CANCELLED' && (

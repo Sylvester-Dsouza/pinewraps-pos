@@ -1,5 +1,5 @@
 import { Dialog, Transition } from "@headlessui/react";
-import { Fragment, useState } from "react";
+import { Fragment, useState, useEffect } from "react";
 import { POSPaymentMethod, POSPaymentStatus, apiMethods } from "@/services/api";
 import { toast } from "@/lib/toast-utils";
 import { nanoid } from "nanoid";
@@ -25,6 +25,15 @@ export default function RemainingPaymentModal({
   const [paymentMethod, setPaymentMethod] = useState<POSPaymentMethod>(POSPaymentMethod.CASH);
   const [paymentReference, setPaymentReference] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // Split payment state
+  const [isSplitPayment, setIsSplitPayment] = useState(false);
+  const [splitMethod1, setSplitMethod1] = useState<POSPaymentMethod>(POSPaymentMethod.CASH);
+  const [splitMethod2, setSplitMethod2] = useState<POSPaymentMethod>(POSPaymentMethod.CARD);
+  const [splitAmount1, setSplitAmount1] = useState('');
+  const [splitAmount2, setSplitAmount2] = useState('');
+  const [splitReference1, setSplitReference1] = useState('');
+  const [splitReference2, setSplitReference2] = useState('');
 
   const printAndOpenDrawer = async (order: Order) => {
     try {
@@ -126,39 +135,157 @@ export default function RemainingPaymentModal({
     }
   };
 
+  // Initialize split payment amounts when the modal opens
+  useEffect(() => {
+    if (isOpen && remainingAmount > 0) {
+      // Reset split amounts when modal opens
+      const halfAmount = (remainingAmount / 2).toFixed(2);
+      setSplitAmount1(halfAmount);
+      setSplitAmount2(halfAmount);
+    }
+  }, [isOpen, remainingAmount]);
+  
+  // Update split amount 2 when amount 1 changes
+  useEffect(() => {
+    if (isSplitPayment && splitAmount1) {
+      const amount1 = parseFloat(splitAmount1) || 0;
+      const calculatedAmount2 = remainingAmount - amount1;
+      // Only update if it's a valid positive number
+      if (!isNaN(calculatedAmount2) && calculatedAmount2 >= 0) {
+        setSplitAmount2(calculatedAmount2.toFixed(2));
+      }
+    }
+  }, [splitAmount1, remainingAmount, isSplitPayment]);
+  
+  // Reset second payment method if it's the same as the first
+  useEffect(() => {
+    if (splitMethod1 === splitMethod2) {
+      // Find the first available payment method that's not the same as splitMethod1
+      const methods = [
+        POSPaymentMethod.CASH,
+        POSPaymentMethod.CARD,
+        POSPaymentMethod.BANK_TRANSFER,
+        POSPaymentMethod.TALABAT,
+        POSPaymentMethod.PBL
+      ];
+      
+      const availableMethod = methods.find(method => method !== splitMethod1);
+      if (availableMethod) {
+        setSplitMethod2(availableMethod);
+      }
+    }
+  }, [splitMethod1, splitMethod2]);
+
   const handlePayment = async () => {
     try {
-      if ((paymentMethod === POSPaymentMethod.CARD || 
-          paymentMethod === POSPaymentMethod.BANK_TRANSFER || 
-          paymentMethod === POSPaymentMethod.PBL || 
-          paymentMethod === POSPaymentMethod.TALABAT) && !paymentReference.trim()) {
-        toast.error("Please enter a payment reference");
+      // Validate payment method and reference
+      const requiresReference = !isSplitPayment && (
+        paymentMethod === POSPaymentMethod.CARD || 
+        paymentMethod === POSPaymentMethod.BANK_TRANSFER || 
+        paymentMethod === POSPaymentMethod.PBL || 
+        paymentMethod === POSPaymentMethod.TALABAT
+      );
+      
+      if (requiresReference && !paymentReference.trim()) {
+        toast.error(`Please enter a ${paymentMethod.toLowerCase()} reference`);
         return;
+      }
+      
+      if (isSplitPayment) {
+        // Validate split payment
+        const amount1 = parseFloat(splitAmount1) || 0;
+        const amount2 = parseFloat(splitAmount2) || 0;
+        
+        if (amount1 <= 0 || amount2 <= 0) {
+          toast.error("Both split amounts must be greater than zero");
+          return;
+        }
+        
+        if (Math.abs((amount1 + amount2) - remainingAmount) > 0.01) {
+          toast.error("Split amounts must add up to the total remaining amount");
+          return;
+        }
+        
+        // Validate references for payment methods that require them
+        const requiresReference1 = splitMethod1 === POSPaymentMethod.CARD || 
+                                splitMethod1 === POSPaymentMethod.BANK_TRANSFER || 
+                                splitMethod1 === POSPaymentMethod.PBL || 
+                                splitMethod1 === POSPaymentMethod.TALABAT;
+                                
+        const requiresReference2 = splitMethod2 === POSPaymentMethod.CARD || 
+                                splitMethod2 === POSPaymentMethod.BANK_TRANSFER || 
+                                splitMethod2 === POSPaymentMethod.PBL || 
+                                splitMethod2 === POSPaymentMethod.TALABAT;
+        
+        if ((requiresReference1 && !splitReference1.trim()) ||
+            (requiresReference2 && !splitReference2.trim())) {
+          toast.error("Please enter a reference for payment methods that require it");
+          return;
+        }
       }
 
       setIsSubmitting(true);
 
       // Create the payment data
-      const payment = {
-        id: nanoid(),
-        amount: remainingAmount,
-        method: paymentMethod,
-        reference: paymentReference || null,
-        status: POSPaymentStatus.FULLY_PAID,
-        metadata: {
-          source: "POS" as const
-        }
-      };
+      let payment;
+      
+      if (isSplitPayment) {
+        const amount1 = parseFloat(splitAmount1) || 0;
+        const amount2 = parseFloat(splitAmount2) || 0;
+        
+        payment = {
+          id: nanoid(),
+          amount: remainingAmount,
+          method: POSPaymentMethod.SPLIT,
+          reference: splitMethod2 === POSPaymentMethod.CARD ? splitReference2 : null,
+          status: POSPaymentStatus.FULLY_PAID,
+          isSplitPayment: true,
+          splitMethod1: splitMethod1,
+          splitMethod2: splitMethod2,
+          splitAmount1: amount1,
+          splitAmount2: amount2,
+          splitReference1: splitReference1 || null,
+          splitReference2: splitReference2 || null,
+          cashPortion: splitMethod1 === POSPaymentMethod.CASH ? amount1 : 
+                      (splitMethod2 === POSPaymentMethod.CASH ? amount2 : 0),
+          cardPortion: splitMethod1 === POSPaymentMethod.CARD ? amount1 : 
+                      (splitMethod2 === POSPaymentMethod.CARD ? amount2 : 0),
+          cardReference: splitMethod1 === POSPaymentMethod.CARD ? splitReference1 : 
+                        (splitMethod2 === POSPaymentMethod.CARD ? splitReference2 : null),
+          metadata: {
+            source: "POS" as const
+          }
+        };
+      } else {
+        payment = {
+          id: nanoid(),
+          amount: remainingAmount,
+          method: paymentMethod,
+          reference: paymentReference || null,
+          status: paymentMethod === POSPaymentMethod.PAY_LATER ? POSPaymentStatus.PENDING : POSPaymentStatus.FULLY_PAID,
+          metadata: {
+            source: "POS" as const
+          }
+        };
+      }
 
       // Update the order with the new payment
       const response = await apiMethods.pos.updateOrderPayment(orderId, payment);
       
-      // If it's a cash payment, print receipt and open drawer
-      if (paymentMethod === POSPaymentMethod.CASH && response.success) {
+      // If it's a cash payment or has a cash portion, print receipt and open drawer
+      if ((paymentMethod === POSPaymentMethod.CASH || 
+          (isSplitPayment && (splitMethod1 === POSPaymentMethod.CASH || splitMethod2 === POSPaymentMethod.CASH))) && 
+          response.success) {
         await printAndOpenDrawer(response.data as Order);
       }
+      
+      // Don't show success message for Pay Later
+      if (paymentMethod === POSPaymentMethod.PAY_LATER) {
+        toast.success("Order marked as Pay Later");
+      } else {
+        toast.success("Payment completed successfully");
+      }
 
-      toast.success("Payment completed successfully");
       onPaymentComplete?.();
       onClose();
     } catch (error: any) {
@@ -205,8 +332,8 @@ export default function RemainingPaymentModal({
                       Complete Remaining Payment
                     </Dialog.Title>
                     <div className="mt-4">
-                      <p className="text-sm text-gray-500">
-                        Remaining Amount: AED {remainingAmount.toFixed(2)}
+                      <p className="text-sm font-medium text-gray-700">
+                        Remaining Amount: <span className="text-lg">AED {remainingAmount.toFixed(2)}</span>
                       </p>
                     </div>
                   </div>
@@ -217,12 +344,15 @@ export default function RemainingPaymentModal({
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         Payment Method
                       </label>
-                      <div className="flex gap-2">
+                      <div className="flex gap-2 mb-4 flex-wrap">
                         <button
                           type="button"
-                          onClick={() => setPaymentMethod(POSPaymentMethod.CASH)}
-                          className={`flex-1 px-4 py-2 rounded-md ${
-                            paymentMethod === POSPaymentMethod.CASH
+                          onClick={() => {
+                            setPaymentMethod(POSPaymentMethod.CASH);
+                            setIsSplitPayment(false);
+                          }}
+                          className={`flex-1 px-3 py-2 rounded-md mb-1 ${
+                            paymentMethod === POSPaymentMethod.CASH && !isSplitPayment
                               ? "bg-black text-white"
                               : "bg-gray-100 text-gray-700"
                           }`}
@@ -231,22 +361,26 @@ export default function RemainingPaymentModal({
                         </button>
                         <button
                           type="button"
-                          onClick={() => setPaymentMethod(POSPaymentMethod.CARD)}
-                          className={`flex-1 px-4 py-2 rounded-md ${
-                            paymentMethod === POSPaymentMethod.CARD
+                          onClick={() => {
+                            setPaymentMethod(POSPaymentMethod.CARD);
+                            setIsSplitPayment(false);
+                          }}
+                          className={`flex-1 px-3 py-2 rounded-md mb-1 ${
+                            paymentMethod === POSPaymentMethod.CARD && !isSplitPayment
                               ? "bg-black text-white"
                               : "bg-gray-100 text-gray-700"
                           }`}
                         >
                           Card
                         </button>
-                      </div>
-                      <div className="flex gap-2 mt-2">
                         <button
                           type="button"
-                          onClick={() => setPaymentMethod(POSPaymentMethod.BANK_TRANSFER)}
-                          className={`flex-1 px-4 py-2 rounded-md ${
-                            paymentMethod === POSPaymentMethod.BANK_TRANSFER
+                          onClick={() => {
+                            setPaymentMethod(POSPaymentMethod.BANK_TRANSFER);
+                            setIsSplitPayment(false);
+                          }}
+                          className={`flex-1 px-3 py-2 rounded-md mb-1 ${
+                            paymentMethod === POSPaymentMethod.BANK_TRANSFER && !isSplitPayment
                               ? "bg-black text-white"
                               : "bg-gray-100 text-gray-700"
                           }`}
@@ -255,22 +389,12 @@ export default function RemainingPaymentModal({
                         </button>
                         <button
                           type="button"
-                          onClick={() => setPaymentMethod(POSPaymentMethod.PBL)}
-                          className={`flex-1 px-4 py-2 rounded-md ${
-                            paymentMethod === POSPaymentMethod.PBL
-                              ? "bg-black text-white"
-                              : "bg-gray-100 text-gray-700"
-                          }`}
-                        >
-                          PBL
-                        </button>
-                      </div>
-                      <div className="flex gap-2 mt-2">
-                        <button
-                          type="button"
-                          onClick={() => setPaymentMethod(POSPaymentMethod.TALABAT)}
-                          className={`flex-1 px-4 py-2 rounded-md ${
-                            paymentMethod === POSPaymentMethod.TALABAT
+                          onClick={() => {
+                            setPaymentMethod(POSPaymentMethod.TALABAT);
+                            setIsSplitPayment(false);
+                          }}
+                          className={`flex-1 px-3 py-2 rounded-md mb-1 ${
+                            paymentMethod === POSPaymentMethod.TALABAT && !isSplitPayment
                               ? "bg-black text-white"
                               : "bg-gray-100 text-gray-700"
                           }`}
@@ -279,34 +403,298 @@ export default function RemainingPaymentModal({
                         </button>
                         <button
                           type="button"
-                          onClick={() => setPaymentMethod(POSPaymentMethod.COD)}
-                          className={`flex-1 px-4 py-2 rounded-md ${
-                            paymentMethod === POSPaymentMethod.COD
+                          onClick={() => {
+                            setPaymentMethod(POSPaymentMethod.PBL);
+                            setIsSplitPayment(false);
+                          }}
+                          className={`flex-1 px-3 py-2 rounded-md mb-1 ${
+                            paymentMethod === POSPaymentMethod.PBL && !isSplitPayment
                               ? "bg-black text-white"
                               : "bg-gray-100 text-gray-700"
                           }`}
                         >
-                          COD
+                          PBL
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsSplitPayment(true);
+                            // Set initial split amounts when split is selected
+                            const halfAmount = (remainingAmount / 2).toFixed(2);
+                            setSplitAmount1(halfAmount);
+                            setSplitAmount2(halfAmount);
+                          }}
+                          className={`flex-1 px-3 py-2 rounded-md mb-1 ${
+                            isSplitPayment
+                              ? "bg-black text-white"
+                              : "bg-gray-100 text-gray-700"
+                          }`}
+                        >
+                          Split
                         </button>
                       </div>
+                      {/* Pay Later option removed from payment popup */}
                     </div>
 
-                    {/* Card Reference Input */}
-                    {(paymentMethod === POSPaymentMethod.CARD || 
+                    {/* Reference input for payment methods that require it */}
+                    {!isSplitPayment && (paymentMethod === POSPaymentMethod.CARD || 
                       paymentMethod === POSPaymentMethod.BANK_TRANSFER || 
                       paymentMethod === POSPaymentMethod.PBL || 
                       paymentMethod === POSPaymentMethod.TALABAT) && (
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Payment Reference
+                      <div className="mb-4">
+                        <label
+                          htmlFor="paymentReference"
+                          className="block text-sm font-medium text-gray-700 mb-1"
+                        >
+                          {paymentMethod === POSPaymentMethod.CARD ? 'Card Reference' :
+                           paymentMethod === POSPaymentMethod.BANK_TRANSFER ? 'Bank Transfer Reference' :
+                           paymentMethod === POSPaymentMethod.TALABAT ? 'Talabat Reference' :
+                           'PBL Reference'}
                         </label>
                         <input
                           type="text"
+                          id="paymentReference"
                           value={paymentReference}
                           onChange={(e) => setPaymentReference(e.target.value)}
-                          placeholder="Enter payment reference"
                           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-black"
+                          placeholder={`Enter ${paymentMethod.toLowerCase()} reference`}
                         />
+                      </div>
+                    )}
+                    
+                    {/* Split Payment Options */}
+                    {isSplitPayment && (
+                      <div className="space-y-4 border border-gray-200 rounded-md p-4 bg-gray-50">
+                        <h4 className="font-medium text-gray-800">Split Payment</h4>
+                        
+                        {/* First Payment Method */}
+                        <div>
+                          <div className="flex justify-between items-center mb-2">
+                            <label className="block text-sm font-medium text-gray-700">
+                              First Payment Method
+                            </label>
+                            <input
+                              type="text"
+                              value={splitAmount1}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                if (value === '' || /^\d*\.?\d{0,2}$/.test(value)) {
+                                  setSplitAmount1(value);
+                                }
+                              }}
+                              placeholder="Amount"
+                              className="w-24 px-3 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-black"
+                            />
+                          </div>
+                          <div className="flex gap-2 flex-wrap">
+                            <button
+                              type="button"
+                              onClick={() => setSplitMethod1(POSPaymentMethod.CASH)}
+                              disabled={splitMethod2 === POSPaymentMethod.CASH}
+                              className={`flex-1 px-3 py-1 text-sm rounded-md mb-1 ${
+                                splitMethod1 === POSPaymentMethod.CASH
+                                  ? "bg-black text-white"
+                                  : splitMethod2 === POSPaymentMethod.CASH
+                                    ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+                                    : "bg-gray-100 text-gray-700"
+                              }`}
+                            >
+                              Cash
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSplitMethod1(POSPaymentMethod.CARD)}
+                              disabled={splitMethod2 === POSPaymentMethod.CARD}
+                              className={`flex-1 px-3 py-1 text-sm rounded-md mb-1 ${
+                                splitMethod1 === POSPaymentMethod.CARD
+                                  ? "bg-black text-white"
+                                  : splitMethod2 === POSPaymentMethod.CARD
+                                    ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+                                    : "bg-gray-100 text-gray-700"
+                              }`}
+                            >
+                              Card
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSplitMethod1(POSPaymentMethod.BANK_TRANSFER)}
+                              disabled={splitMethod2 === POSPaymentMethod.BANK_TRANSFER}
+                              className={`flex-1 px-3 py-1 text-sm rounded-md mb-1 ${
+                                splitMethod1 === POSPaymentMethod.BANK_TRANSFER
+                                  ? "bg-black text-white"
+                                  : splitMethod2 === POSPaymentMethod.BANK_TRANSFER
+                                    ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+                                    : "bg-gray-100 text-gray-700"
+                              }`}
+                            >
+                              Bank Transfer
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSplitMethod1(POSPaymentMethod.TALABAT)}
+                              disabled={splitMethod2 === POSPaymentMethod.TALABAT}
+                              className={`flex-1 px-3 py-1 text-sm rounded-md mb-1 ${
+                                splitMethod1 === POSPaymentMethod.TALABAT
+                                  ? "bg-black text-white"
+                                  : splitMethod2 === POSPaymentMethod.TALABAT
+                                    ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+                                    : "bg-gray-100 text-gray-700"
+                              }`}
+                            >
+                              Talabat
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSplitMethod1(POSPaymentMethod.PBL)}
+                              disabled={splitMethod2 === POSPaymentMethod.PBL}
+                              className={`flex-1 px-3 py-1 text-sm rounded-md mb-1 ${
+                                splitMethod1 === POSPaymentMethod.PBL
+                                  ? "bg-black text-white"
+                                  : splitMethod2 === POSPaymentMethod.PBL
+                                    ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+                                    : "bg-gray-100 text-gray-700"
+                              }`}
+                            >
+                              PBL
+                            </button>
+                          </div>
+                          
+                          {/* Reference for first payment if needed */}
+                          {(splitMethod1 === POSPaymentMethod.CARD || 
+                            splitMethod1 === POSPaymentMethod.BANK_TRANSFER || 
+                            splitMethod1 === POSPaymentMethod.PBL || 
+                            splitMethod1 === POSPaymentMethod.TALABAT) && (
+                            <div className="mt-2">
+                              <input
+                                type="text"
+                                value={splitReference1}
+                                onChange={(e) => setSplitReference1(e.target.value)}
+                                placeholder="Card Reference"
+                                className="w-full px-3 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-black"
+                              />
+                            </div>
+                          )}
+                        </div>
+                        
+                        {/* Second Payment Method */}
+                        <div>
+                          <div className="flex justify-between items-center mb-2">
+                            <label className="block text-sm font-medium text-gray-700">
+                              Second Payment Method
+                            </label>
+                            <input
+                              type="text"
+                              value={splitAmount2}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                if (value === '' || /^\d*\.?\d{0,2}$/.test(value)) {
+                                  setSplitAmount2(value);
+                                  
+                                  // Update amount1 to maintain total
+                                  const amount2 = parseFloat(value) || 0;
+                                  const calculatedAmount1 = remainingAmount - amount2;
+                                  if (!isNaN(calculatedAmount1) && calculatedAmount1 >= 0) {
+                                    setSplitAmount1(calculatedAmount1.toFixed(2));
+                                  }
+                                }
+                              }}
+                              placeholder="Amount"
+                              className="w-24 px-3 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-black"
+                            />
+                          </div>
+                          <div className="flex gap-2 flex-wrap">
+                            <button
+                              type="button"
+                              onClick={() => setSplitMethod2(POSPaymentMethod.CASH)}
+                              disabled={splitMethod1 === POSPaymentMethod.CASH}
+                              className={`flex-1 px-3 py-1 text-sm rounded-md mb-1 ${
+                                splitMethod2 === POSPaymentMethod.CASH
+                                  ? "bg-black text-white"
+                                  : splitMethod1 === POSPaymentMethod.CASH
+                                    ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+                                    : "bg-gray-100 text-gray-700"
+                              }`}
+                            >
+                              Cash
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSplitMethod2(POSPaymentMethod.CARD)}
+                              disabled={splitMethod1 === POSPaymentMethod.CARD}
+                              className={`flex-1 px-3 py-1 text-sm rounded-md mb-1 ${
+                                splitMethod2 === POSPaymentMethod.CARD
+                                  ? "bg-black text-white"
+                                  : splitMethod1 === POSPaymentMethod.CARD
+                                    ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+                                    : "bg-gray-100 text-gray-700"
+                              }`}
+                            >
+                              Card
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSplitMethod2(POSPaymentMethod.BANK_TRANSFER)}
+                              disabled={splitMethod1 === POSPaymentMethod.BANK_TRANSFER}
+                              className={`flex-1 px-3 py-1 text-sm rounded-md mb-1 ${
+                                splitMethod2 === POSPaymentMethod.BANK_TRANSFER
+                                  ? "bg-black text-white"
+                                  : splitMethod1 === POSPaymentMethod.BANK_TRANSFER
+                                    ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+                                    : "bg-gray-100 text-gray-700"
+                              }`}
+                            >
+                              Bank Transfer
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSplitMethod2(POSPaymentMethod.TALABAT)}
+                              disabled={splitMethod1 === POSPaymentMethod.TALABAT}
+                              className={`flex-1 px-3 py-1 text-sm rounded-md mb-1 ${
+                                splitMethod2 === POSPaymentMethod.TALABAT
+                                  ? "bg-black text-white"
+                                  : splitMethod1 === POSPaymentMethod.TALABAT
+                                    ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+                                    : "bg-gray-100 text-gray-700"
+                              }`}
+                            >
+                              Talabat
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSplitMethod2(POSPaymentMethod.PBL)}
+                              disabled={splitMethod1 === POSPaymentMethod.PBL}
+                              className={`flex-1 px-3 py-1 text-sm rounded-md mb-1 ${
+                                splitMethod2 === POSPaymentMethod.PBL
+                                  ? "bg-black text-white"
+                                  : splitMethod1 === POSPaymentMethod.PBL
+                                    ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+                                    : "bg-gray-100 text-gray-700"
+                              }`}
+                            >
+                              PBL
+                            </button>
+                          </div>
+                          
+                          {/* Reference for second payment if needed */}
+                          {(splitMethod2 === POSPaymentMethod.CARD || 
+                            splitMethod2 === POSPaymentMethod.BANK_TRANSFER || 
+                            splitMethod2 === POSPaymentMethod.PBL || 
+                            splitMethod2 === POSPaymentMethod.TALABAT) && (
+                            <div className="mt-2">
+                              <input
+                                type="text"
+                                value={splitReference2}
+                                onChange={(e) => setSplitReference2(e.target.value)}
+                                placeholder="Card Reference"
+                                className="w-full px-3 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-black"
+                              />
+                            </div>
+                          )}
+                        </div>
+                        
+                        <div className="text-sm text-gray-500">
+                          Total: AED {remainingAmount.toFixed(2)}
+                        </div>
                       </div>
                     )}
                   </div>

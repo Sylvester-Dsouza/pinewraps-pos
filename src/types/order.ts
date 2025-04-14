@@ -35,12 +35,14 @@ export enum POSPaymentMethod {
   BANK_TRANSFER = 'BANK_TRANSFER',
   PBL = 'PBL',
   TALABAT = 'TALABAT',
-  COD = 'COD'
+  COD = 'COD',
+  PAY_LATER = 'PAY_LATER'
 }
 
 export enum POSPaymentStatus {
   FULLY_PAID = 'FULLY_PAID',
-  PARTIALLY_PAID = 'PARTIALLY_PAID'
+  PARTIALLY_PAID = 'PARTIALLY_PAID',
+  PENDING = 'PENDING'
 }
 
 export enum POSOrderStatus {
