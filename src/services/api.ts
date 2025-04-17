@@ -362,6 +362,14 @@ export type PosQueuedOrder = {
   };
 };
 
+export interface ProductAddonSubOption {
+  id: string;
+  name: string;
+  price: number;
+  description?: string;
+  optionId: string;
+}
+
 export interface AddonOption {
   id: string;
   name: string;
@@ -369,6 +377,7 @@ export interface AddonOption {
   allowsCustomText: boolean;
   customTextLabel?: string;
   maxTextLength?: number;
+  subOptions?: ProductAddonSubOption[];
 }
 
 export interface ProductAddon {

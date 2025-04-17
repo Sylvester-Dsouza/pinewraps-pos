@@ -1,7 +1,7 @@
 import { Fragment, useState, useEffect, useMemo } from "react";
 import { Dialog, Transition } from "@headlessui/react";
-import { X, Minus, Plus } from "lucide-react";
-import { Product, ProductAddon, AddonOption, apiMethods } from "@/services/api";
+import { X, Minus, Plus, ChevronDown, ChevronUp } from "lucide-react";
+import { Product, ProductAddon, AddonOption, ProductAddonSubOption, apiMethods } from "@/services/api";
 import { toast } from "react-hot-toast";
 import { CustomImage } from "@/types/cart";
 import ImageUpload from "./custom-images/image-upload";
@@ -49,11 +49,19 @@ interface ProductVariant {
   values: ProductVariantValue[];
 }
 
+interface SelectedSubAddonOption {
+  subOptionId: string;
+  parentOptionId: string;
+  addonId: string;
+  customText?: string;
+}
+
 interface SelectedAddonOption {
   addonId: string;
   optionId: string;
   customText?: string;
   selectionIndex?: number; // To differentiate between multiple selections of the same addon
+  selectedSubOptions?: SelectedSubAddonOption[];
 }
 
 export default function ProductDetailsModal({
@@ -73,6 +81,7 @@ export default function ProductDetailsModal({
   const [productAddons, setProductAddons] = useState<ProductAddon[]>([]);
   const [selectedAddons, setSelectedAddons] = useState<SelectedAddonOption[]>([]);
   const [addonCustomTexts, setAddonCustomTexts] = useState<Record<string, string>>({});
+  const [expandedOptions, setExpandedOptions] = useState<Record<string, boolean>>({});
   const [loadingAddons, setLoadingAddons] = useState(false);
   
   // Reset state when product changes
@@ -85,6 +94,7 @@ export default function ProductDetailsModal({
     setSelectedAddons([]);
     setAddonCustomTexts({});
     setCustomImages([]);
+    setExpandedOptions({});
     
     console.log('Product details:', product);
     console.log('Product allowCustomImages:', product.allowCustomImages);
@@ -164,11 +174,29 @@ export default function ProductDetailsModal({
     }
   }, [productAddons, selectedAddons, areRequiredAddonsSelected]);
 
+  // Toggle option expansion for sub-options display
+  const toggleOptionExpansion = (addonId: string, optionId: string) => {
+    const key = `${addonId}_${optionId}`;
+    setExpandedOptions(prev => ({
+      ...prev,
+      [key]: !prev[key]
+    }));
+  };
+
+  // Check if an option is expanded
+  const isOptionExpanded = (addonId: string, optionId: string): boolean => {
+    return !!expandedOptions[`${addonId}_${optionId}`];
+  };
+
   // Handle addon option selection for toggle-style selection
   const handleAddonOptionSelect = (addonId: string, optionId: string) => {
     // Find the addon group to get its configuration
     const addonGroup = productAddons.find(addon => addon.id === addonId);
     if (!addonGroup) return;
+    
+    // Find the selected option to check if it has sub-options
+    const selectedOption = addonGroup.options.find(opt => opt.id === optionId);
+    const hasSubOptions = selectedOption?.subOptions && selectedOption.subOptions.length > 0;
     
     setSelectedAddons(prev => {
       // Create a copy of the current selections
@@ -177,28 +205,28 @@ export default function ProductDetailsModal({
       // Find existing selections for this addon group
       const existingSelections = updated.filter(item => item.addonId === addonId);
       
-      // If this option is already selected, remove it (toggle behavior)
-      const existingSelection = existingSelections.find(item => item.optionId === optionId);
-      if (existingSelection) {
-        // Don't allow deselection if it would violate minimum selections for required addons
-        if (addonGroup.required && existingSelections.length <= addonGroup.minSelections) {
-          toast.error(`You must select at least ${addonGroup.minSelections} option(s) for ${addonGroup.name}`);
-          return prev;
-        }
-        // Remove the option
-        return updated.filter(item => !(item.addonId === addonId && item.optionId === optionId));
-      }
-      
-      // Check if adding would exceed max selections
-      if (existingSelections.length >= addonGroup.maxSelections) {
-        // If we're at max selections, replace the oldest selection
-        const oldestSelection = existingSelections[0];
-        updated = updated.filter(item => !(item.addonId === addonId && item.optionId === oldestSelection.optionId));
-        // Keep all other selections
-        for (let i = 1; i < existingSelections.length; i++) {
-          if (i < existingSelections.length) {
-            // These are already in the updated array, no need to add them back
+      // Check if this is a single-selection addon (maxSelections = 1)
+      if (addonGroup.maxSelections === 1) {
+        // For single-selection addons, we replace the existing selection
+        const existingSelection = existingSelections.find(item => item.optionId === optionId);
+        if (existingSelection) {
+          // Don't allow deselection if it would violate minimum selections for required addons
+          if (addonGroup.required && existingSelections.length <= addonGroup.minSelections) {
+            toast.error(`You must select at least ${addonGroup.minSelections} option(s) for ${addonGroup.name}`);
+            return prev;
           }
+          // Remove the option (toggle behavior for single-selection addons)
+          return updated.filter(item => !(item.addonId === addonId && item.optionId === optionId));
+        }
+        
+        // Remove any existing selection for this addon group
+        updated = updated.filter(item => item.addonId !== addonId);
+      } else {
+        // For multi-selection addons, check if adding would exceed max selections
+        if (existingSelections.length >= addonGroup.maxSelections) {
+          // If we're at max selections, replace the oldest selection
+          const oldestSelection = existingSelections[0];
+          updated = updated.filter(item => !(item.addonId === addonId && item.selectionIndex === oldestSelection.selectionIndex));
         }
       }
       
@@ -207,8 +235,64 @@ export default function ProductDetailsModal({
       updated.push({ 
         addonId, 
         optionId, 
-        selectionIndex: existingSelections.length 
+        selectionIndex: existingSelections.length,
+        selectedSubOptions: []
       });
+      
+      // If the option has sub-options, automatically expand it
+      if (hasSubOptions) {
+        toggleOptionExpansion(addonId, optionId);
+      }
+      
+      return updated;
+    });
+  };
+  
+  // Handle sub-addon option selection
+  const handleSubAddonOptionSelect = (addonId: string, parentOptionId: string, subOptionId: string, dropdownIndex?: number) => {
+    setSelectedAddons(prev => {
+      // Create a copy of the current selections
+      const updated = [...prev];
+      
+      // Find the parent option selection
+      // If dropdownIndex is provided, use it to find the exact parent selection
+      const parentSelectionIndex = dropdownIndex !== undefined
+        ? updated.findIndex(item => 
+            item.addonId === addonId && 
+            item.optionId === parentOptionId && 
+            item.selectionIndex === dropdownIndex
+          )
+        : updated.findIndex(item => 
+            item.addonId === addonId && 
+            item.optionId === parentOptionId
+          );
+      
+      if (parentSelectionIndex === -1) return prev; // Parent option not selected
+      
+      const parentSelection = updated[parentSelectionIndex];
+      const selectedSubOptions = parentSelection.selectedSubOptions || [];
+      
+      // Check if this sub-option is already selected
+      const existingSubOptionIndex = selectedSubOptions.findIndex(item => item.subOptionId === subOptionId);
+      
+      if (existingSubOptionIndex >= 0) {
+        // Remove the sub-option if already selected (toggle behavior)
+        const updatedSubOptions = selectedSubOptions.filter(item => item.subOptionId !== subOptionId);
+        updated[parentSelectionIndex] = {
+          ...parentSelection,
+          selectedSubOptions: updatedSubOptions
+        };
+      } else {
+        // Add the sub-option
+        updated[parentSelectionIndex] = {
+          ...parentSelection,
+          selectedSubOptions: [
+            ...selectedSubOptions,
+            { subOptionId, parentOptionId, addonId }
+          ]
+        };
+      }
+      
       return updated;
     });
   };
@@ -218,6 +302,10 @@ export default function ProductDetailsModal({
     // Find the addon group to get its configuration
     const addonGroup = productAddons.find(addon => addon.id === addonId);
     if (!addonGroup) return;
+    
+    // Find the selected option to check if it has sub-options
+    const selectedOption = addonGroup.options.find(opt => opt.id === optionId);
+    const hasSubOptions = selectedOption?.subOptions && selectedOption.subOptions.length > 0;
     
     setSelectedAddons(prev => {
       // Create a copy of the current selections
@@ -229,10 +317,12 @@ export default function ProductDetailsModal({
       // Find the existing selection at this dropdown index, if any
       const existingSelection = existingSelections.find(item => item.selectionIndex === dropdownIndex);
       let existingCustomText = '';
+      let existingSubOptions: SelectedSubAddonOption[] = [];
       
-      // If there's an existing selection at this index, preserve its custom text if the option is the same
+      // If there's an existing selection at this index, preserve its custom text and sub-options if the option is the same
       if (existingSelection && existingSelection.optionId === optionId) {
         existingCustomText = existingSelection.customText || '';
+        existingSubOptions = existingSelection.selectedSubOptions || [];
       }
       
       // Remove any existing selection for this dropdown index
@@ -244,8 +334,14 @@ export default function ProductDetailsModal({
           addonId, 
           optionId, 
           selectionIndex: dropdownIndex,
-          customText: existingCustomText
+          customText: existingCustomText,
+          selectedSubOptions: existingSubOptions
         });
+        
+        // If this is a new option with sub-options, automatically expand it
+        if (hasSubOptions && (!existingSelection || existingSelection.optionId !== optionId)) {
+          toggleOptionExpansion(addonId, optionId);
+        }
       }
       
       return updated;
@@ -257,6 +353,32 @@ export default function ProductDetailsModal({
     return selectedAddons.some(item => 
       item.addonId === addonId && item.optionId === optionId
     );
+  };
+  
+  // Count how many times an addon option is selected
+  const countAddonOptionSelections = (addonId: string, optionId: string): number => {
+    return selectedAddons.filter(item => 
+      item.addonId === addonId && item.optionId === optionId
+    ).length;
+  };
+  
+  // Check if a sub-addon option is selected
+  const isSubAddonOptionSelected = (addonId: string, parentOptionId: string, subOptionId: string, dropdownIndex?: number): boolean => {
+    // If dropdown index is provided, find the specific parent selection at that index
+    const parentSelection = dropdownIndex !== undefined
+      ? selectedAddons.find(item => 
+          item.addonId === addonId && 
+          item.optionId === parentOptionId && 
+          item.selectionIndex === dropdownIndex
+        )
+      : selectedAddons.find(item => 
+          item.addonId === addonId && 
+          item.optionId === parentOptionId
+        );
+    
+    if (!parentSelection || !parentSelection.selectedSubOptions) return false;
+    
+    return parentSelection.selectedSubOptions.some(item => item.subOptionId === subOptionId);
   };
   
   // Handle custom text input for addon options
@@ -310,7 +432,7 @@ export default function ProductDetailsModal({
       return 0;
     }
     
-    // Calculate the total price of all selected addon options
+    // Calculate the total price of all selected addon options and their sub-options
     return selectedAddons.reduce((total, selected) => {
       // Find the addon group
       const addonGroup = productAddons.find(addon => addon.id === selected.addonId);
@@ -321,7 +443,19 @@ export default function ProductDetailsModal({
       if (!option) return total;
       
       // Add the option price to the total
-      return total + (option.price || 0);
+      let optionTotal = option.price || 0;
+      
+      // Add prices for selected sub-options
+      if (selected.selectedSubOptions && selected.selectedSubOptions.length > 0 && option.subOptions) {
+        const subOptionsTotal = selected.selectedSubOptions.reduce((subTotal, subSelected) => {
+          const subOption = option.subOptions?.find(subOpt => subOpt.id === subSelected.subOptionId);
+          return subTotal + (subOption?.price || 0);
+        }, 0);
+        
+        optionTotal += subOptionsTotal;
+      }
+      
+      return total + optionTotal;
     }, 0);
   };
 
@@ -388,18 +522,37 @@ export default function ProductDetailsModal({
     });
     
     // Add addon variations
-    const addonVariations = selectedAddons.map(selected => {
+    let addonVariations = [];
+    
+    // Process main addon options
+    for (const selected of selectedAddons) {
       const addonGroup = productAddons.find(addon => addon.id === selected.addonId);
       const option = addonGroup?.options.find(opt => opt.id === selected.optionId);
       
-      return {
+      // Add the main addon option
+      addonVariations.push({
         id: selected.addonId,
         type: addonGroup?.name || 'Addon',
         value: option?.name || '',
         priceAdjustment: option?.price || 0,
         customText: selected.customText
-      };
-    });
+      });
+      
+      // Add sub-addon options if any are selected
+      if (selected.selectedSubOptions && selected.selectedSubOptions.length > 0 && option?.subOptions) {
+        for (const subSelected of selected.selectedSubOptions) {
+          const subOption = option.subOptions.find(subOpt => subOpt.id === subSelected.subOptionId);
+          if (subOption) {
+            addonVariations.push({
+              id: `${selected.addonId}_${selected.optionId}_${subOption.id}`,
+              type: `${addonGroup?.name || 'Addon'} - ${option.name} Sub-option`,
+              value: subOption.name,
+              priceAdjustment: subOption.price || 0
+            });
+          }
+        }
+      }
+    }
     
     variations = [...variations, ...addonVariations];
 
@@ -561,9 +714,11 @@ export default function ProductDetailsModal({
                                 <div className="space-y-4">
                                   {/* Create multiple dropdowns based on maxSelections */}
                                   {Array.from({ length: addon.maxSelections }).map((_, dropdownIndex) => {
-                                    // Get the current selection for this dropdown index
-                                    const existingSelections = selectedAddons.filter(item => item.addonId === addon.id);
-                                    const currentSelection = existingSelections[dropdownIndex]?.optionId || '';
+                                    // Get the current selection for this dropdown index by looking for selections with this exact selectionIndex
+                                    const existingSelection = selectedAddons.find(item => 
+                                      item.addonId === addon.id && item.selectionIndex === dropdownIndex
+                                    );
+                                    const currentSelection = existingSelection?.optionId || '';
                                     
                                     return (
                                       <div key={`${addon.id}-dropdown-${dropdownIndex}`} className="flex flex-col">
@@ -590,6 +745,36 @@ export default function ProductDetailsModal({
                                             </option>
                                           ))}
                                         </select>
+                                        
+                                        {/* Display sub-options if the selected option has them */}
+                                        {currentSelection && addon.options.find(opt => opt.id === currentSelection)?.subOptions?.length > 0 && (
+                                          <div className="mt-3 mb-3 pl-4 border-l-2 border-gray-200">
+                                            <div className="text-sm font-medium mb-2">Select sub-options:</div>
+                                            <div className="grid grid-cols-2 gap-2">
+                                              {addon.options.find(opt => opt.id === currentSelection)?.subOptions?.map(subOption => {
+                                                const isSubSelected = isSubAddonOptionSelected(addon.id, currentSelection, subOption.id, dropdownIndex);
+                                                return (
+                                                  <button
+                                                    key={subOption.id}
+                                                    onClick={() => handleSubAddonOptionSelect(addon.id, currentSelection, subOption.id, dropdownIndex)}
+                                                    className={`p-2 rounded-lg text-left text-sm transition-all ${isSubSelected 
+                                                      ? 'bg-gray-800 text-white' 
+                                                      : 'bg-gray-100 text-gray-900 hover:bg-gray-200'}`}
+                                                  >
+                                                    <div className="flex justify-between items-center">
+                                                      <span>{subOption.name}</span>
+                                                      {subOption.price > 0 && (
+                                                        <span className="text-xs">
+                                                          +{subOption.price.toFixed(2)} AED
+                                                        </span>
+                                                      )}
+                                                    </div>
+                                                  </button>
+                                                );
+                                              })}
+                                            </div>
+                                          </div>
+                                        )}
                                         
                                         {/* Custom text input for selected options that allow it */}
                                         {currentSelection && addon.options.find(opt => opt.id === currentSelection)?.allowsCustomText && (
@@ -618,6 +803,7 @@ export default function ProductDetailsModal({
                                 <div className="grid grid-cols-2 gap-3">
                                   {addon.options.map((option) => {
                                     const isSelected = isAddonOptionSelected(addon.id, option.id);
+                                    const selectionCount = countAddonOptionSelections(addon.id, option.id);
                                     return (
                                       <div key={option.id} className="flex flex-col">
                                         <button
@@ -627,7 +813,29 @@ export default function ProductDetailsModal({
                                             : 'bg-gray-100 text-gray-900 hover:bg-gray-200'}`}
                                         >
                                           <div className="flex justify-between items-center">
-                                            <span className="font-medium">{option.name}</span>
+                                            <div className="flex items-center">
+                                              <span className="font-medium">{option.name}</span>
+                                              {selectionCount > 1 && (
+                                                <span className="ml-2 px-2 py-0.5 bg-white text-black text-xs font-bold rounded-full">
+                                                  {selectionCount}x
+                                                </span>
+                                              )}
+                                              {option.subOptions && option.subOptions.length > 0 && isSelected && (
+                                                <button 
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    toggleOptionExpansion(addon.id, option.id);
+                                                  }}
+                                                  className="ml-2 p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700"
+                                                >
+                                                  {isOptionExpanded(addon.id, option.id) ? (
+                                                    <ChevronUp className="h-4 w-4" />
+                                                  ) : (
+                                                    <ChevronDown className="h-4 w-4" />
+                                                  )}
+                                                </button>
+                                              )}
+                                            </div>
                                             {option.price > 0 && (
                                               <span className="text-sm">
                                                 +{option.price.toFixed(2)} AED
@@ -635,6 +843,36 @@ export default function ProductDetailsModal({
                                             )}
                                           </div>
                                         </button>
+                                        
+                                        {/* Sub-options for this addon option */}
+                                        {isSelected && option.subOptions && option.subOptions.length > 0 && isOptionExpanded(addon.id, option.id) && (
+                                          <div className="mt-2 pl-4 border-l-2 border-gray-200">
+                                            <div className="text-sm font-medium mb-2">Select sub-options:</div>
+                                            <div className="grid grid-cols-2 gap-2">
+                                              {option.subOptions.map(subOption => {
+                                                const isSubSelected = isSubAddonOptionSelected(addon.id, option.id, subOption.id);
+                                                return (
+                                                  <button
+                                                    key={subOption.id}
+                                                    onClick={() => handleSubAddonOptionSelect(addon.id, option.id, subOption.id)}
+                                                    className={`p-2 rounded-lg text-left text-sm transition-all ${isSubSelected 
+                                                      ? 'bg-gray-800 text-white' 
+                                                      : 'bg-gray-100 text-gray-900 hover:bg-gray-200'}`}
+                                                  >
+                                                    <div className="flex justify-between items-center">
+                                                      <span>{subOption.name}</span>
+                                                      {subOption.price > 0 && (
+                                                        <span className="text-xs">
+                                                          +{subOption.price.toFixed(2)} AED
+                                                        </span>
+                                                      )}
+                                                    </div>
+                                                  </button>
+                                                );
+                                              })}
+                                            </div>
+                                          </div>
+                                        )}
                                         
                                         {/* Custom text input for selected options that allow it */}
                                         {isSelected && option.allowsCustomText && (
@@ -738,9 +976,10 @@ export default function ProductDetailsModal({
                           : 'bg-gray-200 text-gray-500 cursor-not-allowed'
                       }`}
                     >
-                      {isReadyToAdd() 
-                        ? `Add to Order - AED ${calculateTotalPrice().toFixed(2)}`
-                        : 'Please select all required options'}
+                      {`Add to Order - AED ${calculateTotalPrice().toFixed(2)}`}
+                      {!isReadyToAdd() && (
+                        <div className="text-sm mt-1">Please select all required options</div>
+                      )}
                     </button>
                   </div>
                 </div>
