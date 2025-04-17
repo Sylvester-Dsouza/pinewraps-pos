@@ -73,6 +73,7 @@ export interface ProductVariation {
   value: string;
   price?: number;
   priceAdjustment?: number;
+  customText?: string; // Custom text for addon options
 }
 
 export interface OrderPayment {

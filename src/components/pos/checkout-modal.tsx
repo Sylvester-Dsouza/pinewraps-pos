@@ -246,20 +246,22 @@ export default function CheckoutModal({
           variations: {
             variationsObj: (item.selectedVariations || []).reduce((acc, v) => ({
               ...acc,
-              [v.type]: v.value
+              [v.type]: v.customText ? `${v.value} (${v.customText})` : v.value
             }), {}),
             selectedVariations: (item.selectedVariations || []).map(v => ({
               id: nanoid(),
               type: v.type,
               value: v.value,
-              priceAdjustment: v.price || 0
+              priceAdjustment: v.price || 0,
+              customText: v.customText
             }))
           },
           selectedVariations: (item.selectedVariations || []).map(v => ({
             id: nanoid(),
             type: v.type,
             value: v.value,
-            priceAdjustment: v.price || 0
+            priceAdjustment: v.price || 0,
+            customText: v.customText
           })),
           // Add custom images if available
           customImages: item.customImages && item.customImages.length > 0 ? item.customImages.map(img => ({
@@ -291,20 +293,22 @@ export default function CheckoutModal({
           variations: {
             variationsObj: (item.selectedVariations || []).reduce((acc, v) => ({
               ...acc,
-              [v.type]: v.value
+              [v.type]: v.customText ? `${v.value} (${v.customText})` : v.value
             }), {}),
             selectedVariations: (item.selectedVariations || []).map(v => ({
               id: nanoid(),
               type: v.type,
               value: v.value,
-              priceAdjustment: v.price || v.priceAdjustment || 0
+              priceAdjustment: v.price || v.priceAdjustment || 0,
+              customText: v.customText
             }))
           },
           selectedVariations: (item.selectedVariations || []).map(v => ({
             id: nanoid(),
             type: v.type,
             value: v.value,
-            priceAdjustment: v.price || v.priceAdjustment || 0
+            priceAdjustment: v.price || v.priceAdjustment || 0,
+            customText: v.customText
           })),
           // Add custom images if available
           customImages: item.customImages && item.customImages.length > 0 ? item.customImages.map(img => ({

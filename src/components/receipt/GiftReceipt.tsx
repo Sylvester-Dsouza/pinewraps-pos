@@ -69,6 +69,15 @@ export const generateGiftReceiptContent = (order: Order): string => `
       <p style="margin: 2px 0;">${formatLineItem('Status:', order.status)}</p>
       
       <div class="divider"></div>
+      
+      <div style="margin: 10px 0;">
+        <p style="margin: 2px 0; font-weight: bold;">Customer Details:</p>
+        ${order.customerName ? `<p style="margin: 2px 0;">${formatLineItem('Name:', order.customerName)}</p>` : ''}
+        ${order.customerPhone ? `<p style="margin: 2px 0;">${formatLineItem('Phone:', order.customerPhone)}</p>` : ''}
+        ${order.customerEmail ? `<p style="margin: 2px 0;">${formatLineItem('Email:', order.customerEmail)}</p>` : ''}
+      </div>
+      
+      <div class="divider"></div>
       <div style="margin: 10px 0;">
         <p style="margin: 2px 0; font-weight: bold;">${order.deliveryMethod === 'DELIVERY' ? 'Delivery Details' : 'Pickup Details'}</p>
         ${order.deliveryMethod === 'DELIVERY' ? `
@@ -113,7 +122,7 @@ export const generateGiftReceiptContent = (order: Order): string => `
             
             return type && value ? `
               <tr>
-                <td class="variation">${type}: ${value}</td>
+                <td class="variation">${type}: ${value}${variation.customText ? ` (${variation.customText})` : ''}</td>
                 <td></td>
               </tr>
             ` : '';

@@ -119,7 +119,7 @@ export const generateReceiptContent = (order: Order): string => `
             
             return type && value ? `
               <tr>
-                <td class="variation">${type}: ${value}</td>
+                <td class="variation">${type}: ${value}${variation.customText ? ` (${variation.customText})` : ''}</td>
                 <td></td>
                 <td style="text-align: right;">${variation.price ? formatCurrency(variation.price) : ''}</td>
               </tr>

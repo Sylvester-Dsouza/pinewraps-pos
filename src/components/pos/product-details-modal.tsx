@@ -1,7 +1,7 @@
 import { Fragment, useState, useEffect, useMemo } from "react";
 import { Dialog, Transition } from "@headlessui/react";
 import { X, Minus, Plus } from "lucide-react";
-import { Product } from "@/services/api";
+import { Product, ProductAddon, AddonOption, apiMethods } from "@/services/api";
 import { toast } from "react-hot-toast";
 import { CustomImage } from "@/types/cart";
 import ImageUpload from "./custom-images/image-upload";
@@ -49,9 +49,11 @@ interface ProductVariant {
   values: ProductVariantValue[];
 }
 
-interface CakeFlavor {
-  cakeNumber: number;
-  flavorId: string;
+interface SelectedAddonOption {
+  addonId: string;
+  optionId: string;
+  customText?: string;
+  selectionIndex?: number; // To differentiate between multiple selections of the same addon
 }
 
 export default function ProductDetailsModal({
@@ -65,9 +67,13 @@ export default function ProductDetailsModal({
   const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(null);
   const [notes, setNotes] = useState("");
   const [customPrice, setCustomPrice] = useState<number | null>(null);
-  const [cakeFlavors, setCakeFlavors] = useState<CakeFlavor[]>([]);
-  const [validSetSelection, setValidSetSelection] = useState(false);
   const [customImages, setCustomImages] = useState<CustomImage[]>([]);
+  
+  // Addon state
+  const [productAddons, setProductAddons] = useState<ProductAddon[]>([]);
+  const [selectedAddons, setSelectedAddons] = useState<SelectedAddonOption[]>([]);
+  const [addonCustomTexts, setAddonCustomTexts] = useState<Record<string, string>>({});
+  const [loadingAddons, setLoadingAddons] = useState(false);
   
   // Reset state when product changes
   useEffect(() => {
@@ -76,12 +82,31 @@ export default function ProductDetailsModal({
     setSelectedVariant(null);
     setCustomPrice(null);
     setNotes("");
-    setCakeFlavors([]);
-    setValidSetSelection(false);
+    setSelectedAddons([]);
+    setAddonCustomTexts({});
     setCustomImages([]);
     
     console.log('Product details:', product);
     console.log('Product allowCustomImages:', product.allowCustomImages);
+    
+    // Fetch product addons
+    if (product?.id) {
+      setLoadingAddons(true);
+      apiMethods.products.getProductAddons(product.id)
+        .then(response => {
+          if (response.success && response.data) {
+            setProductAddons(response.data);
+            console.log('Product addons:', response.data);
+          }
+        })
+        .catch(error => {
+          console.error('Error fetching product addons:', error);
+          toast.error('Failed to load product options');
+        })
+        .finally(() => {
+          setLoadingAddons(false);
+        });
+    }
   }, [product]);
 
   // Find matching variant when options change
@@ -112,72 +137,155 @@ export default function ProductDetailsModal({
     }
   }, [selectedOptions, product]);
 
-  // Check if product is in Sets category
-  const isSetProduct = useMemo(() => {
-    // Check if categoryId is 'sets' (case insensitive)
-    if (product.categoryId && product.categoryId.toLowerCase() === 'sets') {
-      return true;
-    }
+  // Check if all required addons are selected
+  const areRequiredAddonsSelected = useMemo(() => {
+    if (!productAddons || productAddons.length === 0) return true;
     
-    // If we have a category object with a name property, check that too
-    if (product.category && product.category.name === 'Sets') {
-      return true;
-    }
-    
-    // As a fallback, check if the product name contains 'set' as a whole word
-    if (product.name && /\bset(s)?\b/i.test(product.name)) {
-      return true;
-    }
-    
-    return false;
-  }, [product]);
+    // Check each required addon group
+    return productAddons
+      .filter(addon => addon.required)
+      .every(addon => {
+        // Count how many options are selected for this addon
+        const selectedCount = selectedAddons.filter(selected => 
+          selected.addonId === addon.id
+        ).length;
+        
+        // Check if the minimum number of selections is met
+        return selectedCount >= addon.minSelections;
+      });
+  }, [productAddons, selectedAddons]);
 
-  // Debug log to check if product is identified as a Sets product
+  // Debug log for addons
   useEffect(() => {
-    console.log('Product category ID:', product.categoryId);
-    console.log('Is Sets product:', isSetProduct);
-  }, [product, isSetProduct]);
-
-  // Update valid set selection status
-  useEffect(() => {
-    if (isSetProduct) {
-      // Check if all 4 cakes have flavors selected
-      setValidSetSelection(cakeFlavors.filter(f => f.flavorId).length === 4);
+    if (productAddons.length > 0) {
+      console.log('Product addons:', productAddons);
+      console.log('Selected addons:', selectedAddons);
+      console.log('Required addons selected:', areRequiredAddonsSelected);
     }
-  }, [isSetProduct, cakeFlavors]);
+  }, [productAddons, selectedAddons, areRequiredAddonsSelected]);
 
-  // Get available cake flavors
-  const getCakeFlavors = (): {id: string, value: string}[] => {
-    const flavorOption = product.options?.find(o => 
-      o.name.toLowerCase().includes('flavour') || 
-      o.name.toLowerCase().includes('flavor')
+  // Handle addon option selection for toggle-style selection
+  const handleAddonOptionSelect = (addonId: string, optionId: string) => {
+    // Find the addon group to get its configuration
+    const addonGroup = productAddons.find(addon => addon.id === addonId);
+    if (!addonGroup) return;
+    
+    setSelectedAddons(prev => {
+      // Create a copy of the current selections
+      let updated = [...prev];
+      
+      // Find existing selections for this addon group
+      const existingSelections = updated.filter(item => item.addonId === addonId);
+      
+      // If this option is already selected, remove it (toggle behavior)
+      const existingSelection = existingSelections.find(item => item.optionId === optionId);
+      if (existingSelection) {
+        // Don't allow deselection if it would violate minimum selections for required addons
+        if (addonGroup.required && existingSelections.length <= addonGroup.minSelections) {
+          toast.error(`You must select at least ${addonGroup.minSelections} option(s) for ${addonGroup.name}`);
+          return prev;
+        }
+        // Remove the option
+        return updated.filter(item => !(item.addonId === addonId && item.optionId === optionId));
+      }
+      
+      // Check if adding would exceed max selections
+      if (existingSelections.length >= addonGroup.maxSelections) {
+        // If we're at max selections, replace the oldest selection
+        const oldestSelection = existingSelections[0];
+        updated = updated.filter(item => !(item.addonId === addonId && item.optionId === oldestSelection.optionId));
+        // Keep all other selections
+        for (let i = 1; i < existingSelections.length; i++) {
+          if (i < existingSelections.length) {
+            // These are already in the updated array, no need to add them back
+          }
+        }
+      }
+      
+      // Add the new selection with a unique selection index
+      // For toggle buttons, we'll use the length of existing selections as the index
+      updated.push({ 
+        addonId, 
+        optionId, 
+        selectionIndex: existingSelections.length 
+      });
+      return updated;
+    });
+  };
+  
+  // Handle dropdown selection for addons
+  const handleAddonDropdownSelect = (addonId: string, dropdownIndex: number, optionId: string) => {
+    // Find the addon group to get its configuration
+    const addonGroup = productAddons.find(addon => addon.id === addonId);
+    if (!addonGroup) return;
+    
+    setSelectedAddons(prev => {
+      // Create a copy of the current selections
+      let updated = [...prev];
+      
+      // Find existing selections for this addon group
+      const existingSelections = updated.filter(item => item.addonId === addonId);
+      
+      // Find the existing selection at this dropdown index, if any
+      const existingSelection = existingSelections.find(item => item.selectionIndex === dropdownIndex);
+      let existingCustomText = '';
+      
+      // If there's an existing selection at this index, preserve its custom text if the option is the same
+      if (existingSelection && existingSelection.optionId === optionId) {
+        existingCustomText = existingSelection.customText || '';
+      }
+      
+      // Remove any existing selection for this dropdown index
+      updated = updated.filter(item => !(item.addonId === addonId && item.selectionIndex === dropdownIndex));
+      
+      // Add the new selection if an option was selected (not empty)
+      if (optionId) {
+        updated.push({ 
+          addonId, 
+          optionId, 
+          selectionIndex: dropdownIndex,
+          customText: existingCustomText
+        });
+      }
+      
+      return updated;
+    });
+  };
+  
+  // Check if an addon option is selected
+  const isAddonOptionSelected = (addonId: string, optionId: string): boolean => {
+    return selectedAddons.some(item => 
+      item.addonId === addonId && item.optionId === optionId
     );
-    return flavorOption?.values || [];
   };
-
-  // Get selected flavor for a cake
-  const getSelectedFlavor = (cakeNumber: number): string => {
-    const flavor = cakeFlavors.find(f => f.cakeNumber === cakeNumber);
-    return flavor?.flavorId || '';
-  };
-
-  // Handle cake flavor selection
-  const handleCakeFlavorSelect = (cakeNumber: number, flavorId: string) => {
-    const updatedFlavors = [...cakeFlavors];
-    const existingIndex = updatedFlavors.findIndex(f => f.cakeNumber === cakeNumber);
+  
+  // Handle custom text input for addon options
+  const handleAddonCustomTextChange = (addonId: string, optionId: string, text: string, selectionIndex: number = 0) => {
+    // Update the custom text for this specific addon option selection
+    setAddonCustomTexts(prev => ({
+      ...prev,
+      [`${addonId}_${optionId}_${selectionIndex}`]: text
+    }));
     
-    if (existingIndex >= 0) {
-      // Update existing flavor
-      updatedFlavors[existingIndex].flavorId = flavorId;
-    } else {
-      // Add new flavor
-      updatedFlavors.push({ cakeNumber, flavorId });
-    }
-    
-    setCakeFlavors(updatedFlavors);
+    // Also update the selectedAddons array with the custom text
+    setSelectedAddons(prev => {
+      return prev.map((item, index) => {
+        // Match by addonId, optionId and either selectionIndex (if provided) or array index
+        if (item.addonId === addonId && item.optionId === optionId && 
+            (item.selectionIndex === selectionIndex || index === selectionIndex)) {
+          return { ...item, customText: text, selectionIndex };
+        }
+        return item;
+      });
+    });
+  };
+  
+  // Get custom text for a specific addon option selection
+  const getAddonCustomText = (addonId: string, optionId: string, selectionIndex: number = 0): string => {
+    return addonCustomTexts[`${addonId}_${optionId}_${selectionIndex}`] || '';
   };
 
-  // Calculate total price based on quantity, custom price, and selected variant
+  // Calculate total price based on quantity, custom price, selected variant, and addons
   const calculateTotalPrice = () => {
     if (!product) return 0;
 
@@ -186,58 +294,46 @@ export default function ProductDetailsModal({
       return customPrice * quantity;
     }
 
-    // For Sets category, calculate price based on base price + selected flavors
-    if (isSetProduct) {
-      return calculateSetPrice() * quantity;
-    }
-
-    // If variant is selected, use variant price
-    if (selectedVariant) {
-      return selectedVariant.price * quantity;
-    }
-
-    // Otherwise use base product price
-    return product.basePrice * quantity;
+    // Calculate base price (either variant price or product base price)
+    let basePrice = selectedVariant ? selectedVariant.price : product.basePrice;
+    
+    // Add addon prices
+    const addonPrice = calculateAddonPrice();
+    
+    // Return the total price
+    return (basePrice + addonPrice) * quantity;
   };
 
-  // Calculate price for sets
-  const calculateSetPrice = () => {
-    // Start with the base price
-    let totalPrice = product.basePrice;
+  // Calculate price for selected addons
+  const calculateAddonPrice = () => {
+    if (!productAddons || productAddons.length === 0 || !selectedAddons || selectedAddons.length === 0) {
+      return 0;
+    }
     
-    // Add price for each selected flavor
-    cakeFlavors.forEach(flavor => {
-      if (flavor.flavorId) {
-        // Find if there's a variant for this flavor that affects price
-        const flavorVariant = product.variants?.find(v => 
-          v.values.some(val => val.value.id === flavor.flavorId)
-        );
-        
-        if (flavorVariant && flavorVariant.price > 0) {
-          totalPrice += flavorVariant.price;
-        }
-      }
-    });
-    
-    return totalPrice;
+    // Calculate the total price of all selected addon options
+    return selectedAddons.reduce((total, selected) => {
+      // Find the addon group
+      const addonGroup = productAddons.find(addon => addon.id === selected.addonId);
+      if (!addonGroup) return total;
+      
+      // Find the selected option
+      const option = addonGroup.options.find(opt => opt.id === selected.optionId);
+      if (!option) return total;
+      
+      // Add the option price to the total
+      return total + (option.price || 0);
+    }, 0);
   };
 
-  // Check if all required options are selected
+  // Check if all required options and addons are selected
   const isReadyToAdd = () => {
-    // If no options, always ready
-    if (!product.options?.length) return true;
-
-    // For Sets category, check if all 4 flavors are selected
-    if (isSetProduct) {
-      return validSetSelection;
-    }
-
-    // Check if all options have been selected
-    const allOptionsSelected = product.options.every(option =>
+    // Check if all required product options are selected
+    const allOptionsSelected = !product.options?.length || product.options.every(option =>
       selectedOptions.some(selected => selected.optionId === option.id)
     );
 
-    return allOptionsSelected;
+    // Check if all required addon groups have selections
+    return allOptionsSelected && areRequiredAddonsSelected;
   };
 
   const handleOptionChange = (optionId: string, valueId: string) => {
@@ -262,9 +358,7 @@ export default function ProductDetailsModal({
 
     // Check if all required options are selected
     if (!isReadyToAdd()) {
-      toast.error(isSetProduct 
-        ? 'Please select all 4 cake flavors' 
-        : 'Please select all required options');
+      toast.error('Please select all required options');
       return;
     }
 
@@ -274,46 +368,40 @@ export default function ProductDetailsModal({
       return;
     }
 
-    // For Sets category, create variations from cake flavors
+    // Create variations from selected options and addons
     let variations = [];
     
-    if (isSetProduct) {
-      variations = cakeFlavors.map(flavor => {
-        const flavorOption = product.options?.find(o => 
-          o.name.toLowerCase().includes('flavour') || 
-          o.name.toLowerCase().includes('flavor')
-        );
-        const valueDef = flavorOption?.values.find(v => v.id === flavor.flavorId);
-        
-        // Find variant price for this flavor
-        const flavorVariant = product.variants?.find(v => 
-          v.values.some(val => val.value.id === flavor.flavorId)
-        );
-        
-        return {
-          id: flavorOption?.id || '',
-          type: `Cake ${flavor.cakeNumber} Flavor`,
-          value: valueDef?.value || '',
-          priceAdjustment: flavorVariant?.price || 0
-        };
-      });
-    } else {
-      // Regular product variations
-      variations = selectedOptions.map(option => {
-        const optionDef = product.options?.find(o => o.id === option.optionId);
-        const valueDef = optionDef?.values.find(v => v.id === option.valueId);
-        
-        // Check if this value has a price adjustment
-        const priceAdjustment = (valueDef as any)?.price || 0;
-        
-        return {
-          id: option.optionId,
-          type: optionDef?.name || '',
-          value: valueDef?.value || '',
-          priceAdjustment: priceAdjustment
-        };
-      });
-    }
+    // Regular product variations
+    variations = selectedOptions.map(option => {
+      const optionDef = product.options?.find(o => o.id === option.optionId);
+      const valueDef = optionDef?.values.find(v => v.id === option.valueId);
+      
+      // Check if this value has a price adjustment
+      const priceAdjustment = (valueDef as any)?.price || 0;
+      
+      return {
+        id: option.optionId,
+        type: optionDef?.name || '',
+        value: valueDef?.value || '',
+        priceAdjustment: priceAdjustment
+      };
+    });
+    
+    // Add addon variations
+    const addonVariations = selectedAddons.map(selected => {
+      const addonGroup = productAddons.find(addon => addon.id === selected.addonId);
+      const option = addonGroup?.options.find(opt => opt.id === selected.optionId);
+      
+      return {
+        id: selected.addonId,
+        type: addonGroup?.name || 'Addon',
+        value: option?.name || '',
+        priceAdjustment: option?.price || 0,
+        customText: selected.customText
+      };
+    });
+    
+    variations = [...variations, ...addonVariations];
 
     onAddToOrder({
       product: {
@@ -402,12 +490,7 @@ export default function ProductDetailsModal({
                     {/* Price Display */}
                     {!product.allowCustomPrice && (
                       <div className="text-2xl font-semibold text-gray-900 mb-6">
-                        {isSetProduct 
-                          ? validSetSelection 
-                            ? `AED ${calculateTotalPrice().toFixed(2)}`
-                            : 'Starting from 332 AED'
-                          : `AED ${calculateTotalPrice().toFixed(2)}`
-                        }
+                        AED {calculateTotalPrice().toFixed(2)}
                       </div>
                     )}
 
@@ -443,46 +526,159 @@ export default function ProductDetailsModal({
                       </div>
                     )}
 
-                    {/* Sets Category - Cake Flavor Selection */}
-                    {isSetProduct && (
+                    {/* Product Addon Selection */}
+                    {productAddons && productAddons.length > 0 && (
                       <div className="mt-6">
-                        <h3 className="text-lg font-medium text-gray-900 mb-3">
-                          Select Flavors for Each Cake
-                          {!validSetSelection && (
-                            <span className="text-sm text-red-500 ml-2">
-                              (Please select all 4 flavors)
-                            </span>
-                          )}
+                        <h3 className="text-xl font-semibold text-gray-900 mb-4">
+                          Add-ons & Options
                         </h3>
-                        <div className="space-y-4">
-                          {[1, 2, 3, 4].map((cakeNumber) => (
-                            <div key={cakeNumber} className="flex flex-col">
-                              <label className="text-sm font-medium text-gray-700 mb-1">
-                                Cake {cakeNumber} Flavor <span className="text-red-500">*</span>
-                              </label>
-                              <select
-                                value={getSelectedFlavor(cakeNumber)}
-                                onChange={(e) => handleCakeFlavorSelect(cakeNumber, e.target.value)}
-                                className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent ${
-                                  !getSelectedFlavor(cakeNumber) ? 'border-red-300' : 'border-gray-200'
-                                }`}
-                                required
-                              >
-                                <option value="">Select a flavor</option>
-                                {getCakeFlavors().map((flavor) => (
-                                  <option key={flavor.id} value={flavor.id}>
-                                    {flavor.value}
-                                  </option>
-                                ))}
-                              </select>
+                        <div className="space-y-6">
+                          {productAddons.map((addon) => (
+                            <div key={addon.id} className="border border-gray-200 rounded-lg p-4">
+                              <div className="flex justify-between items-start mb-3">
+                                <div>
+                                  <h4 className="text-lg font-medium text-gray-900">
+                                    {addon.name} 
+                                    {addon.required && (
+                                      <span className="text-red-500 ml-1">*</span>
+                                    )}
+                                  </h4>
+                                  {addon.description && (
+                                    <p className="text-sm text-gray-500">{addon.description}</p>
+                                  )}
+                                </div>
+                                <div className="text-sm text-gray-500">
+                                  {addon.required 
+                                    ? `Select ${addon.minSelections === addon.maxSelections 
+                                        ? addon.minSelections 
+                                        : `${addon.minSelections}-${addon.maxSelections}`} option(s)` 
+                                    : 'Optional'}
+                                </div>
+                              </div>
+                              
+                              {/* For addons with maxSelections > 1, use dropdowns */}
+                              {addon.maxSelections > 1 ? (
+                                <div className="space-y-4">
+                                  {/* Create multiple dropdowns based on maxSelections */}
+                                  {Array.from({ length: addon.maxSelections }).map((_, dropdownIndex) => {
+                                    // Get the current selection for this dropdown index
+                                    const existingSelections = selectedAddons.filter(item => item.addonId === addon.id);
+                                    const currentSelection = existingSelections[dropdownIndex]?.optionId || '';
+                                    
+                                    return (
+                                      <div key={`${addon.id}-dropdown-${dropdownIndex}`} className="flex flex-col">
+                                        <label className="text-sm font-medium text-gray-700 mb-1">
+                                          {addon.name} Option {dropdownIndex + 1}
+                                          {addon.required && dropdownIndex < addon.minSelections && (
+                                            <span className="text-red-500 ml-1">*</span>
+                                          )}
+                                        </label>
+                                        <select
+                                          value={currentSelection}
+                                          onChange={(e) => handleAddonDropdownSelect(addon.id, dropdownIndex, e.target.value)}
+                                          className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent ${
+                                            addon.required && dropdownIndex < addon.minSelections && !currentSelection 
+                                              ? 'border-red-300' 
+                                              : 'border-gray-200'
+                                          }`}
+                                          required={addon.required && dropdownIndex < addon.minSelections}
+                                        >
+                                          <option value="">Select an option</option>
+                                          {addon.options.map((option) => (
+                                            <option key={option.id} value={option.id}>
+                                              {option.name} {option.price > 0 ? `(+${option.price.toFixed(2)} AED)` : ''}
+                                            </option>
+                                          ))}
+                                        </select>
+                                        
+                                        {/* Custom text input for selected options that allow it */}
+                                        {currentSelection && addon.options.find(opt => opt.id === currentSelection)?.allowsCustomText && (
+                                          <div className="mt-2">
+                                            <input
+                                              type="text"
+                                              placeholder={addon.options.find(opt => opt.id === currentSelection)?.customTextLabel || "Custom text"}
+                                              value={getAddonCustomText(addon.id, currentSelection, dropdownIndex)}
+                                              onChange={(e) => handleAddonCustomTextChange(addon.id, currentSelection, e.target.value, dropdownIndex)}
+                                              maxLength={addon.options.find(opt => opt.id === currentSelection)?.maxTextLength || 50}
+                                              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                                            />
+                                            {addon.options.find(opt => opt.id === currentSelection)?.maxTextLength && (
+                                              <div className="text-xs text-gray-500 mt-1">
+                                                {getAddonCustomText(addon.id, currentSelection, dropdownIndex).length}/{addon.options.find(opt => opt.id === currentSelection)?.maxTextLength} characters
+                                              </div>
+                                            )}
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              ) : (
+                                /* For addons with maxSelections = 1, use toggle buttons */
+                                <div className="grid grid-cols-2 gap-3">
+                                  {addon.options.map((option) => {
+                                    const isSelected = isAddonOptionSelected(addon.id, option.id);
+                                    return (
+                                      <div key={option.id} className="flex flex-col">
+                                        <button
+                                          onClick={() => handleAddonOptionSelect(addon.id, option.id)}
+                                          className={`p-3 rounded-lg text-left transition-all ${isSelected 
+                                            ? 'bg-black text-white' 
+                                            : 'bg-gray-100 text-gray-900 hover:bg-gray-200'}`}
+                                        >
+                                          <div className="flex justify-between items-center">
+                                            <span className="font-medium">{option.name}</span>
+                                            {option.price > 0 && (
+                                              <span className="text-sm">
+                                                +{option.price.toFixed(2)} AED
+                                              </span>
+                                            )}
+                                          </div>
+                                        </button>
+                                        
+                                        {/* Custom text input for selected options that allow it */}
+                                        {isSelected && option.allowsCustomText && (
+                                          <div className="mt-2">
+                                            {/* Find the selection index for this selected option */}
+                                            {(() => {
+                                              const selection = selectedAddons.find(item => 
+                                                item.addonId === addon.id && item.optionId === option.id
+                                              );
+                                              const selectionIndex = selection?.selectionIndex || 0;
+                                              
+                                              return (
+                                                <>
+                                                  <input
+                                                    type="text"
+                                                    placeholder={option.customTextLabel || "Custom text"}
+                                                    value={getAddonCustomText(addon.id, option.id, selectionIndex)}
+                                                    onChange={(e) => handleAddonCustomTextChange(addon.id, option.id, e.target.value, selectionIndex)}
+                                                    maxLength={option.maxTextLength || 50}
+                                                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                                                  />
+                                                  {option.maxTextLength && (
+                                                    <div className="text-xs text-gray-500 mt-1">
+                                                      {getAddonCustomText(addon.id, option.id, selectionIndex).length}/{option.maxTextLength} characters
+                                                    </div>
+                                                  )}
+                                                </>
+                                              );
+                                            })()}
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
                             </div>
                           ))}
                         </div>
                       </div>
                     )}
 
-                    {/* Regular Product Options (hide for Sets) */}
-                    {!isSetProduct && product.options?.sort((a, b) => a.position - b.position).map((option) => (
+                    {/* Regular Product Options */}
+                    {product.options?.sort((a, b) => a.position - b.position).map((option) => (
                       <div key={option.id} className="mb-6">
                         <h4 className="text-lg font-medium mb-3">
                           {option.name}
@@ -544,9 +740,7 @@ export default function ProductDetailsModal({
                     >
                       {isReadyToAdd() 
                         ? `Add to Order - AED ${calculateTotalPrice().toFixed(2)}`
-                        : isSetProduct
-                          ? 'Please select all 4 cake flavors'
-                          : 'Please select all required options'}
+                        : 'Please select all required options'}
                     </button>
                   </div>
                 </div>

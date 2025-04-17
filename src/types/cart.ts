@@ -26,6 +26,7 @@ export interface SelectedVariation {
   value: string;
   priceAdjustment?: number; // Frontend uses priceAdjustment
   price?: number; // Backend uses price
+  customText?: string; // Custom text for addon options
 }
 
 /**

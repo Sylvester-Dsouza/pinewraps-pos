@@ -1,11 +1,13 @@
 'use client';
 
 import React from 'react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Header from '@/components/header/header';
-import { Search, RefreshCcw, Clock, CheckCircle, XCircle, RotateCcw, Truck, Store, Download, Loader2, Gift } from 'lucide-react';
-import { format } from 'date-fns';
+import { Search, RefreshCcw, Clock, CheckCircle, XCircle, RotateCcw, Truck, Store, Download, Loader2, Gift, Calendar } from 'lucide-react';
+import { format, isAfter, isBefore, startOfDay, endOfDay, parseISO, isValid, parse } from 'date-fns';
+import { DayPicker } from 'react-day-picker';
+import 'react-day-picker/dist/style.css';
 import { apiMethods } from '@/services/api';
 import { toast } from 'react-hot-toast';
 import { getAuth, onAuthStateChanged } from 'firebase/auth';
@@ -30,15 +32,14 @@ const statusColors = {
   KITCHEN_READY: { bg: 'bg-green-100', text: 'text-green-800', icon: CheckCircle },
   FINAL_CHECK_QUEUE: { bg: 'bg-amber-100', text: 'text-amber-800', icon: RotateCcw },
   FINAL_CHECK_PROCESSING: { bg: 'bg-amber-100', text: 'text-amber-800', icon: RefreshCcw },
-  FINAL_CHECK_COMPLETE: { bg: 'bg-amber-100', text: 'text-amber-800', icon: CheckCircle },
   COMPLETED: { bg: 'bg-green-100', text: 'text-green-800', icon: CheckCircle },
   CANCELLED: { bg: 'bg-red-100', text: 'text-red-800', icon: XCircle },
   REFUNDED: { bg: 'bg-orange-100', text: 'text-orange-800', icon: RotateCcw },
-  PENDING_PAYMENT: { bg: 'bg-orange-100', text: 'text-orange-800', icon: Clock },
-  PARTIALLY_REFUNDED: { bg: 'bg-orange-100', text: 'text-orange-800', icon: RotateCcw }
+  PARTIALLY_REFUNDED: { bg: 'bg-orange-100', text: 'text-orange-800', icon: RotateCcw },
+  PARALLEL_PROCESSING: { bg: 'bg-indigo-100', text: 'text-indigo-800', icon: RefreshCcw }
 } as const;
 
-const statusLabels = {
+const orderStatusLabels = {
   PENDING: 'Pending',
   DESIGN_QUEUE: 'Design Queue',
   DESIGN_PROCESSING: 'Design Processing',
@@ -48,12 +49,17 @@ const statusLabels = {
   KITCHEN_READY: 'Kitchen Ready',
   FINAL_CHECK_QUEUE: 'Final Check Queue',
   FINAL_CHECK_PROCESSING: 'Final Check Processing',
-  FINAL_CHECK_COMPLETE: 'Final Check Complete',
   COMPLETED: 'Completed',
   CANCELLED: 'Cancelled',
   REFUNDED: 'Refunded',
-  PENDING_PAYMENT: 'Pending Payment',
-  PARTIALLY_REFUNDED: 'Partially Refunded'
+  PARTIALLY_REFUNDED: 'Partially Refunded',
+  PARALLEL_PROCESSING: 'Parallel Processing'
+} as const;
+
+const paymentStatusLabels = {
+  FULLY_PAID: 'Fully Paid',
+  PARTIALLY_PAID: 'Partially Paid',
+  PENDING: 'Pending'
 } as const;
 
 const deliveryMethodColors = {
@@ -67,8 +73,16 @@ const OrdersPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedStatus, setSelectedStatus] = useState<string>('all');
+  const [selectedOrderStatus, setSelectedOrderStatus] = useState<string>('all');
+  const [selectedPaymentStatus, setSelectedPaymentStatus] = useState<string>('all');
   const [selectedDateRange, setSelectedDateRange] = useState('all');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [showDateFilter, setShowDateFilter] = useState(false);
+  const [showStartCalendar, setShowStartCalendar] = useState(false);
+  const [showEndCalendar, setShowEndCalendar] = useState(false);
+  const startCalendarRef = useRef<HTMLDivElement>(null);
+  const endCalendarRef = useRef<HTMLDivElement>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [selectedOrderForGiftReceipt, setSelectedOrderForGiftReceipt] = useState<Order | null>(null);
@@ -114,12 +128,12 @@ const OrdersPage = () => {
     return () => unsubscribe();
   }, []);
 
-  // Fetch orders when status changes
+  // Fetch orders when status or date range changes
   useEffect(() => {
     if (isAuthenticated) {
       fetchOrders();
     }
-  }, [isAuthenticated, selectedStatus]);
+  }, [isAuthenticated, selectedOrderStatus, selectedPaymentStatus, selectedDateRange]);
 
   // Auto-refresh orders every 30 seconds - REMOVED as per user request
   // useEffect(() => {
@@ -153,7 +167,28 @@ const OrdersPage = () => {
         sameSite: 'strict'
       });
       
-      const response = await apiMethods.pos.getOrders();
+      // Prepare API parameters
+      const params: { status?: string, paymentStatus?: string, startDate?: string, endDate?: string } = {};
+      
+      // Add order status filter if not 'all'
+      if (selectedOrderStatus !== 'all') {
+        params.status = selectedOrderStatus;
+      }
+      
+      // Add payment status filter if not 'all'
+      if (selectedPaymentStatus !== 'all') {
+        params.paymentStatus = selectedPaymentStatus;
+      }
+      
+      // Add date range parameters
+      if (selectedDateRange === 'custom' && startDate) {
+        params.startDate = startDate;
+        // If end date is not provided, use current date
+        params.endDate = endDate || format(new Date(), 'yyyy-MM-dd');
+        console.log('Fetching orders with custom date range:', params);
+      }
+      
+      const response = await apiMethods.pos.getOrders(params);
       
       console.log('Orders API Response:', response);
       
@@ -524,12 +559,12 @@ const OrdersPage = () => {
             </div>
             
             <select
-              value={selectedStatus}
-              onChange={(e) => setSelectedStatus(e.target.value)}
+              value={selectedOrderStatus}
+              onChange={(e) => setSelectedOrderStatus(e.target.value)}
               className="w-full md:w-48 px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              <option value="all">All Status ({orders.length})</option>
-              {Object.entries(statusLabels).map(([value, label]) => (
+              <option value="all">Order Status: All</option>
+              {Object.entries(orderStatusLabels).map(([value, label]) => (
                 <option key={value} value={value}>
                   {label} ({orders.filter(order => order.status === value).length})
                 </option>
@@ -537,15 +572,140 @@ const OrdersPage = () => {
             </select>
             
             <select
-              value={selectedDateRange}
-              onChange={(e) => setSelectedDateRange(e.target.value)}
+              value={selectedPaymentStatus}
+              onChange={(e) => setSelectedPaymentStatus(e.target.value)}
               className="w-full md:w-48 px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              <option value="all">All Time</option>
-              <option value="today">Today</option>
-              <option value="week">This Week</option>
-              <option value="month">This Month</option>
+              <option value="all">Payment Status: All</option>
+              {Object.entries(paymentStatusLabels).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label} ({orders.filter(order => {
+                    // Check if any payment has this status
+                    if (value === 'FULLY_PAID') {
+                      return isFullyPaid(order);
+                    } else if (value === 'PARTIALLY_PAID') {
+                      return hasPartialPayment(order);
+                    } else if (value === 'PENDING') {
+                      return hasPendingPayment(order);
+                    }
+                    return false;
+                  }).length})
+                </option>
+              ))}
             </select>
+            
+            <div className="relative">
+              <select
+                value={selectedDateRange}
+                onChange={(e) => {
+                  setSelectedDateRange(e.target.value);
+                  setShowDateFilter(e.target.value === 'custom');
+                }}
+                className="w-full md:w-48 px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="all">All Time</option>
+                <option value="today">Today</option>
+                <option value="week">This Week</option>
+                <option value="month">This Month</option>
+                <option value="custom">Custom Range</option>
+              </select>
+              
+              {/* Custom date range picker */}
+              {showDateFilter && (
+                <div className="absolute z-10 mt-2 p-4 bg-white rounded-lg shadow-lg border border-gray-200 w-80">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-medium text-gray-700">Date Range</h3>
+                    <button 
+                      onClick={() => {
+                        if (startDate) {
+                          fetchOrders();
+                          setShowStartCalendar(false);
+                          setShowEndCalendar(false);
+                        } else {
+                          toast.error('Please select at least a start date');
+                        }
+                      }}
+                      className="text-xs px-2 py-1 bg-blue-500 text-white rounded hover:bg-blue-600"
+                    >
+                      Apply
+                    </button>
+                  </div>
+                  
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">Start Date</label>
+                      <div className="relative">
+                        <div 
+                          className="w-full px-3 py-1.5 border border-gray-200 rounded text-sm flex justify-between items-center cursor-pointer"
+                          onClick={() => {
+                            setShowStartCalendar(!showStartCalendar);
+                            setShowEndCalendar(false);
+                          }}
+                        >
+                          <span>{startDate ? format(parse(startDate, 'yyyy-MM-dd', new Date()), 'PP') : 'Select start date'}</span>
+                          <Calendar className="h-4 w-4 text-gray-400" />
+                        </div>
+                        
+                        {showStartCalendar && (
+                          <div 
+                            ref={startCalendarRef}
+                            className="absolute z-20 mt-1 bg-white rounded-lg shadow-lg border border-gray-200"
+                          >
+                            <DayPicker
+                              mode="single"
+                              selected={startDate ? parse(startDate, 'yyyy-MM-dd', new Date()) : undefined}
+                              onSelect={(date) => {
+                                if (date) {
+                                  setStartDate(format(date, 'yyyy-MM-dd'));
+                                  setShowStartCalendar(false);
+                                }
+                              }}
+                              className="p-2"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">End Date</label>
+                      <div className="relative">
+                        <div 
+                          className="w-full px-3 py-1.5 border border-gray-200 rounded text-sm flex justify-between items-center cursor-pointer"
+                          onClick={() => {
+                            setShowEndCalendar(!showEndCalendar);
+                            setShowStartCalendar(false);
+                          }}
+                        >
+                          <span>{endDate ? format(parse(endDate, 'yyyy-MM-dd', new Date()), 'PP') : 'Today (optional)'}</span>
+                          <Calendar className="h-4 w-4 text-gray-400" />
+                        </div>
+                        
+                        {showEndCalendar && (
+                          <div 
+                            ref={endCalendarRef}
+                            className="absolute z-20 mt-1 bg-white rounded-lg shadow-lg border border-gray-200"
+                          >
+                            <DayPicker
+                              mode="single"
+                              selected={endDate ? parse(endDate, 'yyyy-MM-dd', new Date()) : undefined}
+                              onSelect={(date) => {
+                                if (date) {
+                                  setEndDate(format(date, 'yyyy-MM-dd'));
+                                  setShowEndCalendar(false);
+                                }
+                              }}
+                              className="p-2"
+                              fromDate={startDate ? parse(startDate, 'yyyy-MM-dd', new Date()) : undefined}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
             
             <button
               onClick={handleRefresh}
@@ -567,7 +727,22 @@ const OrdersPage = () => {
           <div className="text-center text-gray-500 py-8">No orders found</div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {orders.map((order) => (
+            {orders
+              .filter(order => {
+                // Apply search term filtering only (status and date filtering is done on the server)
+                if (searchTerm) {
+                  const searchLower = searchTerm.toLowerCase();
+                  return (
+                    order.orderNumber?.toString().includes(searchLower) ||
+                    order.customerName?.toLowerCase().includes(searchLower) ||
+                    order.customerPhone?.toLowerCase().includes(searchLower) ||
+                    order.customerEmail?.toLowerCase().includes(searchLower) ||
+                    order.id?.toLowerCase().includes(searchLower)
+                  );
+                }
+                return true;
+              })
+              .map((order) => (
               <div key={order.id} className="bg-white rounded-lg shadow-sm p-6 h-full">
                 <div className="flex flex-col h-full">
                   <div className="flex justify-between items-start gap-4 mb-4">
@@ -580,7 +755,7 @@ const OrdersPage = () => {
                               const Icon = statusColors[order.status].icon;
                               return <Icon className="h-4 w-4" />;
                             })()}
-                            {statusLabels[order.status] || order.status}
+                            {orderStatusLabels[order.status] || order.status}
                           </div>
                         )}
                         {/* Add delivery method badge */}

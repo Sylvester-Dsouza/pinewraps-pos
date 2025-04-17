@@ -722,7 +722,7 @@ export default function POSPage() {
                               <p className="text-xs font-medium text-blue-700 mb-1">Options:</p>
                               {item.selectedVariations.map((v, index) => (
                                 <div key={index} className="text-xs text-blue-700 flex justify-between">
-                                  <span>{v.type}: {v.value}</span>
+                                  <span>{v.type}: {v.value}{v.customText ? ` (${v.customText})` : ''}</span>
                                   {v.priceAdjustment > 0 && <span>+AED {v.priceAdjustment.toFixed(2)}</span>}
                                 </div>
                               ))}

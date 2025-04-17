@@ -362,6 +362,25 @@ export type PosQueuedOrder = {
   };
 };
 
+export interface AddonOption {
+  id: string;
+  name: string;
+  price: number;
+  allowsCustomText: boolean;
+  customTextLabel?: string;
+  maxTextLength?: number;
+}
+
+export interface ProductAddon {
+  id: string;
+  name: string;
+  description?: string;
+  required: boolean;
+  minSelections: number;
+  maxSelections: number;
+  options: AddonOption[];
+}
+
 export interface Product {
   id: string;
   name: string;
@@ -381,6 +400,7 @@ export interface Product {
   requiresDesign: boolean;  // For design team processing
   requiresKitchen: boolean; // For kitchen team processing
   allowCustomImages: boolean; // For customer custom image uploads
+  addons?: ProductAddon[]; // Product addons
 }
 
 export interface ProductWithDesign extends Product {
@@ -439,6 +459,19 @@ export const apiMethods = {
       api.get<APIResponse<Product>>(`/api/products/public/${id}`),
     getProductBySlug: (slug: string) =>
       api.get<APIResponse<Product>>(`/api/products/public/${slug}`),
+    getProductAddons: async (productId: string) => {
+      try {
+        const response = await api.get<APIResponse<ProductAddon[]>>(`/api/products/public/${productId}/addons`);
+        return response.data;
+      } catch (error: any) {
+        console.error('Error fetching product addons:', error);
+        return {
+          success: false,
+          message: error.message || 'Failed to fetch product addons',
+          data: []
+        };
+      }
+    },
     getProductsByIds: async (ids: string[]) => {
       try {
         const response = await api.post<APIResponse<Product[]>>('/api/products/public/batch', { ids });
@@ -888,12 +921,12 @@ export const apiMethods = {
       }
     },
 
-    getOrders: async (status?: string) => {
+    getOrders: async (params?: { status?: string, startDate?: string, endDate?: string }) => {
       try {
-        console.log('Fetching orders with status:', status);
+        console.log('Fetching orders with params:', params);
         const url = '/api/pos/orders';
         const config = {
-          params: status ? { status } : undefined,
+          params: params || undefined,
           headers: {
             'Cache-Control': 'no-cache',
             'Pragma': 'no-cache'

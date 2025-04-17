@@ -28,6 +28,7 @@ interface VariationOption {
   price?: number;
   id?: string;
   priceAdjustment?: number;
+  customText?: string; // Custom text for addon options
 }
 
 interface FinalCheckOrder {
@@ -461,7 +462,7 @@ export default function OrderCard({ order, onUpdateStatus }: OrderCardProps) {
                       {item.selectedVariations && Array.isArray(item.selectedVariations) && item.selectedVariations.length > 0 && 
                         item.selectedVariations.map((variation, index) => (
                           <p key={`sel-${index}`} className="text-sm text-gray-600">
-                            <span className="font-medium">{variation.type}:</span> {variation.value}
+                            <span className="font-medium">{variation.type}:</span> {variation.value}{variation.customText ? ` (${variation.customText})` : ''}
                           </p>
                         ))
                       }
@@ -473,7 +474,7 @@ export default function OrderCard({ order, onUpdateStatus }: OrderCardProps) {
                         item.variations.selectedVariations.length > 0 && 
                         item.variations.selectedVariations.map((variation, index) => (
                           <p key={`var-${index}`} className="text-sm text-gray-600">
-                            <span className="font-medium">{variation.type}:</span> {variation.value}
+                            <span className="font-medium">{variation.type}:</span> {variation.value}{variation.customText ? ` (${variation.customText})` : ''}
                           </p>
                         ))
                       }
