@@ -75,7 +75,6 @@ const OrdersPage = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedOrderStatus, setSelectedOrderStatus] = useState<string>('all');
   const [selectedPaymentStatus, setSelectedPaymentStatus] = useState<string>('all');
-  const [selectedDateRange, setSelectedDateRange] = useState('all');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [showDateFilter, setShowDateFilter] = useState(false);
@@ -83,6 +82,7 @@ const OrdersPage = () => {
   const [showEndCalendar, setShowEndCalendar] = useState(false);
   const startCalendarRef = useRef<HTMLDivElement>(null);
   const endCalendarRef = useRef<HTMLDivElement>(null);
+  const dateFilterRef = useRef<HTMLDivElement>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [selectedOrderForGiftReceipt, setSelectedOrderForGiftReceipt] = useState<Order | null>(null);
@@ -128,12 +128,28 @@ const OrdersPage = () => {
     return () => unsubscribe();
   }, []);
 
-  // Fetch orders when status or date range changes
+  // Fetch orders when status changes
   useEffect(() => {
     if (isAuthenticated) {
       fetchOrders();
     }
-  }, [isAuthenticated, selectedOrderStatus, selectedPaymentStatus, selectedDateRange]);
+  }, [isAuthenticated, selectedOrderStatus, selectedPaymentStatus]);
+  
+  // Add click outside handler to close date filter popup
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dateFilterRef.current && !dateFilterRef.current.contains(event.target as Node)) {
+        setShowDateFilter(false);
+        setShowStartCalendar(false);
+        setShowEndCalendar(false);
+      }
+    };
+    
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   // Auto-refresh orders every 30 seconds - REMOVED as per user request
   // useEffect(() => {
@@ -180,12 +196,12 @@ const OrdersPage = () => {
         params.paymentStatus = selectedPaymentStatus;
       }
       
-      // Add date range parameters
-      if (selectedDateRange === 'custom' && startDate) {
+      // Add date range parameters if dates are set
+      if (startDate) {
         params.startDate = startDate;
         // If end date is not provided, use current date
         params.endDate = endDate || format(new Date(), 'yyyy-MM-dd');
-        console.log('Fetching orders with custom date range:', params);
+        console.log('Fetching orders with date range:', params);
       }
       
       const response = await apiMethods.pos.getOrders(params);
@@ -595,24 +611,20 @@ const OrdersPage = () => {
             </select>
             
             <div className="relative">
-              <select
-                value={selectedDateRange}
-                onChange={(e) => {
-                  setSelectedDateRange(e.target.value);
-                  setShowDateFilter(e.target.value === 'custom');
-                }}
-                className="w-full md:w-48 px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              <button
+                onClick={() => setShowDateFilter(!showDateFilter)}
+                className="w-full md:w-48 px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-700 flex items-center justify-between"
               >
-                <option value="all">All Time</option>
-                <option value="today">Today</option>
-                <option value="week">This Week</option>
-                <option value="month">This Month</option>
-                <option value="custom">Custom Range</option>
-              </select>
+                <span>{startDate ? `${format(parse(startDate, 'yyyy-MM-dd', new Date()), 'PP')}${endDate ? ` - ${format(parse(endDate, 'yyyy-MM-dd', new Date()), 'PP')}` : ''}` : 'Filter by Date'}</span>
+                <Calendar className="h-4 w-4 text-gray-400 ml-2" />
+              </button>
               
               {/* Custom date range picker */}
               {showDateFilter && (
-                <div className="absolute z-10 mt-2 p-4 bg-white rounded-lg shadow-lg border border-gray-200 w-80">
+                <div 
+                  ref={dateFilterRef}
+                  className="absolute z-10 mt-2 p-4 bg-white rounded-lg shadow-lg border border-gray-200 w-80"
+                >
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="text-sm font-medium text-gray-700">Date Range</h3>
                     <button 
