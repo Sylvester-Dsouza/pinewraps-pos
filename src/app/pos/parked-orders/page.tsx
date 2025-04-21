@@ -23,6 +23,34 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 
+// Process image URL to use our proxy for Firebase Storage URLs
+function processImageUrl(url: string): string {
+  if (!url || typeof url !== 'string' || url.trim() === '') {
+    console.log('Empty or invalid URL, using placeholder');
+    return '/placeholder.jpg';
+  }
+  
+  // Handle Firebase Storage URLs
+  if (url.includes('firebasestorage.googleapis.com')) {
+    console.log('Using proxy for Firebase Storage URL in parked order:', url);
+    return `/api/proxy/image?url=${encodeURIComponent(url)}`;
+  }
+  
+  // Handle blob URLs
+  if (url.startsWith('blob:')) {
+    console.log('Found blob URL in parked order, replacing with placeholder:', url);
+    return '/placeholder.jpg';
+  }
+  
+  return url;
+}
+
+// Calculate order total from items
+function calculateOrderTotal(items: any[]): number {
+  if (!items || !Array.isArray(items)) return 0;
+  return items.reduce((total, item) => total + (item.totalPrice || 0), 0);
+}
+
 export default function ParkedOrdersPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
@@ -94,6 +122,21 @@ export default function ParkedOrdersPage() {
 
   // Debug function to log the structure of a parked order
   const debugParkedOrder = (order: any) => {
+    // Log custom images for debugging
+    if (order.items && Array.isArray(order.items)) {
+      order.items.forEach((item: any, index: number) => {
+        if (item.customImages && Array.isArray(item.customImages) && item.customImages.length > 0) {
+          console.log(`Item ${index} has ${item.customImages.length} custom images:`);
+          item.customImages.forEach((img: any, imgIndex: number) => {
+            console.log(`  Image ${imgIndex}:`, {
+              url: img.url,
+              processedUrl: processImageUrl(img.url),
+              comment: img.comment
+            });
+          });
+        }
+      });
+    }
     console.log('Parked Order ID:', order.id);
     console.log('Name:', order.name);
     console.log('Created At:', order.createdAt);
@@ -670,12 +713,15 @@ export default function ParkedOrdersPage() {
                                         {item.customImages.map((image, imageIndex) => (
                                           <div key={imageIndex} className="text-xs">
                                             <img 
-                                              src={image.url} 
+                                              src={processImageUrl(image.url)} 
                                               alt="Custom" 
                                               className="w-10 h-10 object-cover rounded border border-gray-200" 
                                               onError={(e) => {
-                                                e.currentTarget.src = '/images/placeholder.png';
-                                                e.currentTarget.onerror = null;
+                                                // Only set placeholder if not already set
+                                                if (e.currentTarget.src !== '/placeholder.jpg') {
+                                                  console.log('Image load error, using placeholder for:', image.url);
+                                                  e.currentTarget.src = '/placeholder.jpg';
+                                                }
                                               }}
                                             />
                                             {image.comment && <p className="text-xs">{image.comment}</p>}
@@ -774,8 +820,5 @@ export default function ParkedOrdersPage() {
       </AlertDialog>
     </div>
   );
-}
 
-function calculateOrderTotal(items: any[]) {
-  return items.reduce((total, item) => total + (item.totalPrice || 0), 0);
 }

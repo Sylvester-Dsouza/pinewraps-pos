@@ -1293,6 +1293,52 @@ export default function CheckoutModal({
     handleAddPayment
   ]);
 
+  // Ensure all custom images have valid Firebase Storage URLs
+  const ensureCustomImagesHaveUrls = async (cartItems) => {
+    if (!cartItems || !Array.isArray(cartItems) || cartItems.length === 0) {
+      return cartItems;
+    }
+    
+    console.log('Ensuring custom images have valid URLs before parking order...');
+    
+    // Create a temporary order ID for storage path
+    const tempOrderId = nanoid();
+    
+    // Process each cart item
+    const processedItems = await Promise.all(
+      cartItems.map(async (item) => {
+        // Skip items without custom images
+        if (!item.customImages || !Array.isArray(item.customImages) || item.customImages.length === 0) {
+          return item;
+        }
+        
+        try {
+          console.log(`Processing ${item.customImages.length} custom images for item ${item.id}`);
+          
+          // Upload images to Firebase Storage
+          const uploadedImages = await uploadCustomImages(item.customImages, tempOrderId);
+          
+          console.log('Uploaded images:', uploadedImages.map(img => ({ id: img.id, url: img.url })));
+          
+          // Return updated item with uploaded image URLs
+          return {
+            ...item,
+            customImages: uploadedImages.map(img => ({
+              ...img,
+              url: img.url || '/placeholder.jpg' // Ensure URL is never undefined
+            }))
+          };
+        } catch (error) {
+          console.error('Error uploading images for item:', item.id, error);
+          // Return original item if upload fails
+          return item;
+        }
+      })
+    );
+    
+    return processedItems;
+  };
+  
   // Handle park order
   const handleParkOrder = useCallback(async () => {
     try {
@@ -1326,6 +1372,9 @@ export default function CheckoutModal({
         }
       };
       
+      // Process cart items to ensure all custom images have valid Firebase Storage URLs
+      const processedCart = await ensureCustomImagesHaveUrls(cart);
+      
       // Prepare parked order data
       const parkedOrderData: ParkedOrderData = {
         name: orderName || `Order for ${customerDetailsState.name}`,
@@ -1333,8 +1382,8 @@ export default function CheckoutModal({
         customerPhone: customerDetailsState.phone,
         customerEmail: customerDetailsState.email,
         
-        // Order items
-        items: cart.map(item => ({
+        // Order items with processed custom images
+        items: processedCart.map(item => ({
           productId: item.product.id,
           productName: item.product.name,
           unitPrice: item.product.basePrice,
@@ -1962,18 +2011,18 @@ export default function CheckoutModal({
       // Handle Firebase Storage URLs
       if (withId.url && withId.url.includes('firebasestorage.googleapis.com')) {
         console.log('Processing Firebase Storage URL:', withId.url);
-        // Add a timestamp parameter to bust cache and avoid CORS issues
-        const urlWithTimestamp = withId.url.includes('?') 
-          ? `${withId.url}&_t=${Date.now()}` 
-          : `${withId.url}?_t=${Date.now()}`;
-        return { ...withId, url: urlWithTimestamp };
+        // Use our proxy API for Firebase Storage URLs
+        return { 
+          ...withId, 
+          url: `/api/proxy/image?url=${encodeURIComponent(withId.url)}`,
+          originalUrl: withId.url // Keep the original URL for reference
+        };
       }
       
       // Handle blob URLs - they need special treatment
       if (withId.url && withId.url.startsWith('blob:')) {
-        console.log('Found blob URL, will need special handling:', withId.url);
-        // We'll mark it for special handling but keep the URL as is for now
-        return { ...withId, isBlobUrl: true };
+        console.log('Found blob URL, replacing with placeholder:', withId.url);
+        return { ...withId, url: '/placeholder.jpg', isBlobUrl: true };
       }
       
       return withId;
@@ -2597,16 +2646,13 @@ export default function CheckoutModal({
                                       </div>
                                       <ImageUpload
                                         onChange={(images) => {
-                                          // Use setTimeout to avoid the "Cannot update a component while rendering a different component" error
-                                          setTimeout(() => {
-                                            console.log('Custom images updated:', images);
-                                            const updatedCart = cart.map(cartItem =>
-                                              cartItem.id === item.id
-                                                ? { ...cartItem, customImages: ensureCustomImagesHaveIds(images) }
-                                                : cartItem
-                                            );
-                                            setCart(updatedCart);
-                                          }, 0);
+                                          console.log('Custom images updated:', images);
+                                          const updatedCart = cart.map(cartItem =>
+                                            cartItem.id === item.id
+                                              ? { ...cartItem, customImages: ensureCustomImagesHaveIds(images) }
+                                              : cartItem
+                                          );
+                                          setCart(updatedCart);
                                         }}
                                         value={ensureCustomImagesHaveIds(customImages)}
                                       />

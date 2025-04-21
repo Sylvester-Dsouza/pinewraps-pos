@@ -10,6 +10,23 @@ import { DayPicker } from 'react-day-picker';
 import 'react-day-picker/dist/style.css';
 import { apiMethods } from '@/services/api';
 import { toast } from 'react-hot-toast';
+
+// Process image URL to use our proxy for Firebase Storage URLs
+function processImageUrl(url: string): string {
+  if (!url) return '/placeholder.jpg';
+  
+  // Handle Firebase Storage URLs
+  if (url.includes('firebasestorage.googleapis.com')) {
+    return `/api/proxy/image?url=${encodeURIComponent(url)}`;
+  }
+  
+  // Handle blob URLs
+  if (url.startsWith('blob:')) {
+    return '/placeholder.jpg';
+  }
+  
+  return url;
+}
 import { getAuth, onAuthStateChanged } from 'firebase/auth';
 import OrderReceipt from '@/components/receipt/OrderReceipt';
 import GiftReceipt from '@/components/receipt/GiftReceipt';
@@ -995,9 +1012,14 @@ const OrdersPage = () => {
                                   {item.customImages.map((img, idx) => (
                                     <div key={idx} className="relative">
                                       <img
-                                        src={img.url}
+                                        src={processImageUrl(img.url)}
                                         alt={`Custom image ${idx + 1}`}
                                         className="w-full h-24 object-cover rounded"
+                                        onError={(e) => {
+                                          if (e.currentTarget.src !== '/placeholder.jpg') {
+                                            e.currentTarget.src = '/placeholder.jpg';
+                                          }
+                                        }}
                                       />
                                       {img.comment && (
                                         <p className="text-xs text-gray-600 mt-1">{img.comment}</p>
