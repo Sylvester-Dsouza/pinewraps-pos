@@ -234,12 +234,31 @@ export default function ParkedOrdersPage() {
         // Process custom images - ensure they have proper structure
         let customImages = [];
         if (item.customImages && Array.isArray(item.customImages)) {
-          customImages = item.customImages.map((img: any) => ({
-            id: img.id || nanoid(),
-            url: img.url || '',
-            previewUrl: img.previewUrl || img.url || '',
-            comment: img.comment || ''
-          }));
+          customImages = item.customImages.map((img: any) => {
+            // Handle Firebase Storage URLs
+            let imageUrl = img.url || '';
+            
+            // Use our proxy API for Firebase Storage URLs
+            if (imageUrl && imageUrl.includes('firebasestorage.googleapis.com')) {
+              console.log('Using proxy for Firebase Storage URL in parked order:', imageUrl);
+              // Don't encode here - the ImageUpload component will handle it
+              // We just pass the original URL and let the component handle proxying
+            }
+            
+            // Skip blob URLs as they can't be loaded across sessions
+            if (imageUrl && imageUrl.startsWith('blob:')) {
+              console.log('Found blob URL in parked order, replacing with placeholder:', imageUrl);
+              imageUrl = '/placeholder.jpg';
+            }
+            
+            return {
+              id: img.id || nanoid(),
+              url: imageUrl,
+              // Don't use previewUrl from storage as it might be a blob URL
+              previewUrl: imageUrl,
+              comment: img.comment || ''
+            };
+          });
         }
         
         // Create a properly formatted cart item

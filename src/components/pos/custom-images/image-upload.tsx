@@ -15,11 +15,44 @@ export default function ImageUpload({ onChange, value }: ImageUploadProps) {
   const [images, setImages] = useState<CustomImage[]>(value || []);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Function to convert Firebase Storage URLs to use our proxy
+  const getProxiedImageUrl = (url: string): string => {
+    if (!url) return '';
+    
+    // Handle blob URLs
+    if (url.startsWith('blob:')) {
+      console.log('Found blob URL, replacing with placeholder:', url);
+      return '/placeholder.jpg';
+    }
+    
+    // Use our proxy for Firebase Storage URLs
+    if (url.includes('firebasestorage.googleapis.com')) {
+      console.log('Using proxy for Firebase Storage URL:', url);
+      return `/api/proxy/image?url=${encodeURIComponent(url)}`;
+    }
+    
+    // For all other URLs, use them directly
+    return url;
+  };
+  
   // Update images when value prop changes
   useEffect(() => {
     if (value) {
       console.log('ImageUpload received value:', value);
-      setImages(value);
+      // Ensure all images have valid URLs
+      const processedImages = value.map(img => {
+        // Handle blob URLs - they can't be displayed directly when loaded from storage
+        const isBlob = img.url?.startsWith('blob:');
+        
+        return {
+          ...img,
+          // Make sure URLs are absolute and use proxy for Firebase Storage URLs
+          url: getProxiedImageUrl(img.url),
+          // Mark blob URLs so we can handle them specially
+          isBlobUrl: isBlob
+        };
+      });
+      setImages(processedImages);
     }
   }, [value]);
 
@@ -92,11 +125,18 @@ export default function ImageUpload({ onChange, value }: ImageUploadProps) {
         {images.map((image, index) => (
           <div key={image.id} className="relative">
             <div className="aspect-square relative rounded-lg overflow-hidden bg-gray-100">
-              <Image
-                src={image.previewUrl || image.url || null}
+              {/* Use img tag instead of Image component to avoid Next.js image optimization issues */}
+              <img
+                src={image.previewUrl || image.url || '/placeholder.jpg'}
                 alt={`Custom image ${index + 1}`}
-                fill
-                className="object-cover"
+                className="absolute inset-0 w-full h-full object-cover"
+                onError={(e) => {
+                  // Silently handle image load error without console spam
+                  // Just set the fallback image
+                  if (e.currentTarget.src !== '/placeholder.jpg') {
+                    e.currentTarget.src = '/placeholder.jpg';
+                  }
+                }}
               />
               <button
                 type="button"

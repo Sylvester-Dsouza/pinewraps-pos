@@ -502,15 +502,6 @@ export default function KitchenDisplay({ staffRoles, router: externalRouter }: K
   };
 
   const handleSendToFinalCheck = async (orderId: string, notes?: string) => {
-    // If notes are provided, it means the function is being called after the notes input
-    // If notes are not provided, show the notes input first
-    if (!notes) {
-      setSelectedOrder(orders.find(o => o.id === orderId) || null);
-      setShowNotesInput(true);
-      setActionType('SEND_TO_FINAL_CHECK');
-      return;
-    }
-    
     const order = orders.find(o => o.id === orderId);
     if (!order) return;
 
@@ -520,10 +511,10 @@ export default function KitchenDisplay({ staffRoles, router: externalRouter }: K
     
     if (isParallelOrder) {
       // For parallel orders, use the parallel processing function
-      await updateParallelOrderStatus(orderId, 'KITCHEN_READY', notes);
+      await updateParallelOrderStatus(orderId, 'KITCHEN_READY', notes || '');
     } else {
       // For kitchen-only orders, we can directly send to final check
-      await updateOrderStatus(orderId, 'FINAL_CHECK_QUEUE', notes);
+      await updateOrderStatus(orderId, 'FINAL_CHECK_QUEUE', notes || '');
     }
   };
 
@@ -747,8 +738,13 @@ export default function KitchenDisplay({ staffRoles, router: externalRouter }: K
           updateOrderStatus(order.id, 'KITCHEN_READY');
         }
       } else if (action === 'finalCheck') {
-        // Toggle notes input for this specific order
-        setShowOrderNotes(!showOrderNotes);
+        // Send directly to final check without requiring notes
+        if (order.status === 'KITCHEN_READY') {
+          handleSendToFinalCheck(order.id, '');
+        } else {
+          // If not in KITCHEN_READY status, show error
+          toast.error('Order must be marked as Ready before sending to Final Check');
+        }
       } else if (action === 'design') {
         // Toggle notes input for this specific order
         setShowOrderNotes(!showOrderNotes);
@@ -765,11 +761,11 @@ export default function KitchenDisplay({ staffRoles, router: externalRouter }: K
         if (order.status === 'KITCHEN_READY' && !order.requiresDesign) {
           // Send to final check with notes
           await handleSendToFinalCheck(order.id, orderNotes);
-          toast.success('Order sent to final check with notes');
+          toast.success('Order sent to final check');
         } else if (order.status === 'KITCHEN_READY' && order.requiresDesign) {
           // Send to design with notes
           await handleSendToDesign(order.id, orderNotes);
-          toast.success('Order sent to design with notes');
+          toast.success('Order sent to design');
         } else {
           // Just update the kitchen notes without changing status
           await updateOrderStatus(order.id, order.status, orderNotes);

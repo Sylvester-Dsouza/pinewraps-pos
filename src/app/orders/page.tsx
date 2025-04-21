@@ -4,7 +4,7 @@ import React from 'react';
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Header from '@/components/header/header';
-import { Search, RefreshCcw, Clock, CheckCircle, XCircle, RotateCcw, Truck, Store, Download, Loader2, Gift, Calendar } from 'lucide-react';
+import { Search, RefreshCcw, Clock, CheckCircle, XCircle, RotateCcw, Truck, Store, Download, Loader2, Gift, Calendar, ChevronDown, X } from 'lucide-react';
 import { format, isAfter, isBefore, startOfDay, endOfDay, parseISO, isValid, parse } from 'date-fns';
 import { DayPicker } from 'react-day-picker';
 import 'react-day-picker/dist/style.css';
@@ -142,26 +142,15 @@ const OrdersPage = () => {
         setShowDateFilter(false);
         setShowStartCalendar(false);
         setShowEndCalendar(false);
+        // Don't automatically fetch orders when closing the popup without clicking Apply
       }
     };
-    
+
     document.addEventListener('mousedown', handleClickOutside);
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, []);
-
-  // Auto-refresh orders every 30 seconds - REMOVED as per user request
-  // useEffect(() => {
-  //   if (!isAuthenticated) return;
-
-  //   const refreshInterval = setInterval(() => {
-  //     console.log('Auto-refreshing orders...');
-  //     fetchOrders();
-  //   }, 30000);
-
-  //   return () => clearInterval(refreshInterval);
-  // }, [isAuthenticated, selectedStatus]);
 
   const fetchOrders = async () => {
     setLoading(true);
@@ -201,7 +190,11 @@ const OrdersPage = () => {
         params.startDate = startDate;
         // If end date is not provided, use current date
         params.endDate = endDate || format(new Date(), 'yyyy-MM-dd');
-        console.log('Fetching orders with date range:', params);
+        console.log('Fetching orders with date range:', { startDate, endDate: params.endDate });
+      } else {
+        // Make sure we're not sending empty strings as parameters
+        delete params.startDate;
+        delete params.endDate;
       }
       
       const response = await apiMethods.pos.getOrders(params);
@@ -627,20 +620,46 @@ const OrdersPage = () => {
                 >
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="text-sm font-medium text-gray-700">Date Range</h3>
-                    <button 
-                      onClick={() => {
-                        if (startDate) {
+                    <div className="flex space-x-2">
+                      <button 
+                        onClick={() => {
+                          // Clear date filter
+                          setStartDate('');
+                          setEndDate('');
+                          setShowDateFilter(false);
+                          
+                          // Fetch orders without date filter
                           fetchOrders();
-                          setShowStartCalendar(false);
-                          setShowEndCalendar(false);
-                        } else {
-                          toast.error('Please select at least a start date');
-                        }
-                      }}
-                      className="text-xs px-2 py-1 bg-blue-500 text-white rounded hover:bg-blue-600"
-                    >
-                      Apply
-                    </button>
+                          
+                          // Log for debugging
+                          console.log('Cleared date filter');
+                        }}
+                        className="text-xs px-2 py-1 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+                      >
+                        Clear
+                      </button>
+                      <button 
+                        onClick={() => {
+                          if (startDate) {
+                            // Close the date filter popup
+                            setShowDateFilter(false);
+                            setShowStartCalendar(false);
+                            setShowEndCalendar(false);
+                            
+                            // Explicitly fetch orders with the selected date range
+                            fetchOrders();
+                            
+                            // Log for debugging
+                            console.log('Applying date filter:', { startDate, endDate });
+                          } else {
+                            toast.error('Please select at least a start date');
+                          }
+                        }}
+                        className="text-xs px-2 py-1 bg-blue-500 text-white rounded hover:bg-blue-600"
+                      >
+                        Apply
+                      </button>
+                    </div>
                   </div>
                   
                   <div className="space-y-3">
@@ -719,13 +738,40 @@ const OrdersPage = () => {
               )}
             </div>
             
-            <button
-              onClick={handleRefresh}
-              className="w-full md:w-auto px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 flex items-center justify-center gap-2"
-            >
-              <RotateCcw className="h-4 w-4" />
-              Refresh
-            </button>
+            <div className="flex space-x-2">
+              <button
+                onClick={() => {
+                  // Reset all filters
+                  setSearchTerm('');
+                  setSelectedOrderStatus('all');
+                  setSelectedPaymentStatus('all');
+                  setStartDate('');
+                  setEndDate('');
+                  setShowDateFilter(false);
+                  
+                  // Fetch orders without any filters
+                  fetchOrders();
+                  
+                  // Log for debugging
+                  console.log('Reset all filters');
+                  
+                  // Show success message
+                  toast.success('All filters have been reset');
+                }}
+                className="w-full md:w-auto px-4 py-2 text-sm font-medium text-blue-700 bg-blue-100 rounded-md hover:bg-blue-200 flex items-center justify-center gap-2"
+              >
+                <X className="h-4 w-4" />
+                Reset All Filters
+              </button>
+              
+              <button
+                onClick={handleRefresh}
+                className="w-full md:w-auto px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 flex items-center justify-center gap-2"
+              >
+                <RotateCcw className="h-4 w-4" />
+                Refresh
+              </button>
+            </div>
           </div>
         </div>
 
@@ -741,17 +787,45 @@ const OrdersPage = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {orders
               .filter(order => {
-                // Apply search term filtering only (status and date filtering is done on the server)
+                // Apply search term filtering
                 if (searchTerm) {
                   const searchLower = searchTerm.toLowerCase();
-                  return (
+                  if (!(
                     order.orderNumber?.toString().includes(searchLower) ||
                     order.customerName?.toLowerCase().includes(searchLower) ||
                     order.customerPhone?.toLowerCase().includes(searchLower) ||
                     order.customerEmail?.toLowerCase().includes(searchLower) ||
                     order.id?.toLowerCase().includes(searchLower)
-                  );
+                  )) {
+                    return false;
+                  }
                 }
+                
+                // Apply date filtering on the client side as well for extra safety
+                if (startDate && order.createdAt) {
+                  const orderDate = new Date(order.createdAt);
+                  const start = parse(startDate, 'yyyy-MM-dd', new Date());
+                  
+                  // Set start date to beginning of day
+                  start.setHours(0, 0, 0, 0);
+                  
+                  // If order date is before start date, filter it out
+                  if (orderDate < start) {
+                    return false;
+                  }
+                  
+                  // If end date is specified, check if order date is after end date
+                  if (endDate) {
+                    const end = parse(endDate, 'yyyy-MM-dd', new Date());
+                    // Set end date to end of day
+                    end.setHours(23, 59, 59, 999);
+                    
+                    if (orderDate > end) {
+                      return false;
+                    }
+                  }
+                }
+                
                 return true;
               })
               .map((order) => (

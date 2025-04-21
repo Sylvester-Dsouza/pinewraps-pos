@@ -1,7 +1,7 @@
 // Import necessary modules and components
 import { Fragment, useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Dialog, Transition } from "@headlessui/react";
-import { X, Minus, Plus, Trash, Search, ShoppingCart, Upload, Camera, User, MapPin, ListOrdered } from "lucide-react";
+import { X, Minus, Plus, Trash, Search, ShoppingCart, Upload, Camera, User, MapPin, ListOrdered, Calendar } from "lucide-react";
 import { toast } from "@/lib/toast-utils";
 import { apiMethods } from "@/services/api";
 import { POSOrderStatus, POSPaymentMethod, POSPaymentStatus, DeliveryMethod, OrderPayment, POSOrderData, POSOrderItemData, ProductVariation, CheckoutDetails, ParkedOrderData } from "@/types/order";
@@ -9,6 +9,8 @@ import { Customer, CustomerAddress, CustomerDetails, DeliveryDetails, PickupDeta
 import { Payment } from "@/types/payment";
 import { nanoid } from 'nanoid';
 import { orderDrawerService } from '@/services/order-drawer.service';
+import { DatePicker } from "@/components/ui/date-picker";
+import { formatDate, dateToISOString } from "@/lib/utils";
 
 // Function to get printer configuration
 async function getPrinterConfig() {
@@ -1566,19 +1568,39 @@ export default function CheckoutModal({
   };
 
   // Get available dates based on emirate and delivery method
-  const getAvailableDates = (emirate: string) => {
-    const dates = [];
-    const today = new Date();
-    
-    // For both pickup and delivery, include today and next 7 days
-    const startDays = 0; // Start from today for all delivery methods
-    
-    for (let i = startDays; i < startDays + 7; i++) {
-      const date = new Date(today);
-      date.setDate(today.getDate() + i);
-      dates.push(date.toISOString().split('T')[0]);
+  // We no longer need to restrict the maximum date
+  // This function is kept for backward compatibility but returns null
+  const getMaxDate = () => {
+    return null; // No maximum date restriction
+  };
+  
+  // Function to handle date selection for pickup
+  const handlePickupDateSelect = (date: Date | undefined) => {
+    if (date) {
+      // Log the selected date for debugging
+      console.log('Pickup date selected:', date);
+      console.log('Formatted date:', dateToISOString(date));
+      
+      setPickupDetailsState(prev => ({
+        ...prev,
+        date: dateToISOString(date),
+        timeSlot: '' // Reset time slot when date changes
+      }));
     }
-    return dates;
+  };
+  
+  // Function to handle date selection for delivery
+  const handleDeliveryDateSelect = (date: Date | undefined) => {
+    if (date) {
+      // Log the selected date for debugging
+      console.log('Delivery date selected:', date);
+      console.log('Formatted date:', dateToISOString(date));
+      
+      setDeliveryDetailsState(prev => ({
+        ...prev,
+        date: dateToISOString(date)
+      }));
+    }
   };
 
   // Emirates list
@@ -1931,13 +1953,30 @@ export default function CheckoutModal({
     toast.success('Split payment applied successfully');
   }
 
-  // Ensure custom images have IDs
+  // Ensure custom images have IDs and proper URL handling
   const ensureCustomImagesHaveIds = (images: CustomImage[] = []): CustomImage[] => {
     return images.map(image => {
-      if (!image.id) {
-        return { ...image, id: nanoid() };
+      // Generate ID if missing
+      const withId = !image.id ? { ...image, id: nanoid() } : image;
+      
+      // Handle Firebase Storage URLs
+      if (withId.url && withId.url.includes('firebasestorage.googleapis.com')) {
+        console.log('Processing Firebase Storage URL:', withId.url);
+        // Add a timestamp parameter to bust cache and avoid CORS issues
+        const urlWithTimestamp = withId.url.includes('?') 
+          ? `${withId.url}&_t=${Date.now()}` 
+          : `${withId.url}?_t=${Date.now()}`;
+        return { ...withId, url: urlWithTimestamp };
       }
-      return image;
+      
+      // Handle blob URLs - they need special treatment
+      if (withId.url && withId.url.startsWith('blob:')) {
+        console.log('Found blob URL, will need special handling:', withId.url);
+        // We'll mark it for special handling but keep the URL as is for now
+        return { ...withId, isBlobUrl: true };
+      }
+      
+      return withId;
     });
   };
 
@@ -2318,22 +2357,13 @@ export default function CheckoutModal({
                             {deliveryDetailsState.emirate && (
                               <>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                  <select
-                                    value={deliveryDetailsState.date}
-                                    onChange={(e) => setDeliveryDetailsState((prev) => ({ ...prev, date: e.target.value }))}
-                                    className="block w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4"
-                                  >
-                                    <option value="">Select Date *</option>
-                                    {getAvailableDates(deliveryDetailsState.emirate).map((date) => (
-                                      <option key={date} value={date}>
-                                        {new Date(date).toLocaleDateString('en-US', { 
-                                          weekday: 'short', 
-                                          month: 'short', 
-                                          day: 'numeric' 
-                                        })}
-                                      </option>
-                                    ))}
-                                  </select>
+                                  <DatePicker
+                                    date={deliveryDetailsState.date ? new Date(deliveryDetailsState.date) : undefined}
+                                    onSelect={handleDeliveryDateSelect}
+                                    placeholder="Select Delivery Date *"
+                                    fromDate={new Date()}
+                                    // No maximum date restriction
+                                  />
 
                                   <select
                                     value={deliveryDetailsState.timeSlot}
@@ -2362,22 +2392,13 @@ export default function CheckoutModal({
                         {/* Pickup Form */}
                         {deliveryMethodState === DeliveryMethod.PICKUP && (
                           <div className="grid grid-cols-1 gap-4 pt-8">
-                            <select
-                              value={pickupDetailsState.date}
-                              onChange={(e) => setPickupDetailsState((prev) => ({ ...prev, date: e.target.value, timeSlot: '' }))}
-                              className="block w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4"
-                            >
-                              <option value="">Select Pickup Date *</option>
-                              {getAvailableDates('DUBAI').map((date) => (
-                                <option key={date} value={date}>
-                                  {new Date(date).toLocaleDateString('en-US', { 
-                                    weekday: 'short', 
-                                    month: 'short', 
-                                    day: 'numeric' 
-                                  })}
-                                </option>
-                              ))}
-                            </select>
+                            <DatePicker
+                              date={pickupDetailsState.date ? new Date(pickupDetailsState.date) : undefined}
+                              onSelect={handlePickupDateSelect}
+                              placeholder="Select Pickup Date *"
+                              fromDate={new Date()}
+                              // No maximum date restriction
+                            />
 
                             <select
                               value={pickupDetailsState.timeSlot}
@@ -2576,13 +2597,16 @@ export default function CheckoutModal({
                                       </div>
                                       <ImageUpload
                                         onChange={(images) => {
-                                          console.log('Custom images updated:', images);
-                                          const updatedCart = cart.map(cartItem =>
-                                            cartItem.id === item.id
-                                              ? { ...cartItem, customImages: ensureCustomImagesHaveIds(images) }
-                                              : cartItem
-                                          );
-                                          setCart(updatedCart);
+                                          // Use setTimeout to avoid the "Cannot update a component while rendering a different component" error
+                                          setTimeout(() => {
+                                            console.log('Custom images updated:', images);
+                                            const updatedCart = cart.map(cartItem =>
+                                              cartItem.id === item.id
+                                                ? { ...cartItem, customImages: ensureCustomImagesHaveIds(images) }
+                                                : cartItem
+                                            );
+                                            setCart(updatedCart);
+                                          }, 0);
                                         }}
                                         value={ensureCustomImagesHaveIds(customImages)}
                                       />
