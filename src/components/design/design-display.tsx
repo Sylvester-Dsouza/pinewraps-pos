@@ -86,6 +86,7 @@ interface DesignOrder {
   deliveryTimeSlot?: string;
   parallelProcessing?: {
     designStatus: DesignOrderStatus;
+    kitchenStatus?: string;
   };
   isSentBack?: boolean;
   designById?: string;
@@ -291,7 +292,15 @@ export default function DesignDisplay({ staffRoles, router: externalRouter }: De
   const [selectedOrder, setSelectedOrder] = useState<DesignOrder | null>(null);
   const [showNotesInput, setShowNotesInput] = useState(false);
   const [teamNotes, setTeamNotes] = useState('');
-  const [activeTab, setActiveTab] = useState('queue');
+  // Initialize activeTab from localStorage if available, otherwise default to 'queue'
+  const [activeTab, setActiveTab] = useState(() => {
+    // Only run in browser environment
+    if (typeof window !== 'undefined') {
+      const savedTab = localStorage.getItem('designActiveTab');
+      return savedTab || 'queue';
+    }
+    return 'queue';
+  });
 
   // Re-fetch orders when user info is loaded
   useEffect(() => {
@@ -380,8 +389,10 @@ export default function DesignDisplay({ staffRoles, router: externalRouter }: De
 
         const ordersWithImages = designOrders.map((order: any) => ({
           ...order,
-          // For parallel processing orders, show as DESIGN_QUEUE
-          status: order.status === 'PARALLEL_PROCESSING' ? 'DESIGN_QUEUE' : order.status,
+          // For parallel processing orders, use the design status from parallelProcessing if available
+          status: order.status === 'PARALLEL_PROCESSING' ? 
+            (order.parallelProcessing?.designStatus || 'DESIGN_QUEUE') : 
+            order.status,
           items: order.items.map((item: any) => ({
             ...item,
             designImages: item.customProduct?.designImages?.map((img: any) => ({
@@ -513,12 +524,13 @@ export default function DesignDisplay({ staffRoles, router: externalRouter }: De
       };
       
       // Create a custom payload for parallel processing
-      // We'll use the notes field to pass the parallel processing information
-      // since the API doesn't directly support a parallelProcessing field
+      // Pass the parallelProcessing object directly to the API
       const response = await apiMethods.pos.updateOrderStatus(orderId, {
-        status: order.status, // Keep current status
+        status: 'PARALLEL_PROCESSING', // Explicitly set status to PARALLEL_PROCESSING
         teamNotes: teamNotes || "",
-        notes: JSON.stringify(payload) // Pass parallel processing info in notes field
+        parallelProcessing: {
+          designStatus: designStatus
+        }
       });
 
       if (response.success) {
@@ -534,7 +546,9 @@ export default function DesignDisplay({ staffRoles, router: externalRouter }: De
                 parallelProcessing: {
                   ...order.parallelProcessing,
                   designStatus: designStatus
-                }
+                },
+                // Also update the main status for UI display
+                status: designStatus
               };
               
               // If the response includes a new status, update that too
@@ -582,7 +596,19 @@ export default function DesignDisplay({ staffRoles, router: externalRouter }: De
 
   const getOrdersByStatus = (status: DesignOrderStatus) => {
     return orders
-      .filter(order => order.status === status)
+      .filter(order => {
+        // For normal orders, just check the status directly
+        if (order.status === status) {
+          return true;
+        }
+        
+        // For parallel processing orders, check the parallelProcessing.designStatus
+        if (order.parallelProcessing && status.startsWith('DESIGN_')) {
+          return order.parallelProcessing.designStatus === status;
+        }
+        
+        return false;
+      })
       .sort((a, b) => {
         // Get the relevant date for each order (pickup or delivery)
         const getOrderDate = (order: DesignOrder) => {
@@ -1121,22 +1147,29 @@ export default function DesignDisplay({ staffRoles, router: externalRouter }: De
               )}
               
               {order.status === 'DESIGN_READY' && (
-                <button
-                  onClick={handleReadyClick}
-                  className={`w-full px-4 py-2 ${order.requiresKitchen && order.parallelProcessing?.designStatus === 'DESIGN_READY' ? 'bg-gray-500 hover:bg-gray-600' : 'bg-blue-600 hover:bg-blue-700'} text-white rounded-lg transition-colors flex items-center justify-center`}
-                >
-                  {order.requiresKitchen && order.parallelProcessing?.designStatus === 'DESIGN_READY' ? (
-                    <>
-                      <Clock className="w-4 h-4 mr-2" />
-                      Waiting for Kitchen...
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle2 className="w-4 h-4 mr-2" />
-                      Send to Final Check
-                    </>
-                  )}
-                </button>
+                // Only show the Send to Final Check button for non-sets orders
+                // For sets orders, show a waiting message or nothing at all
+                order.requiresKitchen ? (
+                  // This is a sets order (requires both kitchen and design)
+                  <button
+                    disabled
+                    className="w-full px-4 py-2 bg-gray-500 text-white rounded-lg flex items-center justify-center cursor-default"
+                  >
+                    <Clock className="w-4 h-4 mr-2" />
+                    {order.parallelProcessing?.kitchenStatus === 'KITCHEN_READY' ? 
+                      'Processing...' : 
+                      'Waiting for Kitchen...'}
+                  </button>
+                ) : (
+                  // This is a design-only order
+                  <button
+                    onClick={handleReadyClick}
+                    className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center justify-center"
+                  >
+                    <CheckCircle2 className="w-4 h-4 mr-2" />
+                    Send to Final Check
+                  </button>
+                )
               )}
             </div>
           )}
@@ -1248,19 +1281,28 @@ export default function DesignDisplay({ staffRoles, router: externalRouter }: De
       <div className="block sm:hidden mb-4">
         <div className="flex border-b border-gray-200">
           <button 
-            onClick={() => setActiveTab('queue')}
+            onClick={() => {
+              setActiveTab('queue');
+              localStorage.setItem('designActiveTab', 'queue');
+            }}
             className={`flex-1 py-2 px-4 text-center font-medium ${activeTab === 'queue' ? 'text-purple-600 border-b-2 border-purple-600' : 'text-gray-500'}`}
           >
             Queue
           </button>
           <button 
-            onClick={() => setActiveTab('processing')}
+            onClick={() => {
+              setActiveTab('processing');
+              localStorage.setItem('designActiveTab', 'processing');
+            }}
             className={`flex-1 py-2 px-4 text-center font-medium ${activeTab === 'processing' ? 'text-purple-600 border-b-2 border-purple-600' : 'text-gray-500'}`}
           >
             Processing
           </button>
           <button 
-            onClick={() => setActiveTab('ready')}
+            onClick={() => {
+              setActiveTab('ready');
+              localStorage.setItem('designActiveTab', 'ready');
+            }}
             className={`flex-1 py-2 px-4 text-center font-medium ${activeTab === 'ready' ? 'text-purple-600 border-b-2 border-purple-600' : 'text-gray-500'}`}
           >
             Ready

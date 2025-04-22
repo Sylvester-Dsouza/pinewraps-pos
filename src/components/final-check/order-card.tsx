@@ -531,27 +531,34 @@ export default function OrderCard({ order, onUpdateStatus }: OrderCardProps) {
                 </div>
 
                 {/* Custom Images */}
-                {item.customImages && item.customImages.length > 0 && (
+                {item.customImages && Array.isArray(item.customImages) && item.customImages.length > 0 && (
                   <div className="mt-3 ml-8">
                     <h5 className="text-sm font-medium text-gray-700 mb-2">Custom Images:</h5>
                     <div className="flex gap-2 overflow-x-auto pb-2">
-                      {item.customImages.map((image, index) => (
+                      {item.customImages.filter(image => image && typeof image === 'object').map((image, index) => (
                         <div 
                           key={`custom-${index}`} 
                           className="relative min-w-[80px] h-[80px] rounded-lg overflow-hidden border border-gray-200 group cursor-pointer shadow-sm hover:shadow-md transition-shadow"
                           onClick={() => handleImageClick(item.customImages || [], index)}
                         >
                           <Image
-                            src={image.url}
+                            src={image.url && typeof image.url === 'string' && image.url.trim() !== '' ? 
+                              (image.url.includes('firebasestorage.googleapis.com') ? 
+                                `/api/proxy/image?url=${encodeURIComponent(image.url)}` : 
+                                image.url) : 
+                              '/placeholder.jpg'}
                             alt={`Custom Image ${index + 1}`}
                             fill
                             className="object-cover group-hover:opacity-75 transition-opacity"
                             onError={(e) => {
                               // Handle image loading errors
-                              console.error('Error loading custom image:', e);
-                              // Hide the parent div on error
+                              console.error('Error loading custom image:', image);
+                              // Try to load placeholder image instead
                               const target = e.target as HTMLImageElement;
-                              if (target.parentElement) {
+                              if (target.src !== '/placeholder.jpg') {
+                                target.src = '/placeholder.jpg';
+                              } else if (target.parentElement) {
+                                // If placeholder also fails, hide the parent div
                                 target.parentElement.style.display = 'none';
                               }
                             }}
@@ -577,7 +584,7 @@ export default function OrderCard({ order, onUpdateStatus }: OrderCardProps) {
                 )}
                 
                 {/* Product Images - Only show primary image with error handling */}
-                {item.images && item.images.length > 0 && item.images[0]?.url && (
+                {item.images && Array.isArray(item.images) && item.images.length > 0 && (
                   <div className="mt-3 ml-8">
                     <h5 className="text-sm font-medium text-gray-700 mb-2">Product Image:</h5>
                     <div className="flex gap-2">
@@ -589,16 +596,23 @@ export default function OrderCard({ order, onUpdateStatus }: OrderCardProps) {
                         }}
                       >
                         <Image
-                          src={item.images[0].url}
+                          src={item.images[0]?.url && typeof item.images[0].url === 'string' && item.images[0].url.trim() !== '' ? 
+                            (item.images[0].url.includes('firebasestorage.googleapis.com') ? 
+                              `/api/proxy/image?url=${encodeURIComponent(item.images[0].url)}` : 
+                              item.images[0].url) : 
+                            '/placeholder.jpg'}
                           alt="Product Image"
                           fill
                           className="object-cover group-hover:opacity-75 transition-opacity"
                           onError={(e) => {
                             // Handle image loading errors
-                            console.error('Error loading product image:', e);
-                            // Hide the parent div on error
+                            console.error('Error loading product image:', item.images[0]);
+                            // Try to load placeholder image instead
                             const target = e.target as HTMLImageElement;
-                            if (target.parentElement) {
+                            if (target.src !== '/placeholder.jpg') {
+                              target.src = '/placeholder.jpg';
+                            } else if (target.parentElement) {
+                              // If placeholder also fails, hide the parent div
                               target.parentElement.style.display = 'none';
                             }
                           }}

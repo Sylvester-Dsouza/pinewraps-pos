@@ -49,7 +49,8 @@ type KitchenOrderStatus =
   | "DESIGN_READY"
   | "FINAL_CHECK_QUEUE"
   | "FINAL_CHECK_PROCESSING"
-  | "COMPLETED";
+  | "COMPLETED"
+  | "PARALLEL_PROCESSING";
 
 interface KitchenOrder {
   id: string;
@@ -145,7 +146,15 @@ export default function KitchenDisplay({ staffRoles, router: externalRouter }: K
   const [selectedOrder, setSelectedOrder] = useState<KitchenOrder | null>(null);
   const [showNotesInput, setShowNotesInput] = useState(false);
   const [teamNotes, setTeamNotes] = useState('');
-  const [activeTab, setActiveTab] = useState('queue');
+  // Initialize activeTab from localStorage if available, otherwise default to 'queue'
+  const [activeTab, setActiveTab] = useState(() => {
+    // Only run in browser environment
+    if (typeof window !== 'undefined') {
+      const savedTab = localStorage.getItem('kitchenActiveTab');
+      return savedTab || 'queue';
+    }
+    return 'queue';
+  });
   const [actionType, setActionType] = useState<'SEND_TO_DESIGN' | 'SEND_TO_FINAL_CHECK' | 'UPDATE_STATUS' | ''>('');
 
   // Fetch initial orders
@@ -263,6 +272,13 @@ export default function KitchenDisplay({ staffRoles, router: externalRouter }: K
 
   // Helper function to determine if an order should be shown to the current user
   const shouldShowOrder = (order: KitchenOrder) => {
+    // Check if the order contains sets products - these should always go to both kitchen and design
+    // We can detect this by checking if the order is in PARALLEL_PROCESSING status
+    if (order.status === 'PARALLEL_PROCESSING') {
+      console.log('Found parallel processing order:', order.orderNumber);
+      return true; // Always show parallel processing orders in kitchen screen
+    }
+
     // Always show orders in KITCHEN_QUEUE unless they're sent back and assigned to someone else
     if (order.status === 'KITCHEN_QUEUE') {
       // For orders sent back from final check, only show to the original staff member
@@ -313,8 +329,10 @@ export default function KitchenDisplay({ staffRoles, router: externalRouter }: K
         const ordersWithImages = kitchenOrders.map((order: any) => {
           return {
             ...order,
-            // For parallel processing orders, show as KITCHEN_QUEUE
-            status: order.status === 'PARALLEL_PROCESSING' ? 'KITCHEN_QUEUE' : order.status,
+            // For parallel processing orders, use the kitchen status from parallelProcessing if available
+            status: order.status === 'PARALLEL_PROCESSING' ? 
+              (order.parallelProcessing?.kitchenStatus || 'KITCHEN_QUEUE') : 
+              order.status,
             items: order.items.map((item: any) => ({
               ...item,
               customImages: item.customImages?.map((img: any) => ({
@@ -531,10 +549,13 @@ export default function KitchenDisplay({ staffRoles, router: externalRouter }: K
       const updatedOrder = { 
         ...order,
         kitchenNotes: teamNotes || order.kitchenNotes,
+        // Update the parallelProcessing object
         parallelProcessing: {
           ...order.parallelProcessing,
           kitchenStatus: kitchenStatus
-        }
+        },
+        // Also update the main status for UI display
+        status: kitchenStatus
       };
       
       // Update the UI immediately for a responsive experience
@@ -552,9 +573,11 @@ export default function KitchenDisplay({ staffRoles, router: externalRouter }: K
       
       // Make the API call
       const response = await apiMethods.pos.updateOrderStatus(orderId, {
-        status: order.status, // Keep current status
+        status: 'PARALLEL_PROCESSING', // Explicitly set status to PARALLEL_PROCESSING
         teamNotes: teamNotes || "",
-        notes: JSON.stringify(payload) // Pass parallel processing info in notes field
+        parallelProcessing: {
+          kitchenStatus: kitchenStatus
+        }
       });
 
       if (response.success) {
@@ -619,9 +642,24 @@ export default function KitchenDisplay({ staffRoles, router: externalRouter }: K
     }
   };
 
+  // Helper function to check if an order should be in a specific status section
+  const isOrderInStatus = (order: KitchenOrder, status: KitchenOrderStatus) => {
+    // For normal orders, just check the status directly
+    if (order.status === status) {
+      return true;
+    }
+    
+    // For parallel processing orders, check the parallelProcessing.kitchenStatus
+    if (order.parallelProcessing && order.status === 'PARALLEL_PROCESSING') {
+      return order.parallelProcessing.kitchenStatus === status;
+    }
+    
+    return false;
+  };
+
   const getOrdersByStatus = (status: KitchenOrderStatus) => {
     return orders
-      .filter(order => order.status === status)
+      .filter(order => isOrderInStatus(order, status))
       .sort((a, b) => {
         // Get the relevant date for each order (pickup or delivery)
         const getOrderDate = (order: any) => {
@@ -1161,13 +1199,17 @@ export default function KitchenDisplay({ staffRoles, router: externalRouter }: K
                   </button>
                 </>
               ) : (
-                <button
-                  onClick={() => handleOrderAction('finalCheck')}
-                  className="w-full py-3 px-4 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg flex items-center justify-center gap-2 shadow-sm hover:shadow transition-all"
-                >
-                  <CheckCircle2 className="w-5 h-5" />
-                  Send to Final Check
-                </button>
+                // Only show the Send to Final Check button for non-sets orders
+                // Sets orders will automatically go to final check when both teams mark as ready
+                !order.requiresDesign && (
+                  <button
+                    onClick={() => handleOrderAction('finalCheck')}
+                    className="w-full py-3 px-4 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg flex items-center justify-center gap-2 shadow-sm hover:shadow transition-all"
+                  >
+                    <CheckCircle2 className="w-5 h-5" />
+                    Send to Final Check
+                  </button>
+                )
               )}
             </div>
           )}
@@ -1292,19 +1334,28 @@ export default function KitchenDisplay({ staffRoles, router: externalRouter }: K
       <div className="block sm:hidden mb-4">
         <div className="flex border-b border-gray-200">
           <button 
-            onClick={() => setActiveTab('queue')}
+            onClick={() => {
+              setActiveTab('queue');
+              localStorage.setItem('kitchenActiveTab', 'queue');
+            }}
             className={`flex-1 py-2 px-4 text-center font-medium ${activeTab === 'queue' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500'}`}
           >
             Queue
           </button>
           <button 
-            onClick={() => setActiveTab('processing')}
+            onClick={() => {
+              setActiveTab('processing');
+              localStorage.setItem('kitchenActiveTab', 'processing');
+            }}
             className={`flex-1 py-2 px-4 text-center font-medium ${activeTab === 'processing' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500'}`}
           >
             Processing
           </button>
           <button 
-            onClick={() => setActiveTab('ready')}
+            onClick={() => {
+              setActiveTab('ready');
+              localStorage.setItem('kitchenActiveTab', 'ready');
+            }}
             className={`flex-1 py-2 px-4 text-center font-medium ${activeTab === 'ready' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500'}`}
           >
             Ready
@@ -1323,7 +1374,7 @@ export default function KitchenDisplay({ staffRoles, router: externalRouter }: K
           <div className="space-y-4 max-h-[calc(100vh-180px)] overflow-y-auto">
             <AnimatePresence mode="sync">
               {orders
-                .filter(order => order.status === 'KITCHEN_QUEUE')
+                .filter(order => isOrderInStatus(order, 'KITCHEN_QUEUE'))
                 .map(order => (
                   <OrderCard
                     key={order.id}
@@ -1346,7 +1397,7 @@ export default function KitchenDisplay({ staffRoles, router: externalRouter }: K
           <div className="space-y-4 max-h-[calc(100vh-180px)] overflow-y-auto">
             <AnimatePresence mode="sync">
               {orders
-                .filter(order => order.status === 'KITCHEN_PROCESSING')
+                .filter(order => isOrderInStatus(order, 'KITCHEN_PROCESSING'))
                 .map(order => (
                   <OrderCard
                     key={order.id}
@@ -1366,7 +1417,7 @@ export default function KitchenDisplay({ staffRoles, router: externalRouter }: K
           <div className="space-y-4 max-h-[calc(100vh-180px)] overflow-y-auto">
             <AnimatePresence mode="sync">
               {orders
-                .filter(order => order.status === 'KITCHEN_READY')
+                .filter(order => isOrderInStatus(order, 'KITCHEN_READY'))
                 .map(order => (
                   <OrderCard
                     key={order.id}
@@ -1389,7 +1440,7 @@ export default function KitchenDisplay({ staffRoles, router: externalRouter }: K
             <div className="space-y-4 max-h-[calc(100vh-180px)] overflow-y-auto">
               <AnimatePresence mode="sync">
                 {orders
-                  .filter(order => order.status === 'KITCHEN_QUEUE')
+                  .filter(order => isOrderInStatus(order, 'KITCHEN_QUEUE'))
                   .map(order => (
                     <OrderCard
                       key={order.id}
@@ -1413,7 +1464,7 @@ export default function KitchenDisplay({ staffRoles, router: externalRouter }: K
             <div className="space-y-4 max-h-[calc(100vh-180px)] overflow-y-auto">
               <AnimatePresence mode="sync">
                 {orders
-                  .filter(order => order.status === 'KITCHEN_PROCESSING')
+                  .filter(order => isOrderInStatus(order, 'KITCHEN_PROCESSING'))
                   .map(order => (
                     <OrderCard
                       key={order.id}
@@ -1434,7 +1485,7 @@ export default function KitchenDisplay({ staffRoles, router: externalRouter }: K
             <div className="space-y-4 max-h-[calc(100vh-180px)] overflow-y-auto">
               <AnimatePresence mode="sync">
                 {orders
-                  .filter(order => order.status === 'KITCHEN_READY')
+                  .filter(order => isOrderInStatus(order, 'KITCHEN_READY'))
                   .map(order => (
                     <OrderCard
                       key={order.id}

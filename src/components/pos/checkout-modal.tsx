@@ -1660,7 +1660,8 @@ export default function CheckoutModal({
     "AJMAN",
     "UMM_AL_QUWAIN",
     "RAS_AL_KHAIMAH",
-    "FUJAIRAH"
+    "FUJAIRAH",
+    "AL_AIN"
   ];
 
   // Update emirate and recalculate total
