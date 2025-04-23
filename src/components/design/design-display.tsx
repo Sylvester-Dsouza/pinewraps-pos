@@ -32,6 +32,17 @@ type DesignOrderStatus =
   | "FINAL_CHECK_PROCESSING"
   | "COMPLETED";
 
+type OrderStatus = 
+  | DesignOrderStatus
+  | 'PARALLEL_PROCESSING'
+  | 'KITCHEN_QUEUE'
+  | 'KITCHEN_PROCESSING'
+  | 'KITCHEN_READY'
+  | 'FINAL_CHECK_QUEUE'
+  | 'FINAL_CHECK_PROCESSING'
+  | 'COMPLETED'
+  | 'CANCELLED';
+
 interface UpdateOrderStatusPayload {
   status: DesignOrderStatus;
   notes?: string;
@@ -45,6 +56,7 @@ interface VariationOption {
   price?: number;
   id?: string;
   priceAdjustment?: number;
+  customText?: string;
 }
 
 interface DesignOrder {
@@ -396,7 +408,10 @@ export default function DesignDisplay({ staffRoles, router: externalRouter }: De
             order.status,
           items: order.items.map((item: any) => ({
             ...item,
-            designImages: item.customProduct?.designImages?.map((img: any) => ({
+            designImages: item.customImages?.map((img: any) => ({
+              url: img.url,
+              comment: img.comment
+            })) || item.customProduct?.designImages?.map((img: any) => ({
               url: img.imageUrl,
               comment: img.comment
             })) || [],
@@ -598,14 +613,15 @@ export default function DesignDisplay({ staffRoles, router: externalRouter }: De
   const getOrdersByStatus = (status: DesignOrderStatus) => {
     return orders
       .filter(order => {
+        // For parallel processing orders, check the parallelProcessing.designStatus
+        if ((order.status as OrderStatus) === 'PARALLEL_PROCESSING' && order.parallelProcessing) {
+          // Only return true if the design status matches what we're looking for
+          return order.parallelProcessing.designStatus === status;
+        }
+        
         // For normal orders, just check the status directly
         if (order.status === status) {
           return true;
-        }
-        
-        // For parallel processing orders, check the parallelProcessing.designStatus
-        if (order.parallelProcessing && status.startsWith('DESIGN_')) {
-          return order.parallelProcessing.designStatus === status;
         }
         
         return false;
@@ -953,7 +969,7 @@ export default function DesignDisplay({ staffRoles, router: externalRouter }: De
                         {item.selectedVariations && Array.isArray(item.selectedVariations) && item.selectedVariations.length > 0 && 
                           item.selectedVariations.map((variation, index) => (
                             <span key={`sel-${index}`} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                              {variation.type}: {variation.value}
+                              {variation.type}: {variation.value}{variation.customText ? ` (${variation.customText})` : ''}
                             </span>
                           ))
                         }
@@ -965,7 +981,7 @@ export default function DesignDisplay({ staffRoles, router: externalRouter }: De
                           item.variations.selectedVariations.length > 0 && 
                           item.variations.selectedVariations.map((variation, index) => (
                             <span key={`var-${index}`} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                              {variation.type}: {variation.value}
+                              {variation.type}: {variation.value}{variation.customText ? ` (${variation.customText})` : ''}
                             </span>
                           ))
                         }
@@ -1148,28 +1164,32 @@ export default function DesignDisplay({ staffRoles, router: externalRouter }: De
               )}
               
               {order.status === 'DESIGN_READY' && (
-                // Only show the Send to Final Check button for non-sets orders
-                // For sets orders, show a waiting message or nothing at all
-                order.requiresKitchen ? (
-                  // This is a sets order (requires both kitchen and design)
-                  <button
-                    disabled
-                    className="w-full px-4 py-2 bg-gray-500 text-white rounded-lg flex items-center justify-center cursor-default"
-                  >
-                    <Clock className="w-4 h-4 mr-2" />
-                    {order.parallelProcessing?.kitchenStatus === 'KITCHEN_READY' ? 
-                      'Processing...' : 
-                      'Waiting for Kitchen...'}
-                  </button>
-                ) : (
-                  // This is a design-only order
-                  <button
-                    onClick={handleReadyClick}
-                    className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center justify-center"
-                  >
-                    <CheckCircle2 className="w-4 h-4 mr-2" />
-                    Send to Final Check
-                  </button>
+                // For parallel processing orders, don't show any button as they automatically go to final check
+                // when both teams mark as ready
+                (order.status as OrderStatus) === 'PARALLEL_PROCESSING' ? null : (
+                  // Only show the Send to Final Check button for non-sets orders
+                  // For sets orders, show a waiting message or nothing at all
+                  order.requiresKitchen ? (
+                    // This is a sets order (requires both kitchen and design)
+                    <button
+                      disabled
+                      className="w-full px-4 py-2 bg-gray-500 text-white rounded-lg flex items-center justify-center cursor-default"
+                    >
+                      <Clock className="w-4 h-4 mr-2" />
+                      {order.parallelProcessing?.kitchenStatus === 'KITCHEN_READY' ? 
+                        'Processing...' : 
+                        'Waiting for Kitchen...'}
+                    </button>
+                  ) : (
+                    // This is a design-only order
+                    <button
+                      onClick={handleReadyClick}
+                      className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center justify-center"
+                    >
+                      <CheckCircle2 className="w-4 h-4 mr-2" />
+                      Send to Final Check
+                    </button>
+                  )
                 )
               )}
             </div>

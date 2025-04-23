@@ -37,6 +37,7 @@ interface VariationOption {
   price?: number;
   id?: string;
   priceAdjustment?: number;
+  customText?: string;
 }
 
 type KitchenOrderStatus = 
@@ -48,6 +49,7 @@ type KitchenOrderStatus =
   | "DESIGN_PROCESSING"
   | "DESIGN_READY"
   | "FINAL_CHECK_QUEUE"
+  | "PARALLEL_PROCESSING"
   | "FINAL_CHECK_PROCESSING"
   | "COMPLETED"
   | "PARALLEL_PROCESSING";
@@ -94,6 +96,7 @@ interface KitchenOrder {
   deliveryTimeSlot?: string;
   parallelProcessing?: {
     kitchenStatus?: KitchenOrderStatus;
+    designStatus?: KitchenOrderStatus;
   };
   isSentBack?: boolean;
   kitchenById?: string;
@@ -343,18 +346,105 @@ export default function KitchenDisplay({ staffRoles, router: externalRouter }: K
               // Add product images if available, ensuring they have valid URLs
               images: item.product?.images?.filter((img: any) => img && img.url) || [],
               // Ensure selectedVariations is properly mapped
-              selectedVariations: Array.isArray(item.selectedVariations) 
-                ? item.selectedVariations 
-                : (typeof item.selectedVariations === 'string' 
-                    ? (() => {
-                        try {
-                          return JSON.parse(item.selectedVariations);
-                        } catch (error) {
-                          console.error('Error parsing selectedVariations:', error);
-                          return [];
+              selectedVariations: (() => {
+                // First check if selectedVariations is already an array
+                if (Array.isArray(item.selectedVariations)) {
+                  return item.selectedVariations.map((variation: any) => ({
+                    ...variation,
+                    // Ensure customText is preserved
+                    customText: variation.customText || ''
+                  }));
+                }
+                
+                // Check if it's a string that needs to be parsed
+                if (typeof item.selectedVariations === 'string') {
+                  try {
+                    const parsedVariations = JSON.parse(item.selectedVariations);
+                    if (Array.isArray(parsedVariations)) {
+                      return parsedVariations.map((variation: any) => ({
+                        ...variation,
+                        customText: variation.customText || ''
+                      }));
+                    }
+                  } catch (error) {
+                    console.error('Error parsing selectedVariations:', error);
+                  }
+                }
+                
+                // Check if variations object contains selectedVariations
+                if (item.variations && typeof item.variations === 'object') {
+                  // Check if variations has selectedVariations array
+                  if (Array.isArray(item.variations.selectedVariations)) {
+                    return item.variations.selectedVariations.map((variation: any) => ({
+                      ...variation,
+                      customText: variation.customText || ''
+                    }));
+                  }
+                  
+                  // Check if variations has variationsObj
+                  if (item.variations.variationsObj && typeof item.variations.variationsObj === 'object') {
+                    return Object.entries(item.variations.variationsObj).map(([type, value]) => {
+                      let displayValue = '';
+                      let customText = '';
+                      
+                      if (typeof value === 'object' && value !== null) {
+                        displayValue = (value as any).value || JSON.stringify(value);
+                        customText = (value as any).customText || '';
+                      } else if (typeof value === 'string') {
+                        const match = String(value).match(/^(.+?)\s*\((.+?)\)$/);
+                        if (match) {
+                          displayValue = match[1];
+                          customText = match[2];
+                        } else {
+                          displayValue = value;
                         }
-                      })()
-                    : [])
+                      } else {
+                        displayValue = String(value);
+                      }
+                      
+                      return {
+                        type,
+                        value: displayValue,
+                        customText
+                      };
+                    });
+                  }
+                  
+                  // As a last resort, try to extract from variations directly
+                  if (Object.keys(item.variations).length > 0 && 
+                      !('selectedVariations' in item.variations) && 
+                      !('variationsObj' in item.variations)) {
+                    return Object.entries(item.variations).map(([type, value]) => {
+                      let displayValue = '';
+                      let customText = '';
+                      
+                      if (typeof value === 'object' && value !== null) {
+                        displayValue = (value as any).value || JSON.stringify(value);
+                        customText = (value as any).customText || '';
+                      } else if (typeof value === 'string') {
+                        const match = String(value).match(/^(.+?)\s*\((.+?)\)$/);
+                        if (match) {
+                          displayValue = match[1];
+                          customText = match[2];
+                        } else {
+                          displayValue = value;
+                        }
+                      } else {
+                        displayValue = String(value);
+                      }
+                      
+                      return {
+                        type,
+                        value: displayValue,
+                        customText
+                      };
+                    });
+                  }
+                }
+                
+                // If all else fails, return empty array
+                return [];
+              })()
             }))
           };
         });
@@ -997,7 +1087,7 @@ export default function KitchenDisplay({ staffRoles, router: externalRouter }: K
                       {item.selectedVariations && Array.isArray(item.selectedVariations) && item.selectedVariations.length > 0 && 
                         item.selectedVariations.map((variation, index) => (
                           <span key={`sel-${index}`} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                            {variation.type}: {variation.value}
+                            {variation.type}: {variation.value}{variation.customText ? ` (${variation.customText})` : ''}
                           </span>
                         ))
                       }
@@ -1009,7 +1099,7 @@ export default function KitchenDisplay({ staffRoles, router: externalRouter }: K
                         item.variations.selectedVariations.length > 0 && 
                         item.variations.selectedVariations.map((variation, index) => (
                           <span key={`var-${index}`} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                            {variation.type}: {variation.value}
+                            {variation.type}: {variation.value}{variation.customText ? ` (${variation.customText})` : ''}
                           </span>
                         ))
                       }
@@ -1018,12 +1108,64 @@ export default function KitchenDisplay({ staffRoles, router: externalRouter }: K
                       {(!item.selectedVariations || !Array.isArray(item.selectedVariations) || item.selectedVariations.length === 0) &&
                         (!item.variations || !item.variations.selectedVariations || !Array.isArray(item.variations.selectedVariations) || item.variations.selectedVariations.length === 0) &&
                         item.variations && typeof item.variations === 'object' && 
-                        item.variations.variationsObj && typeof item.variations.variationsObj === 'object' &&
-                        Object.entries(item.variations.variationsObj).map(([type, value], index) => (
-                          <span key={`obj-${index}`} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                            {type}: {typeof value === 'object' ? (value as any).value || JSON.stringify(value) : value}
-                          </span>
-                        ))
+                        (item.variations.variationsObj || Object.keys(item.variations).length > 0) && (
+                          item.variations.variationsObj ? 
+                            Object.entries(item.variations.variationsObj).map(([type, value], index) => {
+                              // Extract value and customText from the value object
+                              let displayValue = '';
+                              let customText = '';
+                              
+                              if (typeof value === 'object' && value !== null) {
+                                displayValue = (value as any).value || JSON.stringify(value);
+                                customText = (value as any).customText || '';
+                              } else if (typeof value === 'string') {
+                                // Check if value contains custom text in parentheses
+                                const match = String(value).match(/^(.+?)\s*\((.+?)\)$/);
+                                if (match) {
+                                  displayValue = match[1];
+                                  customText = match[2];
+                                } else {
+                                  displayValue = value;
+                                }
+                              } else {
+                                displayValue = String(value);
+                              }
+                              
+                              return (
+                                <span key={`obj-${index}`} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                  {type}: {displayValue}{customText ? ` (${customText})` : ''}
+                                </span>
+                              );
+                            })
+                          :
+                            Object.entries(item.variations).map(([type, value], index) => {
+                              // Extract value and customText from the value object
+                              let displayValue = '';
+                              let customText = '';
+                              
+                              if (typeof value === 'object' && value !== null) {
+                                displayValue = (value as any).value || JSON.stringify(value);
+                                customText = (value as any).customText || '';
+                              } else if (typeof value === 'string') {
+                                // Check if value contains custom text in parentheses
+                                const match = String(value).match(/^(.+?)\s*\((.+?)\)$/);
+                                if (match) {
+                                  displayValue = match[1];
+                                  customText = match[2];
+                                } else {
+                                  displayValue = value;
+                                }
+                              } else {
+                                displayValue = String(value);
+                              }
+                              
+                              return (
+                                <span key={`leg-${index}`} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                  {type}: {displayValue}{customText ? ` (${customText})` : ''}
+                                </span>
+                              );
+                            })
+                        )
                       }
                     </div>
                     
@@ -1183,33 +1325,47 @@ export default function KitchenDisplay({ staffRoles, router: externalRouter }: K
           )}
           {order.status === 'KITCHEN_READY' && (
             <div className="grid grid-cols-1 gap-3">
-              {order.requiresDesign && !order.designEndTime ? (
-                <>
-                  <button
-                    onClick={() => setShowNotesInput(!showNotesInput)}
-                    className="w-full py-3 px-4 bg-gray-100 hover:bg-gray-200 text-gray-800 font-medium rounded-lg flex items-center justify-center gap-2 transition-colors"
-                  >
-                    {showNotesInput ? 'Cancel Notes' : 'Add Handoff Notes'}
-                  </button>
-                  <button
-                    onClick={() => handleOrderAction('design')}
-                    className="w-full py-3 px-4 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg flex items-center justify-center gap-2 shadow-sm hover:shadow transition-all"
-                  >
-                    <Bell className="w-5 h-5" />
-                    {showNotesInput ? 'Save Notes & Send to Design' : 'Send to Design'}
-                  </button>
-                </>
+              {/* For parallel processing orders, don't show any buttons as they automatically go to final check */}
+              {(order.status as KitchenOrderStatus) === 'PARALLEL_PROCESSING' ? (
+                <button
+                  disabled
+                  className="w-full py-3 px-4 bg-gray-500 text-white font-medium rounded-lg flex items-center justify-center gap-2 cursor-default"
+                >
+                  <Clock className="w-5 h-5" />
+                  {order.parallelProcessing && order.parallelProcessing.designStatus === 'DESIGN_READY' ? 
+                    'Processing...' : 
+                    'Waiting for Design Team...'}
+                </button>
               ) : (
-                // Only show the Send to Final Check button for non-sets orders
-                // Sets orders will automatically go to final check when both teams mark as ready
-                !order.requiresDesign && (
-                  <button
-                    onClick={() => handleOrderAction('finalCheck')}
-                    className="w-full py-3 px-4 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg flex items-center justify-center gap-2 shadow-sm hover:shadow transition-all"
-                  >
-                    <CheckCircle2 className="w-5 h-5" />
-                    Send to Final Check
-                  </button>
+                // For regular orders
+                order.requiresDesign && !order.designEndTime ? (
+                  <>
+                    <button
+                      onClick={() => setShowNotesInput(!showNotesInput)}
+                      className="w-full py-3 px-4 bg-gray-100 hover:bg-gray-200 text-gray-800 font-medium rounded-lg flex items-center justify-center gap-2 transition-colors"
+                    >
+                      {showNotesInput ? 'Cancel Notes' : 'Add Handoff Notes'}
+                    </button>
+                    <button
+                      onClick={() => handleOrderAction('design')}
+                      className="w-full py-3 px-4 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg flex items-center justify-center gap-2 shadow-sm hover:shadow transition-all"
+                    >
+                      <Bell className="w-5 h-5" />
+                      {showNotesInput ? 'Save Notes & Send to Design' : 'Send to Design'}
+                    </button>
+                  </>
+                ) : (
+                  // Only show the Send to Final Check button for non-sets orders
+                  // Sets orders will automatically go to final check when both teams mark as ready
+                  !order.requiresDesign && (
+                    <button
+                      onClick={() => handleOrderAction('finalCheck')}
+                      className="w-full py-3 px-4 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg flex items-center justify-center gap-2 shadow-sm hover:shadow transition-all"
+                    >
+                      <CheckCircle2 className="w-5 h-5" />
+                      Send to Final Check
+                    </button>
+                  )
                 )
               )}
             </div>

@@ -892,7 +892,7 @@ export default function CheckoutModal({
         items: orderData.items.map(item => ({
           id: item.id,
           productName: item.productName,
-          customImages: item.customImages?.map(img => ({ id: img.id, url: img.url }))
+          customImages: item.customImages?.map(img => ({ id: img.id, url: img.url, comment: img.comment }))
         }))
       });
 
@@ -1014,7 +1014,10 @@ export default function CheckoutModal({
                       // Use product's basePrice as unitPrice
                       unitPrice: item.product.basePrice,
                       totalPrice: item.totalPrice,
-                      selectedVariations: item.selectedVariations || [],
+                      selectedVariations: (item.selectedVariations || []).map(v => ({
+                        ...v,
+                        value: v.customText ? `${v.value} (${v.customText})` : v.value
+                      })),
                       notes: item.notes || ''
                     })),
                     // Include customer details
@@ -1146,7 +1149,10 @@ export default function CheckoutModal({
                   // Use product's basePrice as unitPrice
                   unitPrice: item.product.basePrice,
                   totalPrice: item.totalPrice,
-                  selectedVariations: item.selectedVariations || [],
+                  selectedVariations: (item.selectedVariations || []).map(v => ({
+                    ...v,
+                    value: v.customText ? `${v.value} (${v.customText})` : v.value
+                  })),
                   notes: item.notes || ''
                 })),
                 // Include customer details
@@ -2563,19 +2569,21 @@ export default function CheckoutModal({
                               const selectedVariations = Array.isArray(item.selectedVariations) 
                                 ? item.selectedVariations.map(v => {
                                     if (typeof v === 'object' && v !== null) {
-                                      return {
-                                        id: v.id || '',
-                                        type: v.type,
-                                        value: v.value,
-                                        price: Number(v.price) || 0
-                                      };
+                                       return {
+                                         id: v.id || '',
+                                         type: v.type,
+                                         value: v.value,
+                                         price: Number(v.price) || 0,
+                                         customText: v.customText || ''
+                                       };
                                     }
                                     return {
-                                      id: '',
-                                      type: '',
-                                      value: '',
-                                      price: 0
-                                    };
+                                       id: '',
+                                       type: '',
+                                       value: '',
+                                       price: 0,
+                                       customText: ''
+                                     };
                                   })
                                 : [];
 
@@ -2618,7 +2626,7 @@ export default function CheckoutModal({
                                               key={`${item.id}-var-${i}`}
                                               className="text-sm text-blue-700 flex justify-between"
                                             >
-                                              <span>{type}: {value}</span>
+                                              <span>{type}: {value}{variation.customText ? ` (${variation.customText})` : ''}</span>
                                               {priceAdjustment > 0 && <span>+AED {priceAdjustment.toFixed(2)}</span>}
                                             </p>
                                           );

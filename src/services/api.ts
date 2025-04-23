@@ -786,7 +786,8 @@ export const apiMethods = {
                     id: img.id || nanoid(),
                     url: img.url || '',
                     type: img.type || 'reference',
-                    notes: img.notes || ''
+                    notes: img.notes || '',
+                    comment: img.comment || ''
                   };
                   
                   // Log each processed image
