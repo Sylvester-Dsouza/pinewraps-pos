@@ -61,6 +61,7 @@ interface DesignOrder {
     selectedVariations?: VariationOption[];
     kitchenNotes?: string;
     designNotes?: string;
+    notes?: string;
     designImages?: DesignImage[];
     images?: any[]; // Add product images
     isCustom?: boolean;
@@ -716,8 +717,8 @@ export default function DesignDisplay({ staffRoles, router: externalRouter }: De
     };
 
     const handleReadyClick = () => {
-      // Always show notes input first when sending to final check
-      setShowNotesInput(true);
+      // Skip the notes input and directly send to final check
+      handleSubmitNotes();
     };
 
     const handleSubmitNotes = async () => {
@@ -733,8 +734,8 @@ export default function DesignDisplay({ staffRoles, router: externalRouter }: De
           // For design-only orders, we can directly send to final check
           const payload: UpdateOrderStatusPayload = {
             status: 'FINAL_CHECK_QUEUE',
-            teamNotes: teamNotes,
-            notes: teamNotes
+            teamNotes: teamNotes || "",
+            notes: teamNotes || ""
           };
           
           const response = await apiMethods.pos.updateOrderStatus(order.id, payload);
@@ -991,9 +992,9 @@ export default function DesignDisplay({ staffRoles, router: externalRouter }: De
                       </div>
                       
                       {/* Item specific notes */}
-                      {item.designNotes && (
+                      {(item.notes || item.designNotes) && (
                         <div className="mt-2 text-sm text-gray-600 bg-gray-50 p-2 rounded border-l-2 border-purple-400">
-                          <span className="font-medium">Notes:</span> {item.designNotes}
+                          <span className="font-medium">Notes:</span> {item.notes || item.designNotes}
                         </div>
                       )}
                     </div>

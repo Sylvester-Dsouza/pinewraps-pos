@@ -552,7 +552,7 @@ export default function POSPage() {
         </div>
       )}
 
-      <div className="flex flex-col lg:flex-row h-[calc(100vh-3.5rem)] overflow-hidden">
+      <div className="flex flex-col md:flex-row h-[calc(100vh-3.5rem)] overflow-hidden">
         {/* Left side - Products */}
         <div className="flex-1 flex flex-col overflow-hidden min-w-0">
           {/* Search and Categories */}
@@ -681,7 +681,7 @@ export default function POSPage() {
         </div>
 
         {/* Right side - Cart */}
-        <div className="md:w-full lg:w-[400px] xl:w-[450px] flex-shrink-0 flex-grow-0 flex flex-col border-t lg:border-t-0 lg:border-l border-gray-200 overflow-hidden h-full">
+        <div className="md:w-[350px] lg:w-[350px] xl:w-[400px] flex-shrink-0 flex-grow-0 flex flex-col border-t md:border-t-0 md:border-l border-gray-200 overflow-hidden h-full">
 
           <div className="p-4 border-b border-gray-200">
             <div className="flex items-center justify-between">

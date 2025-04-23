@@ -270,7 +270,8 @@ export default function CheckoutModal({
             id: img.id || nanoid(),
             url: img.url || '',
             comment: img.comment || ''
-          })) : undefined
+          })) : undefined,
+          notes: item.notes
         };
 
         return itemData;
@@ -317,7 +318,8 @@ export default function CheckoutModal({
             id: img.id || nanoid(),
             url: img.url || '',
             comment: img.comment || ''
-          })) : undefined
+          })) : undefined,
+          notes: item.notes
         };
 
         return itemData;

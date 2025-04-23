@@ -66,6 +66,7 @@ interface KitchenOrder {
     selectedVariations?: VariationOption[];
     kitchenNotes?: string;
     designNotes?: string;
+    notes?: string;
     customImages?: CustomImage[];
     images?: any[]; 
     isCustom?: boolean;
@@ -1027,9 +1028,9 @@ export default function KitchenDisplay({ staffRoles, router: externalRouter }: K
                     </div>
                     
                     {/* Item specific notes */}
-                    {item.kitchenNotes && (
+                    {(item.notes || item.kitchenNotes) && (
                       <div className="mt-2 text-sm text-gray-600 bg-gray-50 p-2 rounded border-l-2 border-blue-400">
-                        <span className="font-medium">Notes:</span> {item.kitchenNotes}
+                        <span className="font-medium">Notes:</span> {item.notes || item.kitchenNotes}
                       </div>
                     )}
                   </div>

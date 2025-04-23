@@ -48,6 +48,7 @@ interface FinalCheckOrder {
     selectedVariations?: VariationOption[];
     kitchenNotes?: string;
     designNotes?: string;
+    notes?: string;
     customImages?: Array<{
       url: string;
       comment?: string;
@@ -501,6 +502,14 @@ export default function OrderCard({ order, onUpdateStatus }: OrderCardProps) {
                     </div>
                     
                     {/* Item notes */}
+                    {item.notes && (
+                      <div className="mt-2 ml-8 p-2 bg-gray-50 rounded border border-gray-200">
+                        <p className="text-sm text-gray-700">
+                          <span className="font-medium">Product Notes:</span> {item.notes}
+                        </p>
+                      </div>
+                    )}
+                    
                     {item.kitchenNotes && (
                       <div className="mt-2 ml-8 p-2 bg-blue-50 rounded border border-blue-100">
                         <p className="text-sm text-blue-700">

@@ -182,8 +182,23 @@ export class DrawerService {
 
   async getSessionHistory(limit: number = 10): Promise<DrawerSession[]> {
     try {
-      const response = await api.get(`/api/pos/drawer-session/history?limit=${limit}`);
-      return response.data || [];
+      console.log(`Fetching session history with limit: ${limit}`);
+      
+      // Use the all-history endpoint to get sessions from all users
+      const response = await api.get(`/api/pos/drawer-session/all-history?limit=${limit}`);
+      console.log('Session history API response:', response);
+      
+      // Check if the response data is in the expected format
+      if (response.data && Array.isArray(response.data.sessions)) {
+        console.log(`Found ${response.data.sessions.length} sessions in response`);
+        return response.data.sessions;
+      } else if (Array.isArray(response.data)) {
+        console.log(`Found ${response.data.length} sessions in direct response array`);
+        return response.data;
+      } else {
+        console.warn('Unexpected session history response format:', response.data);
+        return [];
+      }
     } catch (error) {
       console.error('Error getting session history:', error);
       return [];
@@ -192,8 +207,26 @@ export class DrawerService {
 
   async getLogs(limit = 100, offset = 0): Promise<{ logs: DrawerLog[], totalCount: number }> {
     try {
+      console.log(`Fetching drawer logs with limit: ${limit}, offset: ${offset}`);
       const response = await api.get(`/api/pos/drawer/logs?limit=${limit}&offset=${offset}`);
-      return response.data || { logs: [], totalCount: 0 };
+      console.log('Drawer logs API response:', response);
+      
+      // Check if the response data is in the expected format
+      if (response.data && Array.isArray(response.data)) {
+        // Direct array response
+        console.log(`Found ${response.data.length} drawer logs in direct response array`);
+        return { 
+          logs: response.data, 
+          totalCount: response.data.length 
+        };
+      } else if (response.data && Array.isArray(response.data.logs)) {
+        // Object with logs array
+        console.log(`Found ${response.data.logs.length} drawer logs in response.data.logs`);
+        return response.data;
+      } else {
+        console.warn('Unexpected drawer logs response format:', response.data);
+        return { logs: [], totalCount: 0 };
+      }
     } catch (error) {
       console.error('Error getting drawer logs:', error);
       return { logs: [], totalCount: 0 };

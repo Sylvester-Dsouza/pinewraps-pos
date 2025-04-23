@@ -108,6 +108,7 @@ export default function TillPage() {
                       <TableHeader>
                         <TableRow>
                           <TableHead>Date</TableHead>
+                          <TableHead>User</TableHead>
                           <TableHead>Status</TableHead>
                           <TableHead>Opening Amount</TableHead>
                           <TableHead>Closing Amount</TableHead>
@@ -117,12 +118,26 @@ export default function TillPage() {
                       <TableBody>
                         {sessionHistory.map((session) => {
                           const difference = session.closingAmount && session.openingAmount
-                            ? session.closingAmount - session.openingAmount
+                            ? parseFloat(session.closingAmount) - parseFloat(session.openingAmount)
                             : null;
 
                           return (
                             <TableRow key={session.id}>
-                              <TableCell>{formatDate(session.createdAt)}</TableCell>
+                              <TableCell>
+                                {formatDate(session.openedAt || session.createdAt)}
+                                {session.closedAt && (
+                                  <div className="text-xs text-gray-500 mt-1">
+                                    Closed: {formatDate(session.closedAt)}
+                                  </div>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                {session.user ? (
+                                  <span>{session.user.firstName} {session.user.lastName}</span>
+                                ) : (
+                                  <span className="text-gray-500">Unknown</span>
+                                )}
+                              </TableCell>
                               <TableCell>
                                 {session.status === 'OPEN' ? (
                                   <Badge variant="success">Open</Badge>
@@ -130,9 +145,9 @@ export default function TillPage() {
                                   <Badge variant="secondary">Closed</Badge>
                                 )}
                               </TableCell>
-                              <TableCell>{formatCurrency(session.openingAmount)}</TableCell>
+                              <TableCell>{formatCurrency(parseFloat(session.openingAmount))}</TableCell>
                               <TableCell>
-                                {session.closingAmount ? formatCurrency(session.closingAmount) : '-'}
+                                {session.closingAmount ? formatCurrency(parseFloat(session.closingAmount)) : '-'}
                               </TableCell>
                               <TableCell>
                                 {difference !== null ? (

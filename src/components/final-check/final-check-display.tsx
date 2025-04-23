@@ -33,6 +33,7 @@ export interface FinalCheckOrder {
     variations: Record<string, any>;
     kitchenNotes?: string;
     designNotes?: string;
+    notes?: string;
     customImages?: Array<{
       url: string;
       comment?: string;

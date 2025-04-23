@@ -107,9 +107,13 @@ export default function RemainingPaymentModal({
         
         if (dbData && dbData.success && dbData.printer) {
           console.log('Printer config from printer proxy DB:', dbData.printer);
+          const portNumber = dbData.printer.port || 9100;
           return { 
             ip: dbData.printer.ipAddress,
-            port: dbData.printer.port || 9100,
+            port: portNumber,
+            // Also include printerIp and printerPort for compatibility
+            printerIp: dbData.printer.ipAddress,
+            printerPort: portNumber,
             skipConnectivityCheck: true 
           };
         }
@@ -117,19 +121,17 @@ export default function RemainingPaymentModal({
         console.error('Error fetching printer config from DB:', dbError);
       }
       
-      // If no printer configuration is found, use default values
-      console.warn('No printer configuration found, using default values');
+      // If no printer configuration is found, don't include IP and port
+      // This will make the printer proxy use its own configuration from the database
+      console.warn('No printer configuration found, using proxy default configuration');
       return { 
-        ip: '192.168.0.12', // Default printer IP
-        port: 9100,         // Default printer port
         skipConnectivityCheck: true 
       };
     } catch (error) {
       console.error('Error fetching printer config:', error);
-      // If there's an error, use default values
+      // If there's an error, don't include IP and port
+      // This will make the printer proxy use its own configuration from the database
       return { 
-        ip: '192.168.0.12', // Default printer IP
-        port: 9100,         // Default printer port
         skipConnectivityCheck: true 
       };
     }
