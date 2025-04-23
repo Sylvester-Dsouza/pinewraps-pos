@@ -141,6 +141,7 @@ export default function ProductDetailsModal({
       
       console.log('Selected options:', sortedSelectedOptions);
       console.log('Found variant:', matchingVariant);
+      console.log('Variant price:', matchingVariant?.price);
       setSelectedVariant(matchingVariant || null);
     } else {
       setSelectedVariant(null);
@@ -416,8 +417,26 @@ export default function ProductDetailsModal({
       return customPrice * quantity;
     }
 
-    // Calculate base price (either variant price or product base price)
-    let basePrice = selectedVariant ? selectedVariant.price : product.basePrice;
+    // Calculate base price
+    let basePrice = product.basePrice;
+    
+    // If all options are selected and we have a matching variant, use its price
+    if (selectedVariant && selectedOptions.length === (product.options?.length || 0)) {
+      console.log('Using variant price for total:', selectedVariant.price);
+      basePrice = selectedVariant.price;
+    } 
+    // If not all options are selected, we need to calculate the price based on selected options
+    else if (selectedOptions.length > 0 && selectedOptions.length < (product.options?.length || 0)) {
+      // Add price adjustments from selected options
+      const optionPriceAdjustments = selectedOptions.reduce((total, option) => {
+        const optionDef = product.options?.find(o => o.id === option.optionId);
+        const valueDef = optionDef?.values.find(v => v.id === option.valueId);
+        return total + ((valueDef as any)?.price || 0);
+      }, 0);
+      
+      console.log('Using base price + option adjustments:', basePrice, '+', optionPriceAdjustments);
+      basePrice += optionPriceAdjustments;
+    }
     
     // Add addon prices
     const addonPrice = calculateAddonPrice();
@@ -936,7 +955,15 @@ export default function ProductDetailsModal({
                                     : 'bg-gray-100 text-gray-900 hover:bg-gray-200'
                                 }`}
                               >
-                                {value.value}
+                                <div className="flex flex-col items-center">
+                                  <span>{value.value}</span>
+                                  {/* Display price adjustment if available */}
+                                  {(value as any).price > 0 && (
+                                    <span className={`text-sm mt-1 ${isSelected ? 'text-gray-200' : 'text-gray-600'}`}>
+                                      +{(value as any).price.toFixed(2)} AED
+                                    </span>
+                                  )}
+                                </div>
                               </button>
                             );
                           })}

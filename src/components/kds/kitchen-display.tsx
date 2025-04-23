@@ -548,7 +548,8 @@ export default function KitchenDisplay({ staffRoles, router: externalRouter }: K
       const updatedOrder = { 
         ...currentOrder, 
         status: newStatus,
-        kitchenNotes: teamNotes || currentOrder.kitchenNotes,
+        // Only update kitchenNotes if teamNotes is provided
+        ...(teamNotes !== undefined ? { kitchenNotes: teamNotes } : {}),
         // When moving to processing, assign the current user
         // When moving to ready, maintain the same assignment
         kitchenById: newStatus === 'KITCHEN_PROCESSING' ? user?.id : currentOrder.kitchenById
@@ -565,7 +566,7 @@ export default function KitchenDisplay({ staffRoles, router: externalRouter }: K
       // Now make the API call to update the backend
       const response = await apiMethods.pos.updateOrderStatus(orderId, {
         status: newStatus,
-        teamNotes: teamNotes || '',
+        ...(teamNotes !== undefined ? { teamNotes } : {}),
         returnToKitchenOrDesign: isReturnFromFinalCheck
       });
 
@@ -620,10 +621,10 @@ export default function KitchenDisplay({ staffRoles, router: externalRouter }: K
     
     if (isParallelOrder) {
       // For parallel orders, use the parallel processing function
-      await updateParallelOrderStatus(orderId, 'KITCHEN_READY', notes || '');
+      await updateParallelOrderStatus(orderId, 'KITCHEN_READY', notes);
     } else {
       // For kitchen-only orders, we can directly send to final check
-      await updateOrderStatus(orderId, 'FINAL_CHECK_QUEUE', notes || '');
+      await updateOrderStatus(orderId, 'FINAL_CHECK_QUEUE', notes);
     }
   };
 
@@ -639,7 +640,8 @@ export default function KitchenDisplay({ staffRoles, router: externalRouter }: K
       // Create an optimistically updated order object
       const updatedOrder = { 
         ...order,
-        kitchenNotes: teamNotes || order.kitchenNotes,
+        // Only update kitchenNotes if teamNotes is provided
+        ...(teamNotes !== undefined ? { kitchenNotes: teamNotes } : {}),
         // Update the parallelProcessing object
         parallelProcessing: {
           ...order.parallelProcessing,
@@ -658,14 +660,14 @@ export default function KitchenDisplay({ staffRoles, router: externalRouter }: K
       const payload = {
         parallelProcessing: {
           kitchenStatus: kitchenStatus,
-          teamNotes: teamNotes || ""
+          ...(teamNotes !== undefined ? { teamNotes } : {})
         }
       };
       
       // Make the API call
       const response = await apiMethods.pos.updateOrderStatus(orderId, {
         status: 'PARALLEL_PROCESSING', // Explicitly set status to PARALLEL_PROCESSING
-        teamNotes: teamNotes || "",
+        ...(teamNotes !== undefined ? { teamNotes } : {}),
         parallelProcessing: {
           kitchenStatus: kitchenStatus
         }
@@ -1355,9 +1357,9 @@ export default function KitchenDisplay({ staffRoles, router: externalRouter }: K
                     </button>
                   </>
                 ) : (
-                  // Only show the Send to Final Check button for non-sets orders
-                  // Sets orders will automatically go to final check when both teams mark as ready
-                  !order.requiresDesign && (
+                  // Only show the Send to Final Check button for non-sets orders and non-parallel orders
+                  // Parallel orders will automatically go to final check when both teams mark as ready
+                  !order.requiresDesign && !order.parallelProcessing && (
                     <button
                       onClick={() => handleOrderAction('finalCheck')}
                       className="w-full py-3 px-4 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg flex items-center justify-center gap-2 shadow-sm hover:shadow transition-all"

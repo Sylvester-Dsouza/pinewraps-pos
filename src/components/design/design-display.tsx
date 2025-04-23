@@ -1166,7 +1166,7 @@ export default function DesignDisplay({ staffRoles, router: externalRouter }: De
               {order.status === 'DESIGN_READY' && (
                 // For parallel processing orders, don't show any button as they automatically go to final check
                 // when both teams mark as ready
-                (order.status as OrderStatus) === 'PARALLEL_PROCESSING' ? null : (
+                (order.status as OrderStatus) === 'PARALLEL_PROCESSING' || order.parallelProcessing ? null : (
                   // Only show the Send to Final Check button for non-sets orders
                   // For sets orders, show a waiting message or nothing at all
                   order.requiresKitchen ? (
