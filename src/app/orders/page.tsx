@@ -94,12 +94,22 @@ const OrdersPage = () => {
   const [selectedPaymentStatus, setSelectedPaymentStatus] = useState<string>('all');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [pickupDate, setPickupDate] = useState('');
+  const [deliveryDate, setDeliveryDate] = useState('');
   const [showDateFilter, setShowDateFilter] = useState(false);
+  const [showPickupDateFilter, setShowPickupDateFilter] = useState(false);
+  const [showDeliveryDateFilter, setShowDeliveryDateFilter] = useState(false);
   const [showStartCalendar, setShowStartCalendar] = useState(false);
   const [showEndCalendar, setShowEndCalendar] = useState(false);
+  const [showPickupCalendar, setShowPickupCalendar] = useState(false);
+  const [showDeliveryCalendar, setShowDeliveryCalendar] = useState(false);
   const startCalendarRef = useRef<HTMLDivElement>(null);
   const endCalendarRef = useRef<HTMLDivElement>(null);
+  const pickupCalendarRef = useRef<HTMLDivElement>(null);
+  const deliveryCalendarRef = useRef<HTMLDivElement>(null);
   const dateFilterRef = useRef<HTMLDivElement>(null);
+  const pickupDateFilterRef = useRef<HTMLDivElement>(null);
+  const deliveryDateFilterRef = useRef<HTMLDivElement>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [selectedOrderForGiftReceipt, setSelectedOrderForGiftReceipt] = useState<Order | null>(null);
@@ -152,15 +162,23 @@ const OrdersPage = () => {
     }
   }, [isAuthenticated, selectedOrderStatus, selectedPaymentStatus]);
   
-  // Add click outside handler to close date filter popup
+  // Add click outside handler to close date filter popups
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dateFilterRef.current && !dateFilterRef.current.contains(event.target as Node)) {
         setShowDateFilter(false);
         setShowStartCalendar(false);
         setShowEndCalendar(false);
-        // Don't automatically fetch orders when closing the popup without clicking Apply
       }
+      if (pickupDateFilterRef.current && !pickupDateFilterRef.current.contains(event.target as Node)) {
+        setShowPickupDateFilter(false);
+        setShowPickupCalendar(false);
+      }
+      if (deliveryDateFilterRef.current && !deliveryDateFilterRef.current.contains(event.target as Node)) {
+        setShowDeliveryDateFilter(false);
+        setShowDeliveryCalendar(false);
+      }
+      // Don't automatically fetch orders when closing the popup without clicking Apply
     };
 
     document.addEventListener('mousedown', handleClickOutside);
@@ -190,7 +208,14 @@ const OrdersPage = () => {
       });
       
       // Prepare API parameters
-      const params: { status?: string, paymentStatus?: string, startDate?: string, endDate?: string } = {};
+      const params: { 
+        status?: string, 
+        paymentStatus?: string, 
+        startDate?: string, 
+        endDate?: string,
+        pickupDate?: string,
+        deliveryDate?: string
+      } = {};
       
       // Add order status filter if not 'all'
       if (selectedOrderStatus !== 'all') {
@@ -213,6 +238,20 @@ const OrdersPage = () => {
         delete params.startDate;
         delete params.endDate;
       }
+      
+      // Add pickup date filter if set
+      if (pickupDate) {
+        params.pickupDate = pickupDate;
+        console.log('Fetching orders with pickup date:', pickupDate);
+      }
+      
+      // Add delivery date filter if set
+      if (deliveryDate) {
+        params.deliveryDate = deliveryDate;
+        console.log('Fetching orders with delivery date:', deliveryDate);
+      }
+      
+      console.log('Final API params:', params);
       
       const response = await apiMethods.pos.getOrders(params);
       
@@ -570,10 +609,10 @@ const OrdersPage = () => {
       
       <main className="container mx-auto px-4 py-8">
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-900 mb-4">Orders</h1>
-          
-          <div className="flex flex-col md:flex-row gap-4 items-start md:items-center">
-            <div className="relative flex-1">
+          <div className="flex justify-between items-center mb-4">
+            <h1 className="text-2xl font-bold text-gray-900">Orders</h1>
+            
+            <div className="relative w-64">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
               <input
                 type="text"
@@ -583,6 +622,9 @@ const OrdersPage = () => {
                 className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
+          </div>
+          
+          <div className="flex flex-wrap gap-2 items-center">
             
             <select
               value={selectedOrderStatus}
@@ -620,12 +662,13 @@ const OrdersPage = () => {
               ))}
             </select>
             
+            {/* Order Date Filter */}
             <div className="relative">
               <button
                 onClick={() => setShowDateFilter(!showDateFilter)}
                 className="w-full md:w-48 px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-700 flex items-center justify-between"
               >
-                <span>{startDate ? `${format(parse(startDate, 'yyyy-MM-dd', new Date()), 'PP')}${endDate ? ` - ${format(parse(endDate, 'yyyy-MM-dd', new Date()), 'PP')}` : ''}` : 'Filter by Date'}</span>
+                <span>{startDate ? `${format(parse(startDate, 'yyyy-MM-dd', new Date()), 'PP')}${endDate ? ` - ${format(parse(endDate, 'yyyy-MM-dd', new Date()), 'PP')}` : ''}` : 'Order Date'}</span>
                 <Calendar className="h-4 w-4 text-gray-400 ml-2" />
               </button>
               
@@ -755,6 +798,174 @@ const OrdersPage = () => {
               )}
             </div>
             
+            {/* Pickup Date Filter */}
+            <div className="relative">
+              <button
+                onClick={() => setShowPickupDateFilter(!showPickupDateFilter)}
+                className="w-full md:w-48 px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-700 flex items-center justify-between"
+              >
+                <span>{pickupDate ? format(parse(pickupDate, 'yyyy-MM-dd', new Date()), 'PP') : 'Pickup Date'}</span>
+                <Store className="h-4 w-4 text-gray-400 ml-2" />
+              </button>
+              
+              {/* Pickup date picker */}
+              {showPickupDateFilter && (
+                <div 
+                  ref={pickupDateFilterRef}
+                  className="absolute z-10 mt-2 p-4 bg-white rounded-lg shadow-lg border border-gray-200 w-80"
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-medium text-gray-700">Pickup Date</h3>
+                    <div className="flex space-x-2">
+                      <button 
+                        onClick={() => {
+                          setPickupDate('');
+                          setShowPickupDateFilter(false);
+                          fetchOrders();
+                          console.log('Cleared pickup date filter');
+                        }}
+                        className="text-xs px-2 py-1 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+                      >
+                        Clear
+                      </button>
+                      <button 
+                        onClick={() => {
+                          if (pickupDate) {
+                            setShowPickupDateFilter(false);
+                            setShowPickupCalendar(false);
+                            fetchOrders();
+                            console.log('Applying pickup date filter:', pickupDate);
+                          } else {
+                            toast.error('Please select a pickup date');
+                          }
+                        }}
+                        className="text-xs px-2 py-1 bg-blue-500 text-white rounded hover:bg-blue-600"
+                      >
+                        Apply
+                      </button>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-3">
+                    <div>
+                      <div className="relative">
+                        <div 
+                          className="w-full px-3 py-1.5 border border-gray-200 rounded text-sm flex justify-between items-center cursor-pointer"
+                          onClick={() => setShowPickupCalendar(!showPickupCalendar)}
+                        >
+                          <span>{pickupDate ? format(parse(pickupDate, 'yyyy-MM-dd', new Date()), 'PP') : 'Select pickup date'}</span>
+                          <Calendar className="h-4 w-4 text-gray-400" />
+                        </div>
+                        
+                        {showPickupCalendar && (
+                          <div 
+                            ref={pickupCalendarRef}
+                            className="absolute z-20 mt-1 bg-white rounded-lg shadow-lg border border-gray-200"
+                          >
+                            <DayPicker
+                              mode="single"
+                              selected={pickupDate ? parse(pickupDate, 'yyyy-MM-dd', new Date()) : undefined}
+                              onSelect={(date) => {
+                                if (date) {
+                                  setPickupDate(format(date, 'yyyy-MM-dd'));
+                                  setShowPickupCalendar(false);
+                                }
+                              }}
+                              footer={<p className="text-center text-sm p-2">Click to select</p>}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            {/* Delivery Date Filter */}
+            <div className="relative">
+              <button
+                onClick={() => setShowDeliveryDateFilter(!showDeliveryDateFilter)}
+                className="w-full md:w-48 px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-700 flex items-center justify-between"
+              >
+                <span>{deliveryDate ? format(parse(deliveryDate, 'yyyy-MM-dd', new Date()), 'PP') : 'Delivery Date'}</span>
+                <Truck className="h-4 w-4 text-gray-400 ml-2" />
+              </button>
+              
+              {/* Delivery date picker */}
+              {showDeliveryDateFilter && (
+                <div 
+                  ref={deliveryDateFilterRef}
+                  className="absolute z-10 mt-2 p-4 bg-white rounded-lg shadow-lg border border-gray-200 w-80"
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-medium text-gray-700">Delivery Date</h3>
+                    <div className="flex space-x-2">
+                      <button 
+                        onClick={() => {
+                          setDeliveryDate('');
+                          setShowDeliveryDateFilter(false);
+                          fetchOrders();
+                          console.log('Cleared delivery date filter');
+                        }}
+                        className="text-xs px-2 py-1 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+                      >
+                        Clear
+                      </button>
+                      <button 
+                        onClick={() => {
+                          if (deliveryDate) {
+                            setShowDeliveryDateFilter(false);
+                            setShowDeliveryCalendar(false);
+                            fetchOrders();
+                            console.log('Applying delivery date filter:', deliveryDate);
+                          } else {
+                            toast.error('Please select a delivery date');
+                          }
+                        }}
+                        className="text-xs px-2 py-1 bg-blue-500 text-white rounded hover:bg-blue-600"
+                      >
+                        Apply
+                      </button>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-3">
+                    <div>
+                      <div className="relative">
+                        <div 
+                          className="w-full px-3 py-1.5 border border-gray-200 rounded text-sm flex justify-between items-center cursor-pointer"
+                          onClick={() => setShowDeliveryCalendar(!showDeliveryCalendar)}
+                        >
+                          <span>{deliveryDate ? format(parse(deliveryDate, 'yyyy-MM-dd', new Date()), 'PP') : 'Select delivery date'}</span>
+                          <Calendar className="h-4 w-4 text-gray-400" />
+                        </div>
+                        
+                        {showDeliveryCalendar && (
+                          <div 
+                            ref={deliveryCalendarRef}
+                            className="absolute z-20 mt-1 bg-white rounded-lg shadow-lg border border-gray-200"
+                          >
+                            <DayPicker
+                              mode="single"
+                              selected={deliveryDate ? parse(deliveryDate, 'yyyy-MM-dd', new Date()) : undefined}
+                              onSelect={(date) => {
+                                if (date) {
+                                  setDeliveryDate(format(date, 'yyyy-MM-dd'));
+                                  setShowDeliveryCalendar(false);
+                                }
+                              }}
+                              footer={<p className="text-center text-sm p-2">Click to select</p>}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+            
             <div className="flex space-x-2">
               <button
                 onClick={() => {
@@ -764,7 +975,11 @@ const OrdersPage = () => {
                   setSelectedPaymentStatus('all');
                   setStartDate('');
                   setEndDate('');
+                  setPickupDate('');
+                  setDeliveryDate('');
                   setShowDateFilter(false);
+                  setShowPickupDateFilter(false);
+                  setShowDeliveryDateFilter(false);
                   
                   // Fetch orders without any filters
                   fetchOrders();
@@ -775,10 +990,10 @@ const OrdersPage = () => {
                   // Show success message
                   toast.success('All filters have been reset');
                 }}
-                className="w-full md:w-auto px-4 py-2 text-sm font-medium text-blue-700 bg-blue-100 rounded-md hover:bg-blue-200 flex items-center justify-center gap-2"
+                className="px-2 py-1 text-xs font-medium text-blue-700 bg-blue-100 rounded-md hover:bg-blue-200 flex items-center justify-center gap-1"
               >
-                <X className="h-4 w-4" />
-                Reset All Filters
+                <X className="h-3 w-3" />
+                Reset
               </button>
               
               <button
@@ -819,27 +1034,68 @@ const OrdersPage = () => {
                 }
                 
                 // Apply date filtering on the client side as well for extra safety
-                if (startDate && order.createdAt) {
-                  const orderDate = new Date(order.createdAt);
-                  const start = parse(startDate, 'yyyy-MM-dd', new Date());
-                  
-                  // Set start date to beginning of day
-                  start.setHours(0, 0, 0, 0);
-                  
-                  // If order date is before start date, filter it out
-                  if (orderDate < start) {
-                    return false;
-                  }
-                  
-                  // If end date is specified, check if order date is after end date
-                  if (endDate) {
-                    const end = parse(endDate, 'yyyy-MM-dd', new Date());
-                    // Set end date to end of day
-                    end.setHours(23, 59, 59, 999);
+                if (startDate) {
+                  try {
+                    const orderDate = new Date(order.createdAt);
+                    const filterStartDate = parse(startDate, 'yyyy-MM-dd', new Date());
+                    const filterStartDay = startOfDay(filterStartDate);
                     
-                    if (orderDate > end) {
+                    if (endDate) {
+                      const filterEndDate = parse(endDate, 'yyyy-MM-dd', new Date());
+                      const filterEndDay = endOfDay(filterEndDate);
+                      
+                      // If order date is before start date, filter it out
+                      if (isBefore(orderDate, filterStartDay) || isAfter(orderDate, filterEndDay)) {
+                        return false;
+                      }
+                    } else {
+                      // If only start date is provided, check if order date is on or after start date
+                      if (isBefore(orderDate, filterStartDay)) {
+                        return false;
+                      }
+                    }
+                  } catch (error) {
+                    console.error('Error filtering by date:', error);
+                  }
+                }
+                
+                // Apply pickup date filtering on the client side
+                if (pickupDate) {
+                  try {
+                    // Skip orders without pickup date
+                    if (!order.pickupDate) return false;
+                    
+                    // Convert both dates to local date strings to avoid timezone issues
+                    const orderDate = new Date(order.pickupDate);
+                    // Format as YYYY-MM-DD for consistent comparison
+                    const orderPickupDateFormatted = format(orderDate, 'yyyy-MM-dd');
+                    console.log('Comparing pickup dates:', { orderDate: orderPickupDateFormatted, filterDate: pickupDate });
+                    
+                    if (orderPickupDateFormatted !== pickupDate) {
                       return false;
                     }
+                  } catch (error) {
+                    console.error('Error filtering by pickup date:', error);
+                  }
+                }
+                
+                // Apply delivery date filtering on the client side
+                if (deliveryDate) {
+                  try {
+                    // Skip orders without delivery date
+                    if (!order.deliveryDate) return false;
+                    
+                    // Convert both dates to local date strings to avoid timezone issues
+                    const orderDate = new Date(order.deliveryDate);
+                    // Format as YYYY-MM-DD for consistent comparison
+                    const orderDeliveryDateFormatted = format(orderDate, 'yyyy-MM-dd');
+                    console.log('Comparing delivery dates:', { orderDate: orderDeliveryDateFormatted, filterDate: deliveryDate });
+                    
+                    if (orderDeliveryDateFormatted !== deliveryDate) {
+                      return false;
+                    }
+                  } catch (error) {
+                    console.error('Error filtering by delivery date:', error);
                   }
                 }
                 
