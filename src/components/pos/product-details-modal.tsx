@@ -417,25 +417,44 @@ export default function ProductDetailsModal({
       return customPrice * quantity;
     }
 
-    // Calculate base price
+    // Define basePrice variable at the top
     let basePrice = product.basePrice;
     
-    // If all options are selected and we have a matching variant, use its price
-    if (selectedVariant && selectedOptions.length === (product.options?.length || 0)) {
-      console.log('Using variant price for total:', selectedVariant.price);
-      basePrice = selectedVariant.price;
-    } 
-    // If not all options are selected, we need to calculate the price based on selected options
-    else if (selectedOptions.length > 0 && selectedOptions.length < (product.options?.length || 0)) {
-      // Add price adjustments from selected options
-      const optionPriceAdjustments = selectedOptions.reduce((total, option) => {
-        const optionDef = product.options?.find(o => o.id === option.optionId);
-        const valueDef = optionDef?.values.find(v => v.id === option.valueId);
-        return total + ((valueDef as any)?.price || 0);
-      }, 0);
-      
-      console.log('Using base price + option adjustments:', basePrice, '+', optionPriceAdjustments);
-      basePrice += optionPriceAdjustments;
+    // If product has options/variations
+    if (product.options && product.options.length > 0) {
+      // If all options are selected and we have a matching variant, use its price
+      if (selectedVariant && selectedOptions.length === product.options.length) {
+        console.log('Using exact variant price for total:', selectedVariant.price);
+        basePrice = selectedVariant.price;
+      } 
+      // If not all options are selected but some are, we need to find the best matching variant
+      else if (selectedOptions.length > 0) {
+        // First try to find a partial matching variant
+        const partialMatchingVariants = product.variants?.filter(variant => {
+          const variantValues = variant.values as ProductVariantValue[];
+          return selectedOptions.every(selectedOption => 
+            variantValues.some(value => 
+              value.valueId === selectedOption.valueId
+            )
+          );
+        });
+        
+        if (partialMatchingVariants && partialMatchingVariants.length > 0) {
+          // Use the first matching variant's price
+          console.log('Using partial matching variant price:', partialMatchingVariants[0].price);
+          basePrice = partialMatchingVariants[0].price;
+        } else {
+          // If no partial match, calculate based on option price adjustments
+          const optionPriceAdjustments = selectedOptions.reduce((total, option) => {
+            const optionDef = product.options?.find(o => o.id === option.optionId);
+            const valueDef = optionDef?.values.find(v => v.id === option.valueId);
+            return total + ((valueDef as any)?.price || 0);
+          }, 0);
+          
+          console.log('Using base price + option adjustments:', basePrice, '+', optionPriceAdjustments);
+          basePrice += optionPriceAdjustments;
+        }
+      }
     }
     
     // Add addon prices
@@ -582,9 +601,7 @@ export default function ProductDetailsModal({
         // Otherwise, if a variant is selected, update to variant price
         basePrice: product.allowCustomPrice && customPrice !== null 
           ? customPrice 
-          : selectedVariant 
-            ? selectedVariant.price 
-            : product.basePrice
+          : calculateTotalPrice() / quantity - calculateAddonPrice()
       },
       quantity,
       selectedVariations: variations,
