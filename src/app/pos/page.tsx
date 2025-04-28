@@ -33,7 +33,7 @@ export default function POSPage() {
   const searchParams = useSearchParams();
   const [, setIsFullscreen] = useState(false);
   const { isDrawerOpen, checkDrawerStatus, loading: drawerStatusLoading } = useDrawerStatus();
-  
+
   // State for permission check
   const [hasGeneralPOSAccess, setHasGeneralPOSAccess] = useState<boolean | null>(null);
 
@@ -51,10 +51,10 @@ export default function POSPage() {
     if (typeof window !== 'undefined') {
       const isCashierStaff = localStorage.getItem('isCashierStaff') === 'true';
       const userRole = localStorage.getItem('userRole');
-      
+
       // Super admin always has access to all screens
       const hasSuperAdminAccess = userRole === 'SUPER_ADMIN';
-      
+
       // Grant access if user is super admin, has cashier staff role, or has a general POS_USER or ADMIN role
       // This allows users with multiple roles to access the POS screen
       setHasGeneralPOSAccess(hasSuperAdminAccess || isCashierStaff || userRole === 'POS_USER' || userRole === 'ADMIN');
@@ -67,12 +67,12 @@ export default function POSPage() {
       // First try to load from localStorage
       const savedCartItems = localStorage.getItem('pos-cart');
       const savedCheckoutDetails = localStorage.getItem('pos-checkout-details');
-      
+
       if (savedCartItems) {
         try {
           const parsedCartItems = JSON.parse(savedCartItems);
           console.log('Loading cart items from localStorage:', parsedCartItems);
-          
+
           if (Array.isArray(parsedCartItems)) {
             // Ensure all required fields are present
             const validatedCartItems = parsedCartItems.map(item => {
@@ -81,7 +81,7 @@ export default function POSPage() {
                 console.error('Cart item missing product:', item);
                 return null;
               }
-              
+
               // Process selected variations - ensure they have proper structure
               let selectedVariations = [];
               if (item.selectedVariations && Array.isArray(item.selectedVariations)) {
@@ -92,7 +92,7 @@ export default function POSPage() {
                   priceAdjustment: parseFloat(String(v.price || v.priceAdjustment)) || 0
                 }));
               }
-              
+
               // Process custom images - ensure they have proper structure
               let customImages = [];
               if (item.customImages && Array.isArray(item.customImages)) {
@@ -103,7 +103,7 @@ export default function POSPage() {
                   comment: img.comment || ''
                 }));
               }
-              
+
               // Create a properly formatted cart item
               return {
                 id: item.id || nanoid(),
@@ -125,7 +125,7 @@ export default function POSPage() {
                 totalPrice: parseFloat(String(item.totalPrice)) || 0,
               };
             }).filter(item => item !== null);
-            
+
             console.log('Setting cart with validated items:', validatedCartItems);
             setCart(validatedCartItems);
           }
@@ -133,12 +133,12 @@ export default function POSPage() {
           console.error('Error parsing cart items from localStorage:', error);
         }
       }
-      
+
       if (savedCheckoutDetails) {
         try {
           const parsedCheckoutDetails = JSON.parse(savedCheckoutDetails);
           console.log('Loading checkout details from localStorage:', parsedCheckoutDetails);
-          
+
           // Validate and ensure all required fields are present
           const validatedCheckoutDetails = {
             customerDetails: {
@@ -179,14 +179,14 @@ export default function POSPage() {
             name: parsedCheckoutDetails.name || '',
             notes: parsedCheckoutDetails.notes || ''
           };
-          
+
           console.log('Validated checkout details:', validatedCheckoutDetails);
           setCheckoutDetails(validatedCheckoutDetails);
-          
+
           // Clean up localStorage
           localStorage.removeItem('pos-checkout-details');
           localStorage.removeItem('pos-cart');
-          
+
           // Open the checkout modal after a short delay to ensure state is updated
           setTimeout(() => {
             setIsCheckoutModalOpen(true);
@@ -275,7 +275,7 @@ export default function POSPage() {
       console.log('Categories data is not an array:', categoryList);
       return [{ id: 'all', name: 'All Products', description: null, isActive: true }];
     }
-    
+
     return [
       { id: 'all', name: 'All Products', description: null, isActive: true },
       ...categoryList
@@ -285,21 +285,21 @@ export default function POSPage() {
   // Filter and sort products
   const filteredProducts = useMemo(() => {
     let result = productsData || [];
-    
+
     // Filter by category if selected
     if (selectedCategory) {
       result = result.filter(product => product.categoryId === selectedCategory);
     }
-    
+
     // Filter by search query
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
-      result = result.filter(product => 
-        product.name.toLowerCase().includes(query) || 
+      result = result.filter(product =>
+        product.name.toLowerCase().includes(query) ||
         product.description?.toLowerCase().includes(query)
       );
     }
-    
+
     // Sort by position
     return result.sort((a, b) => (a.position || 0) - (b.position || 0));
   }, [productsData, selectedCategory, searchQuery]);
@@ -308,7 +308,7 @@ export default function POSPage() {
   const getProductPriceDisplay = (product: Product) => {
     const basePrice = product.basePrice || 0;
     const hasVariations = product.variants?.length > 0;
-    
+
     if (!hasVariations) {
       return `AED ${basePrice.toFixed(2)}`;
     }
@@ -334,10 +334,10 @@ export default function POSPage() {
   const calculateTotalPrice = (basePrice: number, quantity: number, variations: Array<{ priceAdjustment?: number; price?: number }>) => {
     // Sum up all price adjustments from variations
     const variationPriceAdjustments = variations.reduce(
-      (total, variation) => total + (variation.priceAdjustment || 0), 
+      (total, variation) => total + (variation.priceAdjustment || 0),
       0
     );
-    
+
     // Calculate total price with variations
     return (basePrice + variationPriceAdjustments) * quantity;
   };
@@ -354,7 +354,7 @@ export default function POSPage() {
       router.push('/pos/till');
       return;
     }
-    
+
     // Always show the product details modal regardless of whether the product has options or not
     setSelectedProduct(product);
   };
@@ -368,20 +368,20 @@ export default function POSPage() {
     }
     // Calculate total price
     let totalPrice = 0;
-    
+
     // If product allows custom price and a custom price is provided, use that
     if (product.allowCustomPrice && customPrice !== null) {
       totalPrice = customPrice;
     } else {
       // Otherwise use base price plus variation adjustments
       totalPrice = product.basePrice;
-      
+
       // Add variation price adjustments
       if (selectedVariations.length > 0) {
         totalPrice += selectedVariations.reduce((sum, variation) => sum + (variation.priceAdjustment || 0), 0);
       }
     }
-    
+
     // Multiply by quantity
     totalPrice *= quantity;
 
@@ -400,7 +400,7 @@ export default function POSPage() {
       notes,
       customImages
     };
-    
+
     setCart(prevCart => {
       const updatedCart = [...prevCart, cartItem];
       localStorage.setItem('pos-cart', JSON.stringify(updatedCart));
@@ -438,7 +438,7 @@ export default function POSPage() {
   // Calculate cart total including variations
   const cartTotal = useMemo(() => {
     console.log('Calculating cart total with cart items:', cart);
-    return cart.reduce((total, item) => total + (item.totalPrice * item.quantity), 0);
+    return cart.reduce((total, item) => total + item.totalPrice, 0);
   }, [cart]);
 
   // Update cart state when checkout modal closes
@@ -464,8 +464,8 @@ export default function POSPage() {
     const customerName = params.get('customerName');
     const customerPhone = params.get('customerPhone');
     const customerEmail = params.get('customerEmail');
-    
-    console.log('URL parameters:', { 
+
+    console.log('URL parameters:', {
       deliveryMethod,
       customerName,
       customerPhone,
@@ -494,7 +494,7 @@ export default function POSPage() {
       </div>
     );
   }
-  
+
   // Permission denied overlay for specialized staff
   if (hasGeneralPOSAccess === false) {
     return (
@@ -544,7 +544,7 @@ export default function POSPage() {
   return (
     <div className="min-h-screen bg-white text-black">
       <Header title="Point of Sale" />
-      
+
       {/* Drawer Status Warning */}
       {!isDrawerOpen && !drawerStatusLoading && (
         <div className="bg-amber-100 text-amber-800 p-4 text-center">
@@ -765,7 +765,7 @@ export default function POSPage() {
                         </div>
                       </div>
                     </div>
-                    
+
                     <div className="flex items-center border-t border-gray-100">
                       <div className="flex-1 flex items-center px-4 py-3">
                         <button
@@ -802,7 +802,7 @@ export default function POSPage() {
               <span className="font-medium">Total</span>
               <span className="font-medium">{`AED ${cartTotal.toFixed(2)}`}</span>
             </div>
-            
+
             <button
               disabled={cart.length === 0}
               onClick={() => setIsCheckoutModalOpen(true)}

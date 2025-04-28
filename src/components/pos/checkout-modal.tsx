@@ -20,24 +20,24 @@ async function getPrinterConfig() {
     console.log('Fetching printer config from printer proxy');
     const response = await fetch(`${proxyUrl}/api/printer/config`);
     const data = await response.json();
-    
+
     if (data && data.success && data.printer) {
       console.log('Using printer config from proxy:', data.printer);
-      return { 
+      return {
         ip: data.printer.ipAddress,
         port: data.printer.port,
         skipConnectivityCheck: true
       };
     }
-    
+
     // Fallback to default values
-    return { 
+    return {
       skipConnectivityCheck: true
     };
   } catch (error) {
     console.error('Error fetching printer config:', error);
     // Return default values if there's an error
-    return { 
+    return {
       skipConnectivityCheck: true
     };
   }
@@ -73,7 +73,7 @@ interface CheckoutModalProps {
   payments?: Payment[];
   paymentMethod?: POSPaymentMethod;
   paymentReference?: string;
-  orderName?: string; 
+  orderName?: string;
 }
 
 // Define the CheckoutModal component
@@ -101,8 +101,8 @@ export default function CheckoutModal({
   const [isParkingOrder, setIsParkingOrder] = useState(false);
   const [teamSelection, setTeamSelection] = useState<'KITCHEN' | 'DESIGN' | 'BOTH'>('KITCHEN');
   const [deliveryMethodState, setDeliveryMethodState] = useState<DeliveryMethod>(
-    deliveryMethod && Object.values(DeliveryMethod).includes(deliveryMethod) 
-      ? deliveryMethod 
+    deliveryMethod && Object.values(DeliveryMethod).includes(deliveryMethod)
+      ? deliveryMethod
       : DeliveryMethod.PICKUP
   );
   const [customerDetailsState, setCustomerDetailsState] = useState<CustomerDetails>({
@@ -163,7 +163,7 @@ export default function CheckoutModal({
 
   // Order routing state
   const [selectedRoute, setSelectedRoute] = useState<'KITCHEN' | 'DESIGN' | 'BOTH' | null>(null);
-  
+
   // Payment state
   const [showRemainingPaymentModal, setShowRemainingPaymentModal] = useState(false);
   const [showSplitPaymentModal, setShowSplitPaymentModal] = useState(false);
@@ -173,7 +173,7 @@ export default function CheckoutModal({
   const [isPartialPaymentState, setIsPartialPaymentState] = useState(false);
   const [isSplitPaymentState, setIsSplitPaymentState] = useState(false);
   const [partialPaymentMethod, setPartialPaymentMethod] = useState<POSPaymentMethod>(POSPaymentMethod.CASH);
-  
+
   // Updated split payment state variables
   const [splitMethod1, setSplitMethod1] = useState<POSPaymentMethod>(POSPaymentMethod.CASH);
   const [splitMethod2, setSplitMethod2] = useState<POSPaymentMethod>(POSPaymentMethod.CARD);
@@ -181,7 +181,7 @@ export default function CheckoutModal({
   const [splitAmount2, setSplitAmount2] = useState('');
   const [splitReference1, setSplitReference1] = useState('');
   const [splitReference2, setSplitReference2] = useState('');
-  
+
   // Legacy variables for backward compatibility
   const [splitCashAmount, setSplitCashAmount] = useState('');
   const [splitCardAmount, setSplitCardAmount] = useState('');
@@ -197,28 +197,28 @@ export default function CheckoutModal({
       if (hasPartialPayment) {
         return POSPaymentMethod.PARTIAL;
       }
-      
+
       // Check for split payments
       if (isSplitPaymentState || paymentsState.some(p => p.method === POSPaymentMethod.SPLIT)) {
         return POSPaymentMethod.SPLIT;
       }
-      
+
       // If multiple payment methods are used
       const methods = new Set(paymentsState.map(p => p.method));
       if (methods.size > 1) {
         // Multiple different payment methods used - use SPLIT instead of 'MULTIPLE'
         return POSPaymentMethod.SPLIT;
       }
-      
+
       // Return the payment method of the first payment
       return paymentsState[0].method;
     }
-    
+
     // If split payment is active, always return SPLIT
     if (isSplitPaymentState) {
       return POSPaymentMethod.SPLIT;
     }
-    
+
     // Otherwise use the current payment method
     return currentPaymentMethodState;
   };
@@ -234,7 +234,7 @@ export default function CheckoutModal({
       // and ignore variation price adjustments
       if (item.product.allowCustomPrice) {
         const unitPrice = item.product.basePrice;
-        
+
         const itemData: POSOrderItemData = {
           id: nanoid(),
           productId: item.product.id,
@@ -278,11 +278,11 @@ export default function CheckoutModal({
       } else {
         // Calculate unit price including variations
         const variationPriceAdjustments = (item.selectedVariations || []).reduce(
-          (total, variation) => total + (variation.price || variation.priceAdjustment || 0), 
+          (total, variation) => total + (variation.price || variation.priceAdjustment || 0),
           0
         );
         const unitPrice = item.product.basePrice + variationPriceAdjustments;
-        
+
         const itemData: POSOrderItemData = {
           id: nanoid(),
           productId: item.product.id,
@@ -332,7 +332,7 @@ export default function CheckoutModal({
     const requiresKitchen = hasKitchenProducts;
     const requiresDesign = hasDesignProducts;
     const requiresSequentialProcessing = hasKitchenProducts && hasDesignProducts;
-    
+
     // Default values for routing metadata - the backend will override these based on product categories
     let initialQueue = POSOrderStatus.PENDING;
     let assignedTeam = null;
@@ -349,7 +349,7 @@ export default function CheckoutModal({
         reference: currentPaymentMethodState === POSPaymentMethod.CARD ? currentPaymentReferenceState || null : null,
         status: POSPaymentStatus.FULLY_PAID
       };
-      
+
       // Add specific fields based on payment method
       if (currentPaymentMethodState === POSPaymentMethod.CASH) {
         defaultPayment.cashAmount = totalWithDelivery;
@@ -358,11 +358,11 @@ export default function CheckoutModal({
         defaultPayment.reference = currentPaymentReferenceState || null;
       } else if (currentPaymentMethodState === POSPaymentMethod.SPLIT) {
         defaultPayment.isSplitPayment = true;
-        
+
         // Get the amounts for both payment methods
         const amount1 = parseFloat(splitAmount1) || 0;
         const amount2 = parseFloat(splitAmount2) || 0;
-        
+
         // Store payment method information
         defaultPayment.splitMethod1 = splitMethod1;
         defaultPayment.splitMethod2 = splitMethod2;
@@ -370,14 +370,14 @@ export default function CheckoutModal({
         defaultPayment.splitAmount2 = amount2;
         defaultPayment.splitReference1 = splitReference1 || null;
         defaultPayment.splitReference2 = splitReference2 || null;
-        
+
         // For backward compatibility
         if (splitMethod1 === POSPaymentMethod.CASH || splitMethod2 === POSPaymentMethod.CASH) {
           defaultPayment.cashPortion = splitMethod1 === POSPaymentMethod.CASH ? amount1 : amount2;
         } else {
           defaultPayment.cashPortion = 0;
         }
-        
+
         if (splitMethod1 === POSPaymentMethod.CARD || splitMethod2 === POSPaymentMethod.CARD) {
           defaultPayment.cardPortion = splitMethod1 === POSPaymentMethod.CARD ? amount1 : amount2;
           defaultPayment.cardReference = splitMethod1 === POSPaymentMethod.CARD ? splitReference1 : splitReference2;
@@ -392,14 +392,14 @@ export default function CheckoutModal({
         defaultPayment.remainingAmount = totalWithDelivery / 2;
         defaultPayment.futurePaymentMethod = POSPaymentMethod.CARD
       }
-      
+
       payments = [defaultPayment];
     }
 
     // Check if this is a partial payment order
     const hasPartialPayment = payments.some(p => p.isPartialPayment || p.status === POSPaymentStatus.PARTIALLY_PAID);
     const finalTotal = calculateFinalTotal();
-    
+
     // Calculate the total amount actually being paid (important for partial payments)
     const totalPaidAmount = payments.reduce((sum, payment) => sum + payment.amount, 0);
 
@@ -420,9 +420,9 @@ export default function CheckoutModal({
 
         // Add specific fields based on payment method
         if (p.method === POSPaymentMethod.CASH) {
-          paymentData.cashAmount = typeof p.cashAmount === 'number' ? p.cashAmount : 
+          paymentData.cashAmount = typeof p.cashAmount === 'number' ? p.cashAmount :
             parseFloat(p.cashAmount as unknown as string || p.amount.toString());
-          paymentData.changeAmount = typeof p.changeAmount === 'number' ? p.changeAmount : 
+          paymentData.changeAmount = typeof p.changeAmount === 'number' ? p.changeAmount :
             parseFloat(p.changeAmount as unknown as string || '0');
         } else if (p.method === POSPaymentMethod.SPLIT) {
           paymentData.isSplitPayment = true;
@@ -435,7 +435,7 @@ export default function CheckoutModal({
             const cashAmount = parseFloat(splitCashAmount) || 0;
             paymentData.cashPortion = cashAmount;
           }
-          
+
           if (p.cardPortion !== undefined && p.cardPortion !== null) {
             paymentData.cardPortion = p.cardPortion;
           } else {
@@ -459,7 +459,7 @@ export default function CheckoutModal({
       allowPartialPayment: hasPartialPayment, // Flag to tell backend this order allows partial payment
       // Store the real total for reference
       actualTotal: totalWithDelivery,
-      
+
       // Payment details
       paymentMethod: getApiPaymentMethod(),
       paymentReference: currentPaymentReferenceState || '',
@@ -504,8 +504,8 @@ export default function CheckoutModal({
       giftRecipientName: giftDetailsState?.isGift ? giftDetailsState.recipientName?.trim() || '' : undefined,
       giftRecipientPhone: giftDetailsState?.isGift ? giftDetailsState.recipientPhone?.trim() || '' : undefined,
       giftMessage: giftDetailsState?.isGift ? giftDetailsState.message?.trim() || '' : undefined,
-      giftCashAmount: giftDetailsState?.isGift && giftDetailsState.includeCash ? 
-        Number(giftDetailsState.cashAmount?.trim() || '0') : 
+      giftCashAmount: giftDetailsState?.isGift && giftDetailsState.includeCash ?
+        Number(giftDetailsState.cashAmount?.trim() || '0') :
         undefined,
 
       // Additional metadata for routing
@@ -738,25 +738,25 @@ export default function CheckoutModal({
   const handlePartialPayment = useCallback((amount: number, method: POSPaymentMethod, reference?: string) => {
     // Use the final total that includes delivery charges and discounts
     const finalTotal = calculateFinalTotal();
-    
+
     // Validate that the partial payment amount is greater than 0 and less than the total
     if (amount <= 0) {
       toast.error('Partial payment amount must be greater than 0');
       return;
     }
-    
+
     if (amount >= finalTotal) {
       toast.error('Partial payment amount must be less than the total amount');
       return;
     }
-    
+
     const payment: Payment = {
       id: nanoid(),
       amount,
       method,
-      reference: (method === POSPaymentMethod.CARD || 
-                 method === POSPaymentMethod.BANK_TRANSFER || 
-                 method === POSPaymentMethod.PBL || 
+      reference: (method === POSPaymentMethod.CARD ||
+                 method === POSPaymentMethod.BANK_TRANSFER ||
+                 method === POSPaymentMethod.PBL ||
                  method === POSPaymentMethod.TALABAT) ? reference || null : null,
       status: POSPaymentStatus.PARTIALLY_PAID,
       isPartialPayment: true,
@@ -777,7 +777,7 @@ export default function CheckoutModal({
   const handleCreateOrder = useCallback(async () => {
     try {
       setIsSubmitting(true);
-      
+
       // If current payment method is PARTIAL and amount is entered, add it as a payment first
       if (currentPaymentMethodState === POSPaymentMethod.PARTIAL && currentPaymentAmountState) {
         const amount = parseFloat(currentPaymentAmountState);
@@ -786,25 +786,25 @@ export default function CheckoutModal({
             id: nanoid(),
             amount,
             method: partialPaymentMethod,
-            reference: (partialPaymentMethod === POSPaymentMethod.CARD || 
-                      partialPaymentMethod === POSPaymentMethod.BANK_TRANSFER || 
-                      partialPaymentMethod === POSPaymentMethod.PBL || 
+            reference: (partialPaymentMethod === POSPaymentMethod.CARD ||
+                      partialPaymentMethod === POSPaymentMethod.BANK_TRANSFER ||
+                      partialPaymentMethod === POSPaymentMethod.PBL ||
                       partialPaymentMethod === POSPaymentMethod.TALABAT) ? currentPaymentReferenceState || null : null,
             status: POSPaymentStatus.PARTIALLY_PAID,
             isPartialPayment: true,
             remainingAmount: calculateFinalTotal() - amount,
             futurePaymentMethod: partialPaymentMethod // Use the same payment method for future payment
           };
-          
+
           if (partialPaymentMethod === POSPaymentMethod.CASH) {
             payment.cashAmount = amount;
             payment.changeAmount = 0;
           }
-          
+
           handleAddPayment(payment);
         }
       }
-      
+
       // Process custom images for each cart item
       const processedCart = await Promise.all(
         cart.map(async (item) => {
@@ -812,21 +812,21 @@ export default function CheckoutModal({
             try {
               // Create a temporary order ID for storage path
               const tempOrderId = nanoid();
-              
+
               console.log(`Processing ${item.customImages.length} custom images for item ${item.id}`);
-              
+
               // Add timeout to prevent hanging on image upload
               const uploadPromise = uploadCustomImages(item.customImages, tempOrderId);
               const timeoutPromise = new Promise((_, reject) => {
                 setTimeout(() => reject(new Error('Image upload timed out')), 10000);
               });
-              
+
               // Race between upload and timeout
               const uploadedImages = await Promise.race([uploadPromise, timeoutPromise]) as CustomImage[];
-              
+
               // Log the uploaded images
               console.log('Uploaded images for item:', item.id, uploadedImages.map(img => ({ id: img.id, url: img.url })));
-              
+
               // Return updated cart item with uploaded image URLs
               return {
                 ...item,
@@ -909,13 +909,13 @@ export default function CheckoutModal({
       try {
         // Log all payments for debugging
         console.log('All payments:', JSON.stringify(paymentsState, null, 2));
-        
+
         // Check if any payment involves cash with detailed logging
         // First check the paymentsState array
         let hasCashPayment = paymentsState.some(payment => {
           const isCashMethod = payment.method === POSPaymentMethod.CASH;
           const hasCashPortion = payment.isSplitPayment && payment.cashPortion && payment.cashPortion > 0;
-          
+
           console.log(`Payment ${payment.id}:`, {
             method: payment.method,
             isCashMethod,
@@ -923,15 +923,15 @@ export default function CheckoutModal({
             cashPortion: payment.cashPortion,
             hasCashPortion
           });
-          
+
           return isCashMethod || hasCashPortion;
         });
-        
+
         // If paymentsState is empty, check the current payment method
         if (paymentsState.length === 0) {
           const isCashMethod = currentPaymentMethodState === POSPaymentMethod.CASH;
           const hasCashPortion = currentPaymentMethodState === POSPaymentMethod.SPLIT && parseFloat(splitCashAmount) > 0;
-          
+
           console.log('Current payment method:', {
             method: currentPaymentMethodState,
             isCashMethod,
@@ -939,23 +939,23 @@ export default function CheckoutModal({
             cashPortion: splitCashAmount,
             hasCashPortion
           });
-          
+
           // Update hasCashPayment based on current payment method
           hasCashPayment = isCashMethod || hasCashPortion;
         }
-        
+
         console.log('Has cash payment detected:', hasCashPayment);
-        
+
         // Get the printer proxy URL from environment variables
         const proxyUrl = process.env.NEXT_PUBLIC_PRINTER_PROXY_URL || 'http://localhost:3005';
         console.log('Using printer proxy URL:', proxyUrl);
-        
+
         if (hasCashPayment) {
           console.log('Cash payment detected - printing receipt and opening drawer');
-          
+
           try {
             console.log('Calling cash-order endpoint for receipt printing and drawer opening');
-            
+
             // Create a payment object if paymentsState is empty
             let paymentData = paymentsState;
             if (paymentsState.length === 0 && currentPaymentMethodState) {
@@ -967,7 +967,7 @@ export default function CheckoutModal({
                 reference: currentPaymentMethodState === POSPaymentMethod.CARD ? currentPaymentReferenceState || null : null,
                 status: currentPaymentMethodState === POSPaymentMethod.PAY_LATER ? POSPaymentStatus.PENDING : POSPaymentStatus.FULLY_PAID
               };
-              
+
               if (currentPaymentMethodState === POSPaymentMethod.CASH) {
                 defaultPayment.cashAmount = calculateFinalTotal();
                 defaultPayment.changeAmount = 0;
@@ -977,22 +977,22 @@ export default function CheckoutModal({
                 defaultPayment.cardPortion = parseFloat(splitCardAmount) || 0;
                 defaultPayment.cardReference = splitCardReference || null;
               }
-              
+
               paymentData = [defaultPayment];
               console.log('Created default payment for cash-order:', paymentData);
             }
-            
+
             // Using direct axios call to the cash-order endpoint with timeout and retry logic
             let cashOrderResponse;
             let retryCount = 0;
             const maxRetries = 2;
-            
+
             while (retryCount <= maxRetries) {
               try {
                 console.log(`Attempt ${retryCount + 1} to call cash-order endpoint`);
                 // Get printer configuration from the environment or use default
                 const printerConfig = await getPrinterConfig();
-                
+
                 // Prepare the request data - use the same format as till-management.tsx
                 const requestData = {
                   // Include printer configuration
@@ -1039,9 +1039,9 @@ export default function CheckoutModal({
                   },
                   skipConnectivityCheck: true
                 };
-                
+
                 console.log('Sending cash-order request with data:', JSON.stringify(requestData, null, 2));
-                
+
                 // Use fetch instead of axios to match the till-management implementation
                 const fetchResponse = await fetch(`${proxyUrl}/cash-order`, {
                   method: 'POST',
@@ -1050,21 +1050,21 @@ export default function CheckoutModal({
                   },
                   body: JSON.stringify(requestData)
                 });
-                
+
                 console.log(`Cash order response status:`, fetchResponse.status);
                 const responseData = await fetchResponse.json();
-                
+
                 // Create a response object that matches the axios format for compatibility
                 cashOrderResponse = {
                   status: fetchResponse.status,
                   data: responseData
                 };
-                
+
                 console.log('Cash order response received:', cashOrderResponse.data);
-                
+
                 if (cashOrderResponse.status === 200) {
                   console.log('Cash order request successful');
-                  
+
                   // Record cash transaction in the till
                   try {
                     // Calculate total cash amount from all payments
@@ -1076,13 +1076,13 @@ export default function CheckoutModal({
                       }
                       return total;
                     }, 0);
-                    
+
                     console.log('Recording cash sale in till for amount:', totalCashAmount);
                     const recordResult = await orderDrawerService.recordCashSale(
                       totalCashAmount,
                       response.data?.orderNumber
                     );
-                    
+
                     if (recordResult) {
                       console.log('Successfully recorded cash sale in till');
                     } else {
@@ -1091,7 +1091,7 @@ export default function CheckoutModal({
                   } catch (recordError) {
                     console.error('Error recording cash sale in till:', recordError);
                   }
-                  
+
                   break; // Success, exit the retry loop
                 } else {
                   console.warn('Cash order request unsuccessful:', cashOrderResponse.data?.message || 'Unknown error');
@@ -1100,14 +1100,14 @@ export default function CheckoutModal({
               } catch (retryError) {
                 console.error(`Attempt ${retryCount + 1} failed:`, retryError.message);
                 retryCount++;
-                
+
                 if (retryCount <= maxRetries) {
                   console.log(`Retrying in 1 second... (${retryCount}/${maxRetries})`);
                   await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second before retry
                 }
               }
             }
-            
+
             if (!cashOrderResponse || cashOrderResponse.status !== 200) {
               console.warn('All cash order attempts failed');
               toast.warning('Could not open cash drawer or print receipt. Please check printer connection.');
@@ -1118,14 +1118,14 @@ export default function CheckoutModal({
           }
         } else {
           console.log('Card payment detected - printing receipt only');
-          
+
           try {
             // For card payments - call the print-order endpoint directly
             console.log('Calling print-order endpoint for receipt printing');
-            
+
             // Get printer configuration
             const printerConfig = await getPrinterConfig();
-            
+
             // Prepare the request data - use the same format as till-management.tsx
             const requestData = {
               // Include printer configuration
@@ -1174,9 +1174,9 @@ export default function CheckoutModal({
               },
               skipConnectivityCheck: true
             };
-            
+
             console.log('Sending print-order request with data:', JSON.stringify(requestData, null, 2));
-            
+
             // Use fetch instead of axios to match the till-management implementation
             const fetchResponse = await fetch(`${proxyUrl}/print-order`, {
               method: 'POST',
@@ -1185,10 +1185,10 @@ export default function CheckoutModal({
               },
               body: JSON.stringify(requestData)
             });
-            
+
             console.log(`Print order response status:`, fetchResponse.status);
             const responseData = await fetchResponse.json();
-            
+
             if (fetchResponse.status !== 200) {
               console.warn('Print order request unsuccessful:', responseData?.message || 'Unknown error');
               toast.warning('Could not print receipt. Please check printer connection.');
@@ -1249,7 +1249,7 @@ export default function CheckoutModal({
       setSplitAmount2('');
       setSplitReference1('');
       setSplitReference2('');
-      
+
       // Reset legacy variables
       setSplitCashAmount('');
       setSplitCardAmount('');
@@ -1306,12 +1306,12 @@ export default function CheckoutModal({
     if (!cartItems || !Array.isArray(cartItems) || cartItems.length === 0) {
       return cartItems;
     }
-    
+
     console.log('Ensuring custom images have valid URLs before parking order...');
-    
+
     // Create a temporary order ID for storage path
     const tempOrderId = nanoid();
-    
+
     // Process each cart item
     const processedItems = await Promise.all(
       cartItems.map(async (item) => {
@@ -1319,15 +1319,15 @@ export default function CheckoutModal({
         if (!item.customImages || !Array.isArray(item.customImages) || item.customImages.length === 0) {
           return item;
         }
-        
+
         try {
           console.log(`Processing ${item.customImages.length} custom images for item ${item.id}`);
-          
+
           // Upload images to Firebase Storage
           const uploadedImages = await uploadCustomImages(item.customImages, tempOrderId);
-          
+
           console.log('Uploaded images:', uploadedImages.map(img => ({ id: img.id, url: img.url })));
-          
+
           // Return updated item with uploaded image URLs
           return {
             ...item,
@@ -1343,20 +1343,20 @@ export default function CheckoutModal({
         }
       })
     );
-    
+
     return processedItems;
   };
-  
+
   // Handle park order
   const handleParkOrder = useCallback(async () => {
     try {
       setIsParkingOrder(true);
-      
+
       // Validate customer details at minimum
       if (!customerDetailsState.name) {
         throw new Error('Customer name is required');
       }
-      
+
       // Format dates to ISO DateTime strings
       const formatDateToISOString = (dateStr) => {
         if (!dateStr) return null;
@@ -1366,7 +1366,7 @@ export default function CheckoutModal({
             console.error('Invalid date format:', dateStr);
             return null;
           }
-          
+
           // Convert YYYY-MM-DD to YYYY-MM-DDT00:00:00Z
           const date = new Date(`${dateStr}T00:00:00Z`);
           if (isNaN(date.getTime())) {
@@ -1379,17 +1379,17 @@ export default function CheckoutModal({
           return null;
         }
       };
-      
+
       // Process cart items to ensure all custom images have valid Firebase Storage URLs
       const processedCart = await ensureCustomImagesHaveUrls(cart);
-      
+
       // Prepare parked order data
       const parkedOrderData: ParkedOrderData = {
         name: orderName || `Order for ${customerDetailsState.name}`,
         customerName: customerDetailsState.name,
         customerPhone: customerDetailsState.phone,
         customerEmail: customerDetailsState.email,
-        
+
         // Order items with processed custom images
         items: processedCart.map(item => ({
           productId: item.product.id,
@@ -1405,9 +1405,9 @@ export default function CheckoutModal({
           sku: item.product.sku,
           categoryId: item.product.categoryId
         })),
-        
+
         totalAmount: cartTotal,
-        
+
         // Delivery information
         deliveryMethod: deliveryMethodState,
 
@@ -1422,13 +1422,13 @@ export default function CheckoutModal({
           emirate: deliveryDetailsState?.emirate,
           city: deliveryDetailsState?.city
         }),
-        
+
         // Pickup details if applicable
         ...(deliveryMethodState === DeliveryMethod.PICKUP && {
           pickupDate: pickupDetailsState?.date ? formatDateToISOString(pickupDetailsState.date) : null,
           pickupTimeSlot: pickupDetailsState?.timeSlot
         }),
-        
+
         // Gift details if applicable
         ...(giftDetailsState?.isGift && {
           isGift: giftDetailsState.isGift,
@@ -1438,41 +1438,41 @@ export default function CheckoutModal({
           giftCashAmount: giftDetailsState.cashAmount ? parseFloat(giftDetailsState.cashAmount) : 0,
           includeCash: giftDetailsState.includeCash || false
         }),
-        
+
         notes: orderNotes
       };
-      
+
       console.log('Parking order:', parkedOrderData);
-      
+
       try {
         // Call the API to park the order
         const response = await apiMethods.pos.parkOrder(parkedOrderData);
-        
+
         console.log('Park order response:', response);
-        
+
         if (!response.success) {
           console.error('API returned error:', response);
           throw new Error(response.message || 'Failed to park order');
         }
-        
+
         // Show success message
         toast.success('Order parked successfully');
-        
+
         // Reset cart and state
         setCart([]);
-        
+
         // Force close the modal directly
         onClose();
       } catch (error) {
         console.error('Error parking order:', error);
-        
+
         let errorMessage = 'Failed to park order';
         if (error instanceof Error) {
           errorMessage = error.message;
         } else if (typeof error === 'object' && error !== null) {
           errorMessage = JSON.stringify(error);
         }
-        
+
         toast.error(errorMessage);
         throw error; // Re-throw to be caught by the outer catch block
       }
@@ -1511,10 +1511,10 @@ export default function CheckoutModal({
     }
 
     // For card payments and other payment methods that require references, ensure reference is provided
-    if ((currentPaymentMethodState === POSPaymentMethod.CARD || 
-         currentPaymentMethodState === POSPaymentMethod.BANK_TRANSFER || 
-         currentPaymentMethodState === POSPaymentMethod.PBL || 
-         currentPaymentMethodState === POSPaymentMethod.TALABAT) && 
+    if ((currentPaymentMethodState === POSPaymentMethod.CARD ||
+         currentPaymentMethodState === POSPaymentMethod.BANK_TRANSFER ||
+         currentPaymentMethodState === POSPaymentMethod.PBL ||
+         currentPaymentMethodState === POSPaymentMethod.TALABAT) &&
         !currentPaymentReferenceState.trim()) {
       toast.error('Please enter a payment reference');
       return;
@@ -1570,7 +1570,7 @@ export default function CheckoutModal({
   const getTimeSlots = (emirate: string, forDate?: string) => {
     // Generate time slots based on delivery method
     let defaultSlots = [];
-    
+
     // For pickup: 30-minute intervals from 9 AM to 9 PM
     if (deliveryMethodState === DeliveryMethod.PICKUP) {
       defaultSlots = [
@@ -1600,7 +1600,7 @@ export default function CheckoutModal({
         "8:30 PM",
         "9:00 PM"
       ];
-    } 
+    }
     // For delivery: 1-hour intervals from 9 AM to 9 PM
     else {
       defaultSlots = [
@@ -1619,7 +1619,7 @@ export default function CheckoutModal({
         "9:00 PM"
       ];
     }
-    
+
     // Return all time slots without any buffer restriction
     return defaultSlots;
   };
@@ -1630,14 +1630,14 @@ export default function CheckoutModal({
   const getMaxDate = () => {
     return null; // No maximum date restriction
   };
-  
+
   // Function to handle date selection for pickup
   const handlePickupDateSelect = (date: Date | undefined) => {
     if (date) {
       // Log the selected date for debugging
       console.log('Pickup date selected:', date);
       console.log('Formatted date:', dateToISOString(date));
-      
+
       setPickupDetailsState(prev => ({
         ...prev,
         date: dateToISOString(date),
@@ -1645,14 +1645,14 @@ export default function CheckoutModal({
       }));
     }
   };
-  
+
   // Function to handle date selection for delivery
   const handleDeliveryDateSelect = (date: Date | undefined) => {
     if (date) {
       // Log the selected date for debugging
       console.log('Delivery date selected:', date);
       console.log('Formatted date:', dateToISOString(date));
-      
+
       setDeliveryDetailsState(prev => ({
         ...prev,
         date: dateToISOString(date)
@@ -1676,35 +1676,35 @@ export default function CheckoutModal({
   const handleEmirateChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const selectedEmirate = e.target.value;
     const defaultCharge = calculateDeliveryCharge(selectedEmirate);
-    
+
     setDeliveryDetailsState(prevState => ({
-      ...prevState, 
+      ...prevState,
       emirate: selectedEmirate,
       // Reset time slot when emirate changes
       timeSlot: "",
       // Set delivery charge based on emirate
       charge: defaultCharge
     }));
-    
+
     console.log(`Updated emirate to ${selectedEmirate} with default charge: ${defaultCharge}`);
   };
 
   const handleApplyCoupon = async () => {
     if (!couponCode) return;
-    
+
     setIsValidatingCoupon(true);
     setCouponError('');
-    
+
     try {
       const response = await apiMethods.pos.validateCoupon(couponCode, cartTotal);
       console.log('Coupon Response:', response);
-      
+
       if (!response.data || !response.data.code) {
         setCouponError('Invalid coupon code');
         setAppliedCoupon(null);
         return;
       }
-      
+
       // Parse numeric values and validate
       const parsedValue = parseFloat(String(response.data.value));
       if (isNaN(parsedValue) || parsedValue <= 0) {
@@ -1781,7 +1781,7 @@ export default function CheckoutModal({
 
       console.log('Sending customer data to API:', customerData);
       const response = await apiMethods.pos.createOrUpdateCustomer(customerData);
-      
+
       // The API response structure is { success: boolean, data: { customer: {...}, credentials?: {...} } }
       if (response.success && response.data?.customer) {
         console.log('Customer created/updated successfully:', response.data.customer);
@@ -1800,7 +1800,7 @@ export default function CheckoutModal({
     try {
       setIsSearching(true);
       setSearchResults([]);
-      
+
       const response = await apiMethods.pos.searchCustomers(searchTerm);
       if (response.data) {
         const customers: Customer[] = response.data.map(customer => ({
@@ -1848,7 +1848,7 @@ export default function CheckoutModal({
       setSearchResults([]);
       setShowSearchResults(false);
     }
-    
+
     // Cleanup function to cancel any pending debounced calls
     return () => {
       debouncedSearch.cancel();
@@ -1897,12 +1897,12 @@ export default function CheckoutModal({
         customerPhone: customer.phone,
         customerEmail: customer.email,
       };
-      
+
       const response = await apiMethods.pos.createOrUpdateCustomer(customerData);
       if (response.data && response.data.customer) {
         // Extract customer data from the response
         const customerResponse = response.data.customer;
-        
+
         // Map the API response to the Customer type
         const newCustomer: Customer = {
           id: customerResponse.id,
@@ -1913,7 +1913,7 @@ export default function CheckoutModal({
           addresses: customerResponse.addresses || [],
           reward: customerResponse.reward || { points: 0 }
         };
-        
+
         handleCustomerSelect(newCustomer);
         toast.success('Customer created successfully!');
       }
@@ -1938,19 +1938,19 @@ export default function CheckoutModal({
     if (method === POSPaymentMethod.SPLIT) {
       setIsSplitPaymentState(true);
       setCurrentPaymentMethodState(method);
-      
+
       // Initialize the split payment methods if they haven't been set yet
       if (!splitAmount1 && !splitAmount2) {
         // Set default payment methods
         setSplitMethod1(POSPaymentMethod.CASH);
         setSplitMethod2(POSPaymentMethod.CARD);
-        
+
         // Don't set default amounts - let the user enter them
         setSplitAmount1('');
         setSplitAmount2('');
         setSplitReference1('');
         setSplitReference2('');
-        
+
         // Update legacy variables for backward compatibility
         setSplitCashAmount('');
         setSplitCardAmount('');
@@ -1969,23 +1969,23 @@ export default function CheckoutModal({
 
   function handleSplitPayment(event: React.MouseEvent<HTMLButtonElement>): void {
     event.preventDefault();
-    
+
     // Parse the cash and card amounts
     const cashAmount = parseFloat(splitCashAmount) || 0;
     const cardAmount = parseFloat(splitCardAmount) || 0;
-    
+
     // Validate that the total matches the cart total
     const totalSplitAmount = cashAmount + cardAmount;
-    const expectedTotal = deliveryMethodState === DeliveryMethod.DELIVERY 
-      ? cartTotal + (deliveryDetailsState?.charge || 0) 
+    const expectedTotal = deliveryMethodState === DeliveryMethod.DELIVERY
+      ? cartTotal + (deliveryDetailsState?.charge || 0)
       : cartTotal;
-    
+
     // Check if the total split amount matches the expected total
     if (Math.abs(totalSplitAmount - expectedTotal) > 0.01) {
       toast.error(`The total split amount (${totalSplitAmount.toFixed(2)}) must match the order total (${expectedTotal.toFixed(2)})`);
       return;
     }
-    
+
     // Create a split payment
     const payment: Payment = {
       id: nanoid(),
@@ -1998,15 +1998,15 @@ export default function CheckoutModal({
       cardPortion: cardAmount,
       cardReference: splitCardReference || null
     };
-    
+
     // Add the payment to the state
     handleAddPayment(payment);
-    
+
     // Reset the split payment form
     setSplitCashAmount('');
     setSplitCardAmount('');
     setSplitCardReference('');
-    
+
     // Show success message
     toast.success('Split payment applied successfully');
   }
@@ -2016,24 +2016,24 @@ export default function CheckoutModal({
     return images.map(image => {
       // Generate ID if missing
       const withId = !image.id ? { ...image, id: nanoid() } : image;
-      
+
       // Handle Firebase Storage URLs
       if (withId.url && withId.url.includes('firebasestorage.googleapis.com')) {
         console.log('Processing Firebase Storage URL:', withId.url);
         // Use our proxy API for Firebase Storage URLs
-        return { 
-          ...withId, 
+        return {
+          ...withId,
           url: `/api/proxy/image?url=${encodeURIComponent(withId.url)}`,
           originalUrl: withId.url // Keep the original URL for reference
         };
       }
-      
+
       // Handle blob URLs - they need special treatment
       if (withId.url && withId.url.startsWith('blob:')) {
         console.log('Found blob URL, replacing with placeholder:', withId.url);
         return { ...withId, url: '/placeholder.jpg', isBlobUrl: true };
       }
-      
+
       return withId;
     });
   };
@@ -2047,7 +2047,7 @@ export default function CheckoutModal({
       pickupDetails,
       giftDetails
     });
-    
+
     // Update customer details
     if (customerDetails) {
       setCustomerDetailsState({
@@ -2056,12 +2056,12 @@ export default function CheckoutModal({
         phone: customerDetails.phone || '',
       });
     }
-    
+
     // Update delivery method
     if (deliveryMethod) {
       setDeliveryMethodState(deliveryMethod);
     }
-    
+
     // Update delivery details
     if (deliveryDetails) {
       setDeliveryDetailsState({
@@ -2075,7 +2075,7 @@ export default function CheckoutModal({
         charge: deliveryDetails.charge || 0,
       });
     }
-    
+
     // Update pickup details
     if (pickupDetails) {
       setPickupDetailsState({
@@ -2083,7 +2083,7 @@ export default function CheckoutModal({
         timeSlot: pickupDetails.timeSlot || '',
       });
     }
-    
+
     // Update gift details
     if (giftDetails) {
       setGiftDetailsState({
@@ -2096,7 +2096,7 @@ export default function CheckoutModal({
         includeCash: giftDetails.includeCash || false
       });
     }
-    
+
     // Update order name
     if (orderName) {
       setOrderNameState(orderName);
@@ -2218,7 +2218,7 @@ export default function CheckoutModal({
 
                             {/* Search Results Dropdown */}
                             {showSearchResults && (
-                              <div 
+                              <div
                                 id="customer-search-results"
                                 role="listbox"
                                 className="absolute z-10 w-full mt-1 bg-white rounded-md shadow-lg border border-gray-200"
@@ -2235,7 +2235,7 @@ export default function CheckoutModal({
                                         ...customer,
                                         addresses: [] // Always provide an empty array for addresses
                                       };
-                                      
+
                                       return (
                                         <li
                                           key={customerWithAddresses.id}
@@ -2487,10 +2487,10 @@ export default function CheckoutModal({
                               <span className="text-lg font-medium text-gray-900">Send as a Gift</span>
                             </div>
                             <div className={`w-14 h-8 relative rounded-full transition-colors ${isGiftState ? 'bg-blue-600' : 'bg-gray-200'}`}>
-                              <div 
+                              <div
                                 className={`absolute top-1 w-6 h-6 bg-white rounded-full shadow transition-transform transform ${
                                   isGiftState ? 'translate-x-7' : 'translate-x-1'
-                                }`} 
+                                }`}
                               />
                             </div>
                           </button>
@@ -2531,7 +2531,7 @@ export default function CheckoutModal({
                                       type="number"
                                       value={giftDetailsState.cashAmount || ''}
                                       onChange={(e) => setGiftDetailsState(prev => ({
-                                        ...prev, 
+                                        ...prev,
                                         cashAmount: e.target.value,
                                         includeCash: e.target.value !== ''
                                       }))}
@@ -2547,9 +2547,9 @@ export default function CheckoutModal({
                           )}
                         </div>
 
-                       
 
-                        
+
+
                       </div>
 
                       {/* Right Side - Order Summary */}
@@ -2564,9 +2564,9 @@ export default function CheckoutModal({
                                 console.error(`Invalid cart item at index ${index}:`, item);
                                 return null;
                               }
-                              
+
                               // Ensure selectedVariations is an array
-                              const selectedVariations = Array.isArray(item.selectedVariations) 
+                              const selectedVariations = Array.isArray(item.selectedVariations)
                                 ? item.selectedVariations.map(v => {
                                     if (typeof v === 'object' && v !== null) {
                                        return {
@@ -2588,13 +2588,13 @@ export default function CheckoutModal({
                                 : [];
 
                               // Ensure customImages is an array
-                              const customImages = Array.isArray(item.customImages) 
+                              const customImages = Array.isArray(item.customImages)
                                 ? item.customImages
                                 : [];
-                               
+
                               console.log(`Item ${index} allowCustomImages:`, item.product?.allowCustomImages);
                               console.log(`Item ${index} customImages:`, customImages);
-                               
+
                               return (
                                 <div
                                   key={item.id || `item-${index}`}
@@ -2610,17 +2610,17 @@ export default function CheckoutModal({
                                         <p className="text-sm font-medium text-blue-700 mb-1">Selected Options:</p>
                                         {selectedVariations.map((variation, i) => {
                                           // Ensure variation has the correct structure
-                                          const type = typeof variation === 'object' && variation !== null 
+                                          const type = typeof variation === 'object' && variation !== null
                                             ? (variation.type || variation.id || '').toString()
                                             : '';
-                                          const value = typeof variation === 'object' && variation !== null 
+                                          const value = typeof variation === 'object' && variation !== null
                                             ? (variation.value || variation.id || '').toString()
                                             : '';
                                           // Handle price property for variations
-                                          const priceAdjustment = typeof variation === 'object' && variation !== null 
+                                          const priceAdjustment = typeof variation === 'object' && variation !== null
                                             ? Number((variation as any).price || 0)
                                             : 0;
-                                          
+
                                           return (
                                             <p
                                               key={`${item.id}-var-${i}`}
@@ -2675,7 +2675,7 @@ export default function CheckoutModal({
                                     </div>
                                   </div>
                                   <p className="text-lg font-medium ml-4">
-                                    AED {(item.product.basePrice * item.quantity).toFixed(2)}
+                                    AED {item.totalPrice.toFixed(2)}
                                   </p>
                                 </div>
                               );
@@ -2687,13 +2687,13 @@ export default function CheckoutModal({
                               <p className="text-xl">Subtotal</p>
                               <p className="text-xl">AED {cartTotal.toFixed(2)}</p>
                             </div>
-                            
+
                             {appliedCoupon && (
                               <div className="flex justify-between items-center font-medium">
                                 <div className="flex items-center">
                                   <p className="text-xl text-green-600">
                                     Discount ({appliedCoupon.code})
-                                    {appliedCoupon.type === 'PERCENTAGE' 
+                                    {appliedCoupon.type === 'PERCENTAGE'
                                       ? ` (${appliedCoupon.value}%)`
                                       : `AED ${appliedCoupon.value} off`
                                     }
@@ -2711,7 +2711,7 @@ export default function CheckoutModal({
                                 <p className="text-xl text-green-600">-AED {appliedCoupon.discount.toFixed(2)}</p>
                               </div>
                             )}
-                            
+
                             {deliveryMethodState === DeliveryMethod.DELIVERY && deliveryDetailsState?.emirate && (
                               <div className="flex justify-between items-center font-medium">
                                 <p className="text-xl">Delivery Charge ({deliveryDetailsState.emirate.replace('_', ' ')})</p>
@@ -2795,7 +2795,7 @@ export default function CheckoutModal({
                                   Partial
                                 </button>
                               </div>
-                              
+
                               {/* New Payment Methods Row */}
                               <div className="flex space-x-3 mt-3">
                                 <button
@@ -2843,7 +2843,7 @@ export default function CheckoutModal({
                                   Cash on Delivery
                                 </button>
                               </div>
-                              
+
                               {/* Pay Later Row */}
                               <div className="flex mt-3">
                                 <button
@@ -2860,9 +2860,9 @@ export default function CheckoutModal({
                               </div>
 
                               {/* Card Payment Reference Field */}
-                              {(currentPaymentMethodState === POSPaymentMethod.CARD || 
-                                currentPaymentMethodState === POSPaymentMethod.BANK_TRANSFER || 
-                                currentPaymentMethodState === POSPaymentMethod.PBL || 
+                              {(currentPaymentMethodState === POSPaymentMethod.CARD ||
+                                currentPaymentMethodState === POSPaymentMethod.BANK_TRANSFER ||
+                                currentPaymentMethodState === POSPaymentMethod.PBL ||
                                 currentPaymentMethodState === POSPaymentMethod.TALABAT) && (
                                 <div className="mt-6">
                                   <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -2914,11 +2914,11 @@ export default function CheckoutModal({
                                       />
                                     </div>
                                   </div>
-                                  
+
                                   {/* First Payment Reference (if needed) */}
-                                  {(splitMethod1 === POSPaymentMethod.CARD || 
-                                    splitMethod1 === POSPaymentMethod.BANK_TRANSFER || 
-                                    splitMethod1 === POSPaymentMethod.PBL || 
+                                  {(splitMethod1 === POSPaymentMethod.CARD ||
+                                    splitMethod1 === POSPaymentMethod.BANK_TRANSFER ||
+                                    splitMethod1 === POSPaymentMethod.PBL ||
                                     splitMethod1 === POSPaymentMethod.TALABAT) && (
                                     <div>
                                       <label className="block text-sm font-medium text-gray-700 mb-2">Reference</label>
@@ -2937,7 +2937,7 @@ export default function CheckoutModal({
                                       />
                                     </div>
                                   )}
-                                  
+
                                   <div className="border-t pt-6">
                                     <label className="block text-sm font-medium text-gray-700 mb-2">Second Payment</label>
                                     <div className="grid grid-cols-2 gap-4">
@@ -2948,9 +2948,9 @@ export default function CheckoutModal({
                                       >
                                         {/* Filter out the first payment method from options */}
                                         {Object.values(POSPaymentMethod)
-                                          .filter(method => 
-                                            method !== splitMethod1 && 
-                                            method !== POSPaymentMethod.PARTIAL && 
+                                          .filter(method =>
+                                            method !== splitMethod1 &&
+                                            method !== POSPaymentMethod.PARTIAL &&
                                             method !== POSPaymentMethod.SPLIT
                                           )
                                           .map(method => (
@@ -2982,11 +2982,11 @@ export default function CheckoutModal({
                                       />
                                     </div>
                                   </div>
-                                  
+
                                   {/* Second Payment Reference (if needed) */}
-                                  {(splitMethod2 === POSPaymentMethod.CARD || 
-                                    splitMethod2 === POSPaymentMethod.BANK_TRANSFER || 
-                                    splitMethod2 === POSPaymentMethod.PBL || 
+                                  {(splitMethod2 === POSPaymentMethod.CARD ||
+                                    splitMethod2 === POSPaymentMethod.BANK_TRANSFER ||
+                                    splitMethod2 === POSPaymentMethod.PBL ||
                                     splitMethod2 === POSPaymentMethod.TALABAT) && (
                                     <div>
                                       <label className="block text-sm font-medium text-gray-700 mb-2">Reference</label>
@@ -3005,7 +3005,7 @@ export default function CheckoutModal({
                                       />
                                     </div>
                                   )}
-                                  
+
                                   {/* Payment Summary */}
                                   <div className="bg-gray-50 p-4 rounded-xl">
                                     <div className="text-sm font-medium text-gray-900">
@@ -3112,9 +3112,9 @@ export default function CheckoutModal({
                                       </button>
                                     </div>
                                   </div>
-                                  {(partialPaymentMethod === POSPaymentMethod.CARD || 
-                                    partialPaymentMethod === POSPaymentMethod.BANK_TRANSFER || 
-                                    partialPaymentMethod === POSPaymentMethod.PBL || 
+                                  {(partialPaymentMethod === POSPaymentMethod.CARD ||
+                                    partialPaymentMethod === POSPaymentMethod.BANK_TRANSFER ||
+                                    partialPaymentMethod === POSPaymentMethod.PBL ||
                                     partialPaymentMethod === POSPaymentMethod.TALABAT) && (
                                     <div>
                                       <label className="block text-sm font-medium text-gray-700 mb-2">Payment Reference</label>
@@ -3175,7 +3175,7 @@ export default function CheckoutModal({
                                   <div>
                                     <p className="text-green-700 font-medium">{appliedCoupon.code}</p>
                                     <p className="text-green-600 text-sm">
-                                      {appliedCoupon.type === 'PERCENTAGE' 
+                                      {appliedCoupon.type === 'PERCENTAGE'
                                         ? `${appliedCoupon.value}% off`
                                         : `AED ${appliedCoupon.value} off`
                                       }
