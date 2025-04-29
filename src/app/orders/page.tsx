@@ -440,17 +440,15 @@ const OrdersPage = () => {
         return;
       }
 
-      const response = await apiMethods.pos.updateOrderStatus(orderId, {
-        status: 'CANCELLED',
-        notes: 'Order cancelled by Super Admin'
-      });
+      console.log('Cancelling order:', orderId);
+      const success = await apiMethods.pos.cancelOrder(orderId);
 
-      if (response.success) {
+      if (success) {
         toast.success('Order cancelled successfully');
         setShowCancelConfirm(null);
         fetchOrders(); // Refresh orders list
       } else {
-        throw new Error(response.message || 'Failed to cancel order');
+        throw new Error('Failed to cancel order');
       }
     } catch (error: any) {
       console.error('Error cancelling order:', error);
