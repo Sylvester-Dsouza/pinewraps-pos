@@ -227,6 +227,7 @@ export default function RemainingPaymentModal({
       }
 
       setIsSubmitting(true);
+      console.log(`Processing payment for order ${orderId}, remaining amount: ${remainingAmount}`);
 
       // Create the payment data
       let payment;
@@ -259,20 +260,33 @@ export default function RemainingPaymentModal({
           }
         };
       } else {
+        // For Pay Later, ensure we set the correct status
+        const paymentStatus = paymentMethod === POSPaymentMethod.PAY_LATER ? 
+          POSPaymentStatus.PENDING : POSPaymentStatus.FULLY_PAID;
+          
+        console.log(`Payment method: ${paymentMethod}, status: ${paymentStatus}`);
+        
+        // If this is a payment for a pending order, add a flag to indicate this
+        const isPayingPendingOrder = paymentMethod !== POSPaymentMethod.PAY_LATER;
+        
         payment = {
           id: nanoid(),
           amount: remainingAmount,
           method: paymentMethod,
           reference: paymentReference || null,
-          status: paymentMethod === POSPaymentMethod.PAY_LATER ? POSPaymentStatus.PENDING : POSPaymentStatus.FULLY_PAID,
+          status: paymentStatus,
           metadata: {
-            source: "POS" as const
+            source: "POS" as const,
+            isPendingPayment: paymentMethod === POSPaymentMethod.PAY_LATER,
+            isPayingPendingOrder: isPayingPendingOrder
           }
         };
       }
 
       // Update the order with the new payment
+      console.log('Sending payment data:', payment);
       const response = await apiMethods.pos.updateOrderPayment(orderId, payment);
+      console.log('Payment response:', response);
       
       // If it's a cash payment or has a cash portion, print receipt and open drawer
       if ((paymentMethod === POSPaymentMethod.CASH || 
@@ -292,7 +306,9 @@ export default function RemainingPaymentModal({
       onClose();
     } catch (error: any) {
       console.error("Payment error:", error);
-      toast.error(error.response?.data?.message || "Failed to process payment");
+      const errorMessage = error.response?.data?.message || "Failed to process payment";
+      console.error("Error details:", errorMessage);
+      toast.error(errorMessage);
     } finally {
       setIsSubmitting(false);
     }

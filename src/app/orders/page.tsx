@@ -561,9 +561,43 @@ const OrdersPage = () => {
   };
   
   const hasPendingPayment = (order: Order) => {
-    return order.payments?.some(p => p.status === POSPaymentStatus.PENDING) || 
-           order.payments?.some(p => p.method === POSPaymentMethod.PAY_LATER) ||
-           order.status === 'PENDING_PAYMENT';
+    // Check if there are any pending payments
+    const hasPendingPaymentStatus = order.payments?.some(p => p.status === POSPaymentStatus.PENDING);
+    
+    // Check if there are any pay later payments that are still pending
+    const hasPayLaterPending = order.payments?.some(p => 
+      p.method === POSPaymentMethod.PAY_LATER && p.status === POSPaymentStatus.PENDING
+    );
+    
+    // Check if the order status indicates pending payment
+    const hasPendingPaymentStatus2 = order.status === 'PENDING_PAYMENT';
+    
+    // Calculate total paid amount
+    const totalPaid = order.payments?.reduce((sum, payment) => {
+      // Only count fully paid payments
+      if (payment.status === POSPaymentStatus.FULLY_PAID) {
+        return sum + payment.amount;
+      }
+      return sum;
+    }, 0) || 0;
+    
+    // Check if the total paid amount is less than the order total
+    const hasRemainingBalance = Math.abs(totalPaid - order.totalAmount) > 0.01;
+    
+    console.log(`Order ${order.orderNumber} payment check:`, {
+      hasPendingPaymentStatus,
+      hasPayLaterPending,
+      hasPendingPaymentStatus2,
+      totalPaid,
+      orderTotal: order.totalAmount,
+      hasRemainingBalance
+    });
+    
+    // An order has pending payment if it has a pending payment status OR
+    // it has a pay later payment that is still pending OR
+    // it has a pending payment status in the order status AND
+    // it has a remaining balance to be paid
+    return (hasPendingPaymentStatus || hasPayLaterPending || hasPendingPaymentStatus2) && hasRemainingBalance;
   };
 
   const isFullyPaid = (order: Order) => {
