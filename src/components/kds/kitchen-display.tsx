@@ -670,6 +670,7 @@ export default function KitchenDisplay({ staffRoles, router: externalRouter }: K
         ...(teamNotes !== undefined ? { teamNotes } : {}),
         parallelProcessing: {
           kitchenStatus: kitchenStatus
+          // Deliberately not including designStatus to ensure it remains unchanged
         }
       });
 

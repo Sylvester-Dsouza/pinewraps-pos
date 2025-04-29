@@ -532,12 +532,23 @@ export default function DesignDisplay({ staffRoles, router: externalRouter }: De
         return;
       }
 
-      const payload = {
+      // Create an optimistically updated order object for the UI
+      // This only updates the design status in the UI without affecting kitchen status
+      const updatedOrder = { 
+        ...order,
+        designNotes: teamNotes || order.designNotes,
         parallelProcessing: {
-          designStatus: designStatus,
-          teamNotes: teamNotes || ""
-        }
+          ...order.parallelProcessing,
+          designStatus: designStatus
+        },
+        // For UI display purposes only - doesn't affect the actual order status
+        status: designStatus
       };
+      
+      // Update the UI immediately for a responsive experience
+      setOrders(prevOrders => {
+        return prevOrders.map(o => o.id === orderId ? updatedOrder : o);
+      });
       
       // Create a custom payload for parallel processing
       // Pass the parallelProcessing object directly to the API
@@ -546,6 +557,7 @@ export default function DesignDisplay({ staffRoles, router: externalRouter }: De
         teamNotes: teamNotes || "",
         parallelProcessing: {
           designStatus: designStatus
+          // Deliberately not including kitchenStatus to ensure it remains unchanged
         }
       });
 
