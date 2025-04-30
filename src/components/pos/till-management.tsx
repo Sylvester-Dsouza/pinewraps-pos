@@ -720,7 +720,7 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
                         while (!drawerOpened && retryCount <= maxRetries) {
                           try {
                             if (retryCount > 0) {
-                              console.log(`Retry attempt ${retryCount} to open drawer for Pay Out...`);
+                              console.log(`Retry attempt ${retryCount} to open drawer for Pay Out....`);
                             }
                             
                             const response = await fetch(`${PRINTER_PROXY_URL}/open-drawer`, {

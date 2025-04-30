@@ -1045,27 +1045,87 @@ export default function CheckoutModal({
 
                 console.log('Sending cash-order request with data:', JSON.stringify(requestData, null, 2));
 
-                // Use fetch instead of axios to match the till-management implementation
-                const fetchResponse = await fetch(`${proxyUrl}/cash-order`, {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json'
-                  },
-                  body: JSON.stringify(requestData)
-                });
-
-                console.log(`Cash order response status:`, fetchResponse.status);
-                const responseData = await fetchResponse.json();
+                // Use fetch with retry logic for better reliability
+                let fetchResponse;
+                let responseData;
+                let retryAttempt = 0;
+                const maxRetries = 2; // Try up to 3 times (initial + 2 retries)
+                let success = false;
+                
+                while (!success && retryAttempt <= maxRetries) {
+                  try {
+                    if (retryAttempt > 0) {
+                      console.log(`Retry attempt ${retryAttempt} for cash-order request...`);
+                    }
+                    
+                    fetchResponse = await fetch(`${proxyUrl}/cash-order`, {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json'
+                      },
+                      body: JSON.stringify(requestData)
+                    });
+                    
+                    console.log(`Cash order response status:`, fetchResponse.status);
+                    responseData = await fetchResponse.json();
+                    console.log(`Cash order response data:`, responseData);
+                    
+                    if (fetchResponse.status === 200 && responseData.success) {
+                      console.log('Cash order request successful');
+                      success = true;
+                      break;
+                    } else {
+                      console.error('Cash order request failed:', responseData.error || 'Unknown error');
+                      retryAttempt++;
+                      
+                      if (retryAttempt <= maxRetries) {
+                        // Wait a bit before retrying
+                        console.log(`Waiting before retry ${retryAttempt}...`);
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                      }
+                    }
+                  } catch (error) {
+                    console.error('Error sending cash-order request:', error);
+                    retryAttempt++;
+                    
+                    if (retryAttempt <= maxRetries) {
+                      // Wait a bit before retrying
+                      console.log(`Waiting before retry ${retryAttempt} after error...`);
+                      await new Promise(resolve => setTimeout(resolve, 1000));
+                    }
+                  }
+                }
+                
+                if (!success) {
+                  console.warn('Failed to complete cash-order request after multiple attempts');
+                  // Fallback to just opening the drawer as last resort
+                  try {
+                    console.log('Attempting fallback to just open cash drawer...');
+                    await fetch(`${proxyUrl}/open-drawer`, {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json'
+                      },
+                      body: JSON.stringify({
+                        ip: printerConfig.ip,
+                        port: printerConfig.port,
+                        skipConnectivityCheck: true
+                      })
+                    });
+                  } catch (fallbackError) {
+                    console.error('Fallback drawer open also failed:', fallbackError);
+                  }
+                }
 
                 // Create a response object that matches the axios format for compatibility
                 cashOrderResponse = {
-                  status: fetchResponse.status,
-                  data: responseData
+                  status: fetchResponse ? fetchResponse.status : 500,
+                  data: responseData || { success: false, error: 'Failed to complete cash-order request' }
                 };
 
                 console.log('Cash order response received:', cashOrderResponse.data);
 
-                if (cashOrderResponse.status === 200) {
+                if (success) {
                   console.log('Cash order request successful');
 
                   // Record cash transaction in the till
