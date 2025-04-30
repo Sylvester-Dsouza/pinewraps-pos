@@ -19,7 +19,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatCurrency } from '@/lib/utils';
 import { LockClosedIcon, LockOpenIcon, PlusIcon, MinusIcon, ClockIcon, ReceiptIcon, PlusCircleIcon, MinusCircleIcon } from '@/components/icons';
-import axios from 'axios';
+// Using fetch instead of axios for printer proxy requests for better reliability
 
 // Get printer proxy URL from environment variables with localhost fallback
 const PRINTER_PROXY_URL = process.env.NEXT_PUBLIC_PRINTER_PROXY_URL || 'http://localhost:3005';
@@ -629,33 +629,69 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
                   <Button 
                     variant="outline" 
                     onClick={async () => {
-                      // First open the cash drawer
+                      // First open the cash drawer with retry logic
                       try {
                         console.log('Opening cash drawer for Pay In');
                         const printerConfig = await getProxyConfig();
                         const { ip, port } = printerConfig;
                         
-                        const response = await fetch(`${PRINTER_PROXY_URL}/open-drawer`, {
-                          method: 'POST',
-                          headers: {
-                            'Content-Type': 'application/json'
-                          },
-                          body: JSON.stringify({
-                            ip: ip,
-                            port: port,
-                            skipConnectivityCheck: true
-                          })
-                        });
+                        // Send the open-drawer command to the proxy with retry logic
+                        let drawerOpened = false;
+                        let retryCount = 0;
+                        const maxRetries = 2; // Try up to 3 times (initial + 2 retries)
                         
-                        console.log(`Open drawer response status:`, response.status);
-                        const data = await response.json();
-                        console.log(`Open drawer response data:`, data);
+                        while (!drawerOpened && retryCount <= maxRetries) {
+                          try {
+                            if (retryCount > 0) {
+                              console.log(`Retry attempt ${retryCount} to open drawer for Pay In...`);
+                            }
+                            
+                            const response = await fetch(`${PRINTER_PROXY_URL}/open-drawer`, {
+                              method: 'POST',
+                              headers: {
+                                'Content-Type': 'application/json'
+                              },
+                              body: JSON.stringify({
+                                ip: ip,
+                                port: port,
+                                skipConnectivityCheck: true,
+                                timeout: 5000 // Increase timeout for better reliability
+                              })
+                            });
+                            
+                            console.log(`Open drawer response status:`, response.status);
+                            const data = await response.json();
+                            console.log(`Open drawer response data:`, data);
+                            
+                            if (response.status === 200 && data.success) {
+                              console.log('Drawer opened successfully for Pay In');
+                              drawerOpened = true;
+                              break;
+                            } else {
+                              console.error('Failed to open drawer:', data.error || 'Unknown error');
+                              retryCount++;
+                              
+                              if (retryCount <= maxRetries) {
+                                // Wait a bit before retrying
+                                await new Promise(resolve => setTimeout(resolve, 1000));
+                              }
+                            }
+                          } catch (error) {
+                            console.error('Error opening cash drawer for Pay In:', error);
+                            retryCount++;
+                            
+                            if (retryCount <= maxRetries) {
+                              // Wait a bit before retrying
+                              await new Promise(resolve => setTimeout(resolve, 1000));
+                            }
+                          }
+                        }
                         
-                        if (response.status !== 200) {
-                          console.error('Failed to open drawer:', data.error || 'Unknown error');
+                        if (!drawerOpened) {
+                          console.warn('Could not open drawer after multiple attempts, continuing anyway');
                         }
                       } catch (drawerError) {
-                        console.error('Error opening cash drawer for Pay In:', drawerError);
+                        console.error('Error in drawer opening process for Pay In:', drawerError);
                         // Continue with opening the dialog even if drawer fails
                       }
                       
@@ -670,33 +706,69 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
                   <Button 
                     variant="outline" 
                     onClick={async () => {
-                      // First open the cash drawer
+                      // First open the cash drawer with retry logic
                       try {
                         console.log('Opening cash drawer for Pay Out');
                         const printerConfig = await getProxyConfig();
                         const { ip, port } = printerConfig;
                         
-                        const response = await fetch(`${PRINTER_PROXY_URL}/open-drawer`, {
-                          method: 'POST',
-                          headers: {
-                            'Content-Type': 'application/json'
-                          },
-                          body: JSON.stringify({
-                            ip: ip,
-                            port: port,
-                            skipConnectivityCheck: true
-                          })
-                        });
+                        // Send the open-drawer command to the proxy with retry logic
+                        let drawerOpened = false;
+                        let retryCount = 0;
+                        const maxRetries = 2; // Try up to 3 times (initial + 2 retries)
                         
-                        console.log(`Open drawer response status:`, response.status);
-                        const data = await response.json();
-                        console.log(`Open drawer response data:`, data);
+                        while (!drawerOpened && retryCount <= maxRetries) {
+                          try {
+                            if (retryCount > 0) {
+                              console.log(`Retry attempt ${retryCount} to open drawer for Pay Out...`);
+                            }
+                            
+                            const response = await fetch(`${PRINTER_PROXY_URL}/open-drawer`, {
+                              method: 'POST',
+                              headers: {
+                                'Content-Type': 'application/json'
+                              },
+                              body: JSON.stringify({
+                                ip: ip,
+                                port: port,
+                                skipConnectivityCheck: true,
+                                timeout: 5000 // Increase timeout for better reliability
+                              })
+                            });
+                            
+                            console.log(`Open drawer response status:`, response.status);
+                            const data = await response.json();
+                            console.log(`Open drawer response data:`, data);
+                            
+                            if (response.status === 200 && data.success) {
+                              console.log('Drawer opened successfully for Pay Out');
+                              drawerOpened = true;
+                              break;
+                            } else {
+                              console.error('Failed to open drawer:', data.error || 'Unknown error');
+                              retryCount++;
+                              
+                              if (retryCount <= maxRetries) {
+                                // Wait a bit before retrying
+                                await new Promise(resolve => setTimeout(resolve, 1000));
+                              }
+                            }
+                          } catch (error) {
+                            console.error('Error opening cash drawer for Pay Out:', error);
+                            retryCount++;
+                            
+                            if (retryCount <= maxRetries) {
+                              // Wait a bit before retrying
+                              await new Promise(resolve => setTimeout(resolve, 1000));
+                            }
+                          }
+                        }
                         
-                        if (response.status !== 200) {
-                          console.error('Failed to open drawer:', data.error || 'Unknown error');
+                        if (!drawerOpened) {
+                          console.warn('Could not open drawer after multiple attempts, continuing anyway');
                         }
                       } catch (drawerError) {
-                        console.error('Error opening cash drawer for Pay Out:', drawerError);
+                        console.error('Error in drawer opening process for Pay Out:', drawerError);
                         // Continue with opening the dialog even if drawer fails
                       }
                       
