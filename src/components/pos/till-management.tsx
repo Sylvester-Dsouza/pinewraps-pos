@@ -927,7 +927,7 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
               disabled={isLoading}
               className="bg-red-600 hover:bg-red-700"
             >
-              {isLoading ? 'Processing...' : 'Pay Out'}
+              {isLoading ? 'Processing...' : 'Pay Out.'}
             </Button>
           </DialogFooter>
         </DialogContent>
