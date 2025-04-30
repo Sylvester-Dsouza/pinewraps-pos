@@ -1449,7 +1449,7 @@ const OrdersPage = () => {
                     </button>
                     {!['COMPLETED', 'CANCELLED', 'REFUNDED', 'PARTIALLY_REFUNDED'].includes(order.status) && (
                       <button
-                        onClick={isSuperAdmin ? () => setShowCancelConfirm(order.id) : handleCancelAttempt}
+                        onClick={() => isSuperAdmin ? setShowCancelConfirm(order.id) : handleCancelAttempt()}
                         className={`px-4 py-2 text-sm font-medium ${isSuperAdmin ? 'text-red-700 bg-red-100 hover:bg-red-200' : 'text-gray-500 bg-gray-100 hover:bg-gray-200'} rounded-md flex-1`}
                       >
                         Cancel Order
