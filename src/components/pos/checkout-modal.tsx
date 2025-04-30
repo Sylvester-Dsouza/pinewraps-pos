@@ -993,17 +993,21 @@ export default function CheckoutModal({
                 // Get printer configuration from the environment or use default
                 const printerConfig = await getPrinterConfig();
 
-                // Prepare the request data - use the same format as till-management.tsx
+                // Prepare the request data - use the same format as the printer test page and order drawer service
                 const requestData = {
                   // Include printer configuration
                   ip: printerConfig.ip,
                   port: printerConfig.port,
+                  skipConnectivityCheck: true,
+                  // Include order type
+                  type: 'order',
+                  // Include order ID
+                  orderId: response.data?.id,
                   // Include complete order data
-                  orderData: {
+                  order: {
                     // Basic order info
                     orderNumber: response.data?.orderNumber,
                     id: response.data?.id,
-                    orderId: response.data?.id,
                     // Include payments
                     payments: paymentData,
                     // Include order items
@@ -1036,8 +1040,7 @@ export default function CheckoutModal({
                     giftMessage: giftDetailsState?.message,
                     giftRecipientName: giftDetailsState?.recipientName,
                     giftRecipientPhone: giftDetailsState?.recipientPhone
-                  },
-                  skipConnectivityCheck: true
+                  }
                 };
 
                 console.log('Sending cash-order request with data:', JSON.stringify(requestData, null, 2));
