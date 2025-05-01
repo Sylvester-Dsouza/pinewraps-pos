@@ -351,71 +351,151 @@ const OrdersPage = () => {
 
   const handleReorder = async (order: any) => {
     try {
-      // Get the original order items
-      const items = order.items.map((item: any) => ({
-        ...item,
-        id: undefined // Remove the original ID to create new items
-      }));
-
-      // Set up the initial order state
-      // setOrderItems(items);
-      // setCustomerDetails({
-      //   name: order.customerName || '',
-      //   phone: order.customerPhone || '',
-      //   email: order.customerEmail || '',
-      // });
-
-      // Set gift details if it was a gift order
-      if (order.isGift) {
-        // setGiftDetails({
-        //   isGift: true,
-        //   recipientName: order.giftRecipientName || '',
-        //   recipientPhone: order.giftRecipientPhone || '',
-        //   message: order.giftMessage || '',
-        //   note: '',
-        //   cashAmount: order.giftCashAmount || 0,
-        //   includeCash: order.giftCashAmount > 0
-        // });
-      }
-
-      // Format cart items to match the POS cart structure
-      const cartItems = order.items.map(item => ({
-        id: nanoid(), // Generate a new cart item ID
-        product: {
-          id: item.productId,
-          name: item.name,
-          basePrice: item.totalPrice / item.quantity, // Calculate unit price
-          status: 'ACTIVE',
-          images: item.designImages || []
-        },
-        quantity: item.quantity,
-        selectedVariations: ((item.selectedVariations || item.variations) || []).map(v => {
-          // Handle both object and string formats
-          if (typeof v === 'object' && v !== null) {
-            return {
-              id: v.id || nanoid(),
-              type: (v.type || v.name || v.variationType || '').toString(),
-              value: (v.value || v.variationValue || '').toString(),
-              priceAdjustment: Number(v.priceAdjustment) || Number(v.price) || 0
-            };
-          }
-          // If it's not an object or is null, create a default format
-          return {
-            id: nanoid(),
-            type: 'Option',
-            value: String(v || ''),
-            priceAdjustment: 0
-          };
-        }).filter(v => v.type && v.value), // Filter out any invalid variations
-        totalPrice: item.totalPrice,
-        notes: item.notes || ''
-      }));
-
-      // Save to localStorage
+      console.log('Reordering order:', order);
+      
+      // Format cart items to match the POS cart structure with all details preserved
+      const cartItems = order.items.map((item: any) => {
+        // Process custom images if available - ensure they are properly formatted for display
+        const customImages = [];
+        
+        // Handle customImages array if it exists
+        if (item.customImages && Array.isArray(item.customImages)) {
+          item.customImages.forEach((img: any) => {
+            if (img && img.url) {
+              // Ensure image URLs are properly formatted
+              const imgUrl = img.url.startsWith('http') ? img.url : `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}${img.url.startsWith('/') ? '' : '/'}${img.url}`;
+              
+              customImages.push({
+                id: nanoid(),
+                url: imgUrl,
+                previewUrl: imgUrl,
+                comment: img.comment || ''
+              });
+            }
+          });
+        }
+        
+        // Handle images array if customImages doesn't exist
+        if ((!customImages.length) && item.images && Array.isArray(item.images)) {
+          item.images.forEach((img: any) => {
+            if (img && img.url) {
+              // Ensure image URLs are properly formatted
+              const imgUrl = img.url.startsWith('http') ? img.url : `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}${img.url.startsWith('/') ? '' : '/'}${img.url}`;
+              
+              customImages.push({
+                id: nanoid(),
+                url: imgUrl,
+                previewUrl: imgUrl,
+                comment: ''
+              });
+            }
+          });
+        }
+        
+        // Process variations properly
+        const selectedVariations = [];
+        const variations = item.selectedVariations || item.variations || [];
+        
+        if (Array.isArray(variations)) {
+          variations.forEach((v: any) => {
+            if (typeof v === 'object' && v !== null) {
+              selectedVariations.push({
+                id: v.id || nanoid(),
+                type: (v.type || v.name || v.variationType || '').toString(),
+                value: (v.value || v.variationValue || '').toString(),
+                priceAdjustment: Number(v.priceAdjustment) || Number(v.price) || 0
+              });
+            } else if (v) {
+              // Handle string variations
+              selectedVariations.push({
+                id: nanoid(),
+                type: 'Option',
+                value: String(v),
+                priceAdjustment: 0
+              });
+            }
+          });
+        }
+        
+        // Create a properly formatted cart item with all details
+        return {
+          id: nanoid(),
+          product: {
+            id: item.productId || '',
+            name: item.productName || item.name || 'Unknown Product',
+            basePrice: parseFloat(String(item.unitPrice || (item.totalPrice / item.quantity))) || 0,
+            requiresKitchen: item.requiresKitchen || false,
+            requiresDesign: item.requiresDesign || false,
+            allowCustomImages: true, // Enable custom images for reordered items
+            status: 'ACTIVE',
+            // Ensure product images are properly formatted
+            images: Array.isArray(item.images) ? item.images.map((img: any) => {
+              if (img && img.url) {
+                return {
+                  ...img,
+                  url: img.url.startsWith('http') ? img.url : `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}${img.url.startsWith('/') ? '' : '/'}${img.url}`
+                };
+              }
+              return img;
+            }) : [],
+            allowCustomPrice: false,
+            categoryId: item.categoryId || '',
+            sku: item.sku || '',
+            barcode: item.barcode || ''
+          },
+          quantity: parseInt(String(item.quantity)) || 1,
+          selectedVariations: selectedVariations,
+          customImages: customImages,
+          notes: item.notes || item.kitchenNotes || '',
+          totalPrice: parseFloat(String(item.totalPrice)) || 0
+        };
+      });
+      
+      // Save cart items to localStorage
       localStorage.setItem('pos-cart', JSON.stringify(cartItems));
       
-      toast.success('Items added to cart');
-      router.push('/pos');
+      // Create checkout details object with customer info and delivery/pickup details
+      const checkoutDetails = {
+        customerDetails: {
+          name: order.customerName || '',
+          phone: order.customerPhone || '',
+          email: order.customerEmail || ''
+        },
+        deliveryMethod: order.deliveryMethod || 'PICKUP',
+        deliveryDetails: order.deliveryMethod === 'DELIVERY' ? {
+          date: order.deliveryDate || '',
+          timeSlot: order.deliveryTimeSlot || '',
+          instructions: order.deliveryInstructions || '',
+          streetAddress: order.streetAddress || '',
+          apartment: order.apartment || '',
+          emirate: order.emirate || '',
+          city: order.city || '',
+          charge: parseFloat(String(order.deliveryCharge)) || 0
+        } : undefined,
+        pickupDetails: order.deliveryMethod === 'PICKUP' ? {
+          date: order.pickupDate || '',
+          timeSlot: order.pickupTimeSlot || ''
+        } : undefined,
+        giftDetails: order.isGift ? {
+          isGift: true,
+          recipientName: order.giftRecipientName || '',
+          recipientPhone: order.giftRecipientPhone || '',
+          message: order.giftMessage || '',
+          note: '',
+          cashAmount: parseFloat(String(order.giftCashAmount)) || 0,
+          includeCash: parseFloat(String(order.giftCashAmount)) > 0
+        } : undefined,
+        // Add a flag to indicate this is a reorder and checkout should open automatically
+        isReorder: true
+      };
+      
+      // Save checkout details to localStorage
+      localStorage.setItem('pos-checkout-details', JSON.stringify(checkoutDetails));
+      
+      toast.success('Order replicated - proceeding to checkout');
+      
+      // Add a URL parameter to indicate that checkout should open automatically
+      router.push('/pos?checkout=true');
     } catch (error) {
       console.error('Error handling reorder:', error);
       toast.error('Failed to process reorder');

@@ -58,8 +58,17 @@ export default function POSPage() {
       // Grant access if user is super admin, has cashier staff role, or has a general POS_USER or ADMIN role
       // This allows users with multiple roles to access the POS screen
       setHasGeneralPOSAccess(hasSuperAdminAccess || isCashierStaff || userRole === 'POS_USER' || userRole === 'ADMIN');
+      
+      // Check if we should automatically open checkout modal based on URL parameter
+      const checkoutParam = searchParams.get('checkout');
+      if (checkoutParam === 'true') {
+        // Set a small delay to ensure cart is loaded first
+        setTimeout(() => {
+          setIsCheckoutModalOpen(true);
+        }, 300);
+      }
     }
-  }, []);
+  }, [searchParams]);
 
   // Load cart items from localStorage on mount
   useEffect(() => {

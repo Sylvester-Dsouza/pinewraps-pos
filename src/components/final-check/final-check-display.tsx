@@ -26,6 +26,7 @@ export interface FinalCheckOrder {
   createdAt: string;
   status: FinalCheckOrderStatus;
   customerName: string;
+  customerPhone?: string;
   items: Array<{
     id: string;
     name: string;

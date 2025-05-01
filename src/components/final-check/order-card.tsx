@@ -10,6 +10,7 @@ import { format } from "date-fns";
 import Image from "next/image";
 import { toast } from "react-hot-toast";
 import Lightbox from "yet-another-react-lightbox";
+import Zoom from "yet-another-react-lightbox/plugins/zoom";
 import "yet-another-react-lightbox/styles.css";
 
 // Types for order and status
@@ -37,6 +38,7 @@ interface FinalCheckOrder {
   createdAt: string;
   status: FinalCheckOrderStatus;
   customerName: string;
+  customerPhone?: string;
   items: Array<{
     id: string;
     name: string;
@@ -293,7 +295,7 @@ export default function OrderCard({ order, onUpdateStatus }: OrderCardProps) {
           <div className="flex justify-between items-start">
             <div>
               <h3 className="text-lg font-semibold">Order #{order.orderNumber}</h3>
-              <p className="text-sm text-gray-500">Customer: {order.customerName}</p>
+              <p className="text-sm text-gray-500">Customer: {order.customerName}{order.customerPhone && ` • ${order.customerPhone}`}</p>
               
               {/* Parallel Processing Status */}
               {order.requiresKitchen && order.requiresDesign && order.parallelProcessing && (
@@ -712,6 +714,13 @@ export default function OrderCard({ order, onUpdateStatus }: OrderCardProps) {
         index={lightboxIndex}
         slides={currentImages}
         close={() => setLightboxOpen(false)}
+        plugins={[Zoom]}
+        zoom={{
+          maxZoomPixelRatio: 3,
+          zoomInMultiplier: 2,
+          doubleClickMaxStops: 3,
+          scrollToZoom: true
+        }}
       />
     </motion.div>
   );

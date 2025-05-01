@@ -1,5 +1,6 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { format } from 'date-fns';
+import { Printer, X } from 'lucide-react';
 import {
   PRINTER_CONFIG,
   centerText,
@@ -199,24 +200,60 @@ interface OrderReceiptProps {
 }
 
 const OrderReceipt: React.FC<OrderReceiptProps> = ({ order, onClose }) => {
+  const [isPrinting, setIsPrinting] = useState(false);
+
+  const handlePrint = () => {
+    setIsPrinting(true);
+    withErrorHandling(
+      async () => {
+        await printContent(
+          generateReceiptContent(order),
+          `Order Receipt #${order.orderNumber}`,
+          receiptStyles
+        );
+        setIsPrinting(false);
+      }
+    );
+  };
+
+  // Auto-print on component mount
   useEffect(() => {
     if (order) {
       console.log('Order data for receipt:', order);
-      setTimeout(() => {
-        withErrorHandling(
-          async () => {
-            await printContent(
-              generateReceiptContent(order),
-              `Order Receipt #${order.orderNumber}`,
-              receiptStyles
-            );
-          }
-        );
-      }, 500);
+      handlePrint();
     }
-  }, [order]);
+  }, []);
 
-  return null; // Component doesn't need to render anything
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-auto">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-semibold">Order Receipt #{order.orderNumber}</h3>
+          <button 
+            onClick={onClose}
+            className="text-gray-500 hover:text-gray-700 focus:outline-none"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        
+        <div className="border border-gray-200 rounded p-4 mb-4">
+          <div dangerouslySetInnerHTML={{ __html: generateReceiptContent(order) }} />
+        </div>
+        
+        <div className="flex justify-end">
+          <button
+            onClick={handlePrint}
+            disabled={isPrinting}
+            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 flex items-center gap-2"
+          >
+            <Printer className="w-4 h-4" />
+            {isPrinting ? 'Printing...' : 'Print Receipt'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 };
 
 export default OrderReceipt;
