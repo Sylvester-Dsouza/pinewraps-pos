@@ -10,6 +10,7 @@ import { wsService } from "@/services/websocket";
 import { toast } from "react-hot-toast";
 import { format, formatDistanceToNow } from "date-fns";
 import Lightbox from "yet-another-react-lightbox";
+import Zoom from "yet-another-react-lightbox/plugins/zoom";
 import "yet-another-react-lightbox/styles.css";
 import Image from 'next/image';
 
@@ -1465,6 +1466,13 @@ export default function DesignDisplay({ staffRoles, router: externalRouter }: De
         close={() => setLightboxOpen(false)}
         index={lightboxIndex}
         slides={currentImages}
+        plugins={[Zoom]}
+        zoom={{
+          maxZoomPixelRatio: 3,
+          zoomInMultiplier: 2,
+          doubleClickMaxStops: 3,
+          scrollToZoom: true
+        }}
       />
     </div>
   );
