@@ -644,6 +644,10 @@ const OrdersPage = () => {
     // Check if there are any pending payments
     const hasPendingPaymentStatus = order.payments?.some(p => p.status === POSPaymentStatus.PENDING);
     
+    // Check if there are any pay later payments (regardless of status)
+    // This ensures all PAY_LATER orders show the Pay Now button
+    const hasPayLaterPayment = order.payments?.some(p => p.method === POSPaymentMethod.PAY_LATER);
+    
     // Check if there are any pay later payments that are still pending
     const hasPayLaterPending = order.payments?.some(p => 
       p.method === POSPaymentMethod.PAY_LATER && p.status === POSPaymentStatus.PENDING
@@ -654,8 +658,8 @@ const OrdersPage = () => {
     
     // Calculate total paid amount
     const totalPaid = order.payments?.reduce((sum, payment) => {
-      // Only count fully paid payments
-      if (payment.status === POSPaymentStatus.FULLY_PAID) {
+      // Only count fully paid payments that are not PAY_LATER
+      if (payment.status === POSPaymentStatus.FULLY_PAID && payment.method !== POSPaymentMethod.PAY_LATER) {
         return sum + payment.amount;
       }
       return sum;
@@ -666,6 +670,7 @@ const OrdersPage = () => {
     
     console.log(`Order ${order.orderNumber} payment check:`, {
       hasPendingPaymentStatus,
+      hasPayLaterPayment,
       hasPayLaterPending,
       hasPendingPaymentStatus2,
       totalPaid,
@@ -674,10 +679,11 @@ const OrdersPage = () => {
     });
     
     // An order has pending payment if it has a pending payment status OR
+    // it has any pay later payment OR
     // it has a pay later payment that is still pending OR
     // it has a pending payment status in the order status AND
     // it has a remaining balance to be paid
-    return (hasPendingPaymentStatus || hasPayLaterPending || hasPendingPaymentStatus2) && hasRemainingBalance;
+    return (hasPendingPaymentStatus || hasPayLaterPayment || hasPayLaterPending || hasPendingPaymentStatus2) && hasRemainingBalance;
   };
 
   const isFullyPaid = (order: Order) => {
