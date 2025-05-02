@@ -232,42 +232,6 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
         return;
       }
 
-      // Get printer configuration from the proxy
-      const printerConfig = await getProxyConfig();
-      
-      // Extract IP and port from the configuration
-      const { ip, port } = printerConfig;
-      
-      console.log(`Opening cash drawer before opening till session with IP: ${ip}, Port: ${port}`);
-
-      // Open the drawer first
-      try {
-        // Use fetch for printer proxy operations as per memory guidance
-        const drawerResponse = await fetch(`${PRINTER_PROXY_URL}/open-drawer`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            ip: ip,
-            port: port,
-            skipConnectivityCheck: true
-          })
-        });
-        
-        console.log(`Open drawer response status:`, drawerResponse.status);
-        const drawerData = await drawerResponse.json();
-        console.log(`Open drawer response data:`, drawerData);
-        
-        if (drawerResponse.status !== 200) {
-          console.error('Failed to open drawer:', drawerData.error || 'Unknown error');
-          // Continue with opening the till even if drawer fails
-        }
-      } catch (drawerError) {
-        console.error('Error opening cash drawer:', drawerError);
-        // Continue with opening the till even if drawer fails
-      }
-
       const amount = parseFloat(openingAmount);
       console.log('Opening till with amount:', amount);
       
@@ -313,7 +277,7 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
 
       // Open the drawer only, no receipt printing
       try {
-        // Use fetch for printer proxy operations as per memory guidance
+        // Use the exact same implementation as the printer test page with fetch
         const response = await fetch(`${PRINTER_PROXY_URL}/open-drawer`, {
           method: 'POST',
           headers: {
@@ -332,13 +296,9 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
         
         if (response.status !== 200) {
           console.error('Failed to open drawer:', data.error || 'Unknown error');
-          toast.error('Failed to open drawer. Continuing with till closing.');
-        } else {
-          console.log('Cash drawer opened successfully');
         }
       } catch (drawerError) {
         console.error('Error opening cash drawer:', drawerError);
-        toast.error('Failed to open drawer. Continuing with till closing.');
         // Continue with closing the till dialog even if drawer fails
       }
 
@@ -361,12 +321,9 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
         return;
       }
 
-      // Get printer configuration from the proxy
-      const printerConfig = await getProxyConfig();
-      console.log('Printer proxy config:', printerConfig);
-      
-      // Extract IP and port from the configuration
-      const { ip, port } = printerConfig;
+      // Get proxy configuration (without printer IP/port)
+      const proxyConfig = await getProxyConfig();
+      console.log('Printer proxy config:', proxyConfig);
 
       const amount = parseFloat(closingAmount);
       console.log('Attempting to close session with amount:', amount);
@@ -382,24 +339,24 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
       if (response) {
         toast.success('Till closed successfully');
         
-        // Prepare closing data with safe fallbacks for all fields
-        const closingData = {
-          closingAmount: amount,
-          sessionId: response.id || 'unknown',
-          openingAmount: response.openingAmount ? parseFloat(response.openingAmount) : 0,
-          closedAt: response.closedAt || new Date().toISOString(),
-          operations: response.operations || [],
-          user: response.user || { firstName: 'Unknown', lastName: 'User' },
-          paymentTotals: response.paymentTotals || {}
-        };
-        
-        console.log('Preparing to print closing receipt...');
-        console.log('Closing data:', JSON.stringify(closingData, null, 2));
-        
+        // Print closing receipt - do this immediately to ensure it happens
         try {
+          console.log('Preparing to print closing receipt...');
+          
+          // Prepare closing data with safe fallbacks for all fields
+          const closingData = {
+            closingAmount: amount,
+            sessionId: response.id || 'unknown',
+            openingAmount: response.openingAmount ? parseFloat(response.openingAmount) : 0,
+            closedAt: response.closedAt || new Date().toISOString(),
+            operations: response.operations || [],
+            user: response.user || { firstName: 'Unknown', lastName: 'User' }
+          };
+          
+          console.log('Sending print request to printer proxy with data:', JSON.stringify(closingData, null, 2));
+          
           // Use fetch as it's more reliable for printer proxy requests (per memory guidance)
-          // Use print-only endpoint to print the report without opening the drawer again
-          const printResponse = await fetch(`${PRINTER_PROXY_URL}/print-only`, {
+          fetch(`${PRINTER_PROXY_URL}/print-only`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json'
@@ -407,24 +364,28 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
             body: JSON.stringify({
               type: 'till_close', // Use till_close instead of till_close_final to match proxy handler
               data: closingData,
-              ip: ip,
-              port: port,
+              ...proxyConfig,
               skipConnectivityCheck: true // Add this to skip connectivity check
             })
-          });
-          
-          const printResult = await printResponse.json();
-          console.log('Print receipt response:', printResult);
-          
-          if (printResult.success) {
-            console.log('Till closing receipt printed successfully');
-          } else {
-            console.error('Failed to print receipt:', printResult.error || 'Unknown error');
+          })
+          .then(response => response.json())
+          .then(result => {
+            console.log('Print response:', result);
+            if (result.success) {
+              console.log('Till closing receipt printed successfully');
+            } else {
+              console.error('Failed to print till closing receipt:', result.error || 'Unknown error');
+              toast.error('Till closed but receipt printing failed');
+            }
+          })
+          .catch(printError => {
+            console.error('Error printing closing receipt:', printError);
             toast.error('Till closed but receipt printing failed');
-          }
+          });
         } catch (printError) {
-          console.error('Error printing receipt:', printError);
+          console.error('Error setting up print request:', printError);
           toast.error('Till closed but receipt printing failed');
+          // Continue even if printing fails
         }
         
         fetchCurrentSession();
@@ -966,7 +927,7 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
               disabled={isLoading}
               className="bg-red-600 hover:bg-red-700"
             >
-              {isLoading ? 'Processing...' : 'Pay Out.'}
+              {isLoading ? 'Processing...' : 'Pay Out'}
             </Button>
           </DialogFooter>
         </DialogContent>
