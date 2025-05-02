@@ -19,7 +19,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatCurrency } from '@/lib/utils';
 import { LockClosedIcon, LockOpenIcon, PlusIcon, MinusIcon, ClockIcon, ReceiptIcon, PlusCircleIcon, MinusCircleIcon } from '@/components/icons';
-// Using fetch instead of axios for printer proxy requests for better reliability
+import axios from 'axios';
 
 // Get printer proxy URL from environment variables with localhost fallback
 const PRINTER_PROXY_URL = process.env.NEXT_PUBLIC_PRINTER_PROXY_URL || 'http://localhost:3005';
@@ -71,23 +71,55 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
   // Function to get printer configuration including IP and port
   const getProxyConfig = async () => {
     try {
-      // The printer proxy doesn't have the /api/printer/config endpoint
-      // Instead, we'll use the hardware service to get the default printer
-      // and send the request directly to the printer proxy with no IP/port
+      // Fetch the printer configuration directly from the printer proxy
+      // instead of going through the API on Render
+      console.log('Fetching printer config from printer proxy:', `${PRINTER_PROXY_URL}/api/printer/config`);
+      const response = await fetch(`${PRINTER_PROXY_URL}/api/printer/config`);
+      const data = await response.json();
+      
+      if (data && data.success && data.printer) {
+        console.log('Printer config from printer proxy:', data.printer);
+        // Return with explicit printer IP and port
+        return { 
+          ip: data.printer.ipAddress,
+          port: data.printer.port,
+          // Also include printerIp and printerPort for compatibility
+          printerIp: data.printer.ipAddress,
+          printerPort: data.printer.port,
+          skipConnectivityCheck: true // Always skip connectivity check for till operations
+        };
+      }
+      
+      // Try to get the printer from the database through the printer proxy
+      console.log('Trying to get printer from database through printer proxy');
+      try {
+        const dbResponse = await fetch(`${PRINTER_PROXY_URL}/api/printer/db-config`);
+        const dbData = await dbResponse.json();
+        
+        if (dbData && dbData.success && dbData.printer) {
+          console.log('Printer config from printer proxy DB:', dbData.printer);
+          const portNumber = dbData.printer.port || 9100;
+          return { 
+            ip: dbData.printer.ipAddress,
+            port: portNumber,
+            // Also include printerIp and printerPort for compatibility
+            printerIp: dbData.printer.ipAddress,
+            printerPort: portNumber,
+            skipConnectivityCheck: true 
+          };
+        }
+      } catch (dbError) {
+        console.error('Error fetching printer config from DB:', dbError);
+      }
+      
+      // If no printer configuration is found, don't include IP and port
       // This will make the printer proxy use its own configuration
-      
-      console.log('Using default printer configuration from the proxy');
-      
-      // Return a configuration that tells the proxy to use its own settings
-      // The proxy has the printer IP and port configured internally
+      console.warn('No printer configuration found, using proxy default configuration');
       return { 
         skipConnectivityCheck: true 
       };
-      
-      // NOTE: The printer proxy will automatically use its configured printer
-      // when no IP/port is provided. This is the most reliable approach.
     } catch (error) {
-      console.error('Error preparing printer config:', error);
+      console.error('Error fetching printer config:', error);
       // If there's an error, don't include IP and port
       // This will make the printer proxy use its own configuration
       return { 
@@ -101,68 +133,44 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
     try {
       console.log('Opening till - sending open-drawer command to proxy');
       
-      // Send the open-drawer command to the proxy with retry logic
-      let drawerOpened = false;
-      let retryCount = 0;
-      const maxRetries = 2; // Try up to 3 times (initial + 2 retries)
-      let lastError = null;
+      // Get printer configuration from the proxy
+      const printerConfig = await getProxyConfig();
       
-      while (!drawerOpened && retryCount <= maxRetries) {
-        try {
-          if (retryCount > 0) {
-            console.log(`Retry attempt ${retryCount} to open drawer...`);
-          }
-          
-          // Use fetch for printer proxy operations
-          const response = await fetch(`${PRINTER_PROXY_URL}/open-drawer`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              skipConnectivityCheck: true,
-              timeout: 5000 // Increase timeout for better reliability
-            })
-          });
-          
-          console.log(`Open drawer response status:`, response.status);
-          const data = await response.json();
-          console.log(`Open drawer response data:`, data);
+      // Extract IP and port from the configuration
+      const { ip, port } = printerConfig;
+      
+      console.log(`Sending open-drawer request to ${PRINTER_PROXY_URL}/open-drawer with IP: ${ip}, Port: ${port}`);
+      
+      // Send the open-drawer command to the proxy
+      try {
+        // Use the exact same implementation as the printer test page with fetch
+        const response = await fetch(`${PRINTER_PROXY_URL}/open-drawer`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            ip: ip,
+            port: port,
+            skipConnectivityCheck: true
+          })
+        });
+        
+        console.log(`Open drawer response status:`, response.status);
+        const data = await response.json();
+        console.log(`Open drawer response data:`, data);
 
-          if (response.status === 200 && data.success) {
-            console.log('Drawer opened successfully');
-            drawerOpened = true;
-            break;
-          } else {
-            lastError = data.error || 'Unknown error';
-            console.error('Failed to open drawer:', lastError);
-            retryCount++;
-            
-            if (retryCount <= maxRetries) {
-              // Wait a bit before retrying
-              await new Promise(resolve => setTimeout(resolve, 1000));
-            }
-          }
-        } catch (drawerError) {
-          lastError = drawerError.message || 'Error communicating with printer';
-          console.error('Error opening cash drawer:', drawerError);
-          retryCount++;
-          
-          if (retryCount <= maxRetries) {
-            // Wait a bit before retrying
-            await new Promise(resolve => setTimeout(resolve, 1000));
-          }
+        if (response.status === 200) {
+          console.log('Drawer opened successfully');
+        } else {
+          console.error('Failed to open drawer:', data.error || 'Unknown error');
         }
+      } catch (drawerError) {
+        console.error('Error opening cash drawer:', drawerError);
+        // Continue with opening the till dialog even if drawer fails
       }
 
-      // Show toast based on drawer status
-      if (drawerOpened) {
-        toast.success('Cash drawer opened successfully');
-      } else if (lastError) {
-        toast.error(`Could not open cash drawer: ${lastError}`);
-      }
-
-      // Then show the dialog regardless of drawer status
+      // Then show the dialog
       setIsOpenTillModalOpen(true);
     } catch (error) {
       console.error('Error in open till process:', error);
@@ -188,35 +196,6 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
       if (!openingAmount || isNaN(parseFloat(openingAmount))) {
         toast.error('Please enter a valid opening amount');
         return;
-      }
-
-      // We'll use the printer proxy's default configuration
-      console.log('Using printer proxy default configuration for opening till');
-
-      // Open the drawer first
-      try {
-        // Use fetch for printer proxy operations as per memory guidance
-        const drawerResponse = await fetch(`${PRINTER_PROXY_URL}/open-drawer`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            skipConnectivityCheck: true
-          })
-        });
-        
-        console.log(`Open drawer response status:`, drawerResponse.status);
-        const drawerData = await drawerResponse.json();
-        console.log(`Open drawer response data:`, drawerData);
-        
-        if (drawerResponse.status !== 200) {
-          console.error('Failed to open drawer:', drawerData.error || 'Unknown error');
-          // Continue with opening the till even if drawer fails
-        }
-      } catch (drawerError) {
-        console.error('Error opening cash drawer:', drawerError);
-        // Continue with opening the till even if drawer fails
       }
 
       const amount = parseFloat(openingAmount);
@@ -254,15 +233,25 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
     try {
       console.log('Closing till - sending open-drawer command to proxy');
 
+      // Get printer configuration from the proxy
+      const printerConfig = await getProxyConfig();
+      
+      // Extract IP and port from the configuration
+      const { ip, port } = printerConfig;
+      
+      console.log(`Sending open-drawer request to ${PRINTER_PROXY_URL}/open-drawer with IP: ${ip}, Port: ${port}`);
+
       // Open the drawer only, no receipt printing
       try {
-        // Use fetch for printer proxy operations
+        // Use the exact same implementation as the printer test page with fetch
         const response = await fetch(`${PRINTER_PROXY_URL}/open-drawer`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
+            ip: ip,
+            port: port,
             skipConnectivityCheck: true
           })
         });
@@ -298,8 +287,9 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
         return;
       }
 
-      // We'll use the printer proxy's default configuration
-      console.log('Using printer proxy default configuration');
+      // Get proxy configuration (without printer IP/port)
+      const proxyConfig = await getProxyConfig();
+      console.log('Printer proxy config:', proxyConfig);
 
       const amount = parseFloat(closingAmount);
       console.log('Attempting to close session with amount:', amount);
@@ -315,24 +305,24 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
       if (response) {
         toast.success('Till closed successfully');
         
-        // Prepare closing data with safe fallbacks for all fields
-        const closingData = {
-          closingAmount: amount,
-          sessionId: response.id || 'unknown',
-          openingAmount: response.openingAmount ? parseFloat(response.openingAmount) : 0,
-          closedAt: response.closedAt || new Date().toISOString(),
-          operations: response.operations || [],
-          user: response.user || { firstName: 'Unknown', lastName: 'User' },
-          paymentTotals: response.paymentTotals || {}
-        };
-        
-        console.log('Preparing to print closing receipt and open drawer...');
-        console.log('Closing data:', JSON.stringify(closingData, null, 2));
-        
+        // Print closing receipt - do this immediately to ensure it happens
         try {
+          console.log('Preparing to print closing receipt...');
+          
+          // Prepare closing data with safe fallbacks for all fields
+          const closingData = {
+            closingAmount: amount,
+            sessionId: response.id || 'unknown',
+            openingAmount: response.openingAmount ? parseFloat(response.openingAmount) : 0,
+            closedAt: response.closedAt || new Date().toISOString(),
+            operations: response.operations || [],
+            user: response.user || { firstName: 'Unknown', lastName: 'User' }
+          };
+          
+          console.log('Sending print request to printer proxy with data:', JSON.stringify(closingData, null, 2));
+          
           // Use fetch as it's more reliable for printer proxy requests (per memory guidance)
-          // Use print-and-open endpoint to both print the report and open the drawer
-          const printResponse = await fetch(`${PRINTER_PROXY_URL}/print-and-open`, {
+          fetch(`${PRINTER_PROXY_URL}/print-only`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json'
@@ -340,58 +330,28 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
             body: JSON.stringify({
               type: 'till_close', // Use till_close instead of till_close_final to match proxy handler
               data: closingData,
+              ...proxyConfig,
               skipConnectivityCheck: true // Add this to skip connectivity check
             })
-          });
-          
-          const printResult = await printResponse.json();
-          console.log('Print and open drawer response:', printResult);
-          
-          if (printResult.success) {
-            console.log('Till closing receipt printed and drawer opened successfully');
-          } else {
-            console.error('Failed to print receipt or open drawer:', printResult.error || 'Unknown error');
-            
-            // If print-and-open fails, try to at least open the drawer
-            try {
-              console.log('Attempting to open drawer directly as fallback...');
-              const drawerResponse = await fetch(`${PRINTER_PROXY_URL}/open-drawer`, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                  skipConnectivityCheck: true
-                })
-              });
-              
-              const drawerResult = await drawerResponse.json();
-              console.log('Fallback drawer open response:', drawerResult);
-            } catch (drawerError) {
-              console.error('Error in fallback drawer open:', drawerError);
+          })
+          .then(response => response.json())
+          .then(result => {
+            console.log('Print response:', result);
+            if (result.success) {
+              console.log('Till closing receipt printed successfully');
+            } else {
+              console.error('Failed to print till closing receipt:', result.error || 'Unknown error');
+              toast.error('Till closed but receipt printing failed');
             }
-          }
+          })
+          .catch(printError => {
+            console.error('Error printing closing receipt:', printError);
+            toast.error('Till closed but receipt printing failed');
+          });
         } catch (printError) {
-          console.error('Error printing receipt and opening drawer:', printError);
-          
-          // If the combined operation fails, try to at least open the drawer
-          try {
-            console.log('Attempting to open drawer directly after print error...');
-            const drawerResponse = await fetch(`${PRINTER_PROXY_URL}/open-drawer`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({
-                skipConnectivityCheck: true
-              })
-            });
-            
-            const drawerResult = await drawerResponse.json();
-            console.log('Drawer open after print error response:', drawerResult);
-          } catch (drawerError) {
-            console.error('Error opening drawer after print error:', drawerError);
-          }
+          console.error('Error setting up print request:', printError);
+          toast.error('Till closed but receipt printing failed');
+          // Continue even if printing fails
         }
         
         fetchCurrentSession();
@@ -635,18 +595,20 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
                   <Button 
                     variant="outline" 
                     onClick={async () => {
-                      // First open the cash drawer using the direct method from the printer test page
+                      // First open the cash drawer
                       try {
                         console.log('Opening cash drawer for Pay In');
+                        const printerConfig = await getProxyConfig();
+                        const { ip, port } = printerConfig;
                         
-                        // Send a direct request to the open-drawer endpoint
-                        // Let the printer proxy use its own configuration
                         const response = await fetch(`${PRINTER_PROXY_URL}/open-drawer`, {
                           method: 'POST',
                           headers: {
                             'Content-Type': 'application/json'
                           },
                           body: JSON.stringify({
+                            ip: ip,
+                            port: port,
                             skipConnectivityCheck: true
                           })
                         });
@@ -655,16 +617,12 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
                         const data = await response.json();
                         console.log(`Open drawer response data:`, data);
                         
-                        if (response.status === 200 && data.success) {
-                          console.log('Cash drawer opened successfully');
-                          toast.success('Cash drawer opened successfully');
-                        } else {
+                        if (response.status !== 200) {
                           console.error('Failed to open drawer:', data.error || 'Unknown error');
-                          toast.error(`Could not open cash drawer: ${data.error || 'Unknown error'}`);
                         }
                       } catch (drawerError) {
                         console.error('Error opening cash drawer for Pay In:', drawerError);
-                        toast.error('Could not open cash drawer. Please check printer connection.');
+                        // Continue with opening the dialog even if drawer fails
                       }
                       
                       // Then show the dialog
@@ -678,18 +636,20 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
                   <Button 
                     variant="outline" 
                     onClick={async () => {
-                      // First open the cash drawer using the direct method from the printer test page
+                      // First open the cash drawer
                       try {
                         console.log('Opening cash drawer for Pay Out');
+                        const printerConfig = await getProxyConfig();
+                        const { ip, port } = printerConfig;
                         
-                        // Send a direct request to the open-drawer endpoint
-                        // Let the printer proxy use its own configuration
                         const response = await fetch(`${PRINTER_PROXY_URL}/open-drawer`, {
                           method: 'POST',
                           headers: {
                             'Content-Type': 'application/json'
                           },
                           body: JSON.stringify({
+                            ip: ip,
+                            port: port,
                             skipConnectivityCheck: true
                           })
                         });
@@ -698,16 +658,12 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
                         const data = await response.json();
                         console.log(`Open drawer response data:`, data);
                         
-                        if (response.status === 200 && data.success) {
-                          console.log('Cash drawer opened successfully');
-                          toast.success('Cash drawer opened successfully');
-                        } else {
+                        if (response.status !== 200) {
                           console.error('Failed to open drawer:', data.error || 'Unknown error');
-                          toast.error(`Could not open cash drawer: ${data.error || 'Unknown error'}`);
                         }
                       } catch (drawerError) {
                         console.error('Error opening cash drawer for Pay Out:', drawerError);
-                        toast.error('Could not open cash drawer. Please check printer connection.');
+                        // Continue with opening the dialog even if drawer fails
                       }
                       
                       // Then show the dialog
@@ -917,7 +873,7 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
               disabled={isLoading}
               className="bg-red-600 hover:bg-red-700"
             >
-              {isLoading ? 'Processing...' : 'Pay Out.'}
+              {isLoading ? 'Processing...' : 'Pay Out'}
             </Button>
           </DialogFooter>
         </DialogContent>
