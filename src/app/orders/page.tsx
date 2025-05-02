@@ -1576,7 +1576,7 @@ const OrdersPage = () => {
                         {hasPendingPayment(order) ? '💰 Pay Now' : '💰 Pay Remaining'}
                       </button>
                     )}
-                    {order.status === 'CANCELLED' && (
+                    {(order.status === 'CANCELLED' || order.status === 'COMPLETED') && (
                       <>
                         <button
                           onClick={() => handleRefundOrder(order.id)}
