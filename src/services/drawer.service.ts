@@ -29,6 +29,7 @@ export interface DrawerSession {
     firstName: string;
     lastName: string;
   };
+  paymentTotals?: Record<string, number>;
 }
 
 export interface DrawerLog {
