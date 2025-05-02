@@ -305,6 +305,7 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
             closingAmount: amount,
             sessionId: response.id || 'unknown',
             openingAmount: response.openingAmount ? parseFloat(response.openingAmount) : 0,
+            openedAt: response.openedAt || response.createdAt || null, // Add openedAt property for the opening date
             closedAt: response.closedAt || new Date().toISOString(),
             operations: response.operations || [],
             user: response.user || { firstName: 'Unknown', lastName: 'User' }
