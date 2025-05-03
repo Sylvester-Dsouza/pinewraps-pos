@@ -120,6 +120,9 @@ const OrdersPage = () => {
   const [selectedOrderForPickupUpdate, setSelectedOrderForPickupUpdate] = useState<Order | null>(null);
   const [showPartialRefundModal, setShowPartialRefundModal] = useState<string | null>(null);
   const [partialRefundAmount, setPartialRefundAmount] = useState<string>('');
+  const [refundNotes, setRefundNotes] = useState<string>('');
+  const [partialRefundNotes, setPartialRefundNotes] = useState<string>('');
+  const [showRefundModal, setShowRefundModal] = useState<string | null>(null);
   const { isSuperAdmin } = useUserRole();
 
   // Check authentication status
@@ -296,8 +299,59 @@ const OrdersPage = () => {
             return payment;
           }) || [];
 
+          // Extract the latest refund notes from statusHistory if available
+          let refundNotes = '';
+          
+          // Debug the order object
+          console.log(`Order ${order.id} status:`, order.status);
+          console.log(`Order ${order.id} direct notes:`, order.notes);
+          
+          if (order.statusHistory && Array.isArray(order.statusHistory) && order.statusHistory.length > 0) {
+            console.log(`Order ${order.id} has status history:`, order.statusHistory.length, 'entries');
+            
+            // Log all status history entries for debugging
+            order.statusHistory.forEach((entry: any, index: number) => {
+              console.log(`Status history entry ${index}:`, {
+                status: entry.status,
+                notes: entry.notes,
+                updatedAt: entry.updatedAt
+              });
+            });
+            
+            // Find the most recent REFUNDED or PARTIALLY_REFUNDED status entry
+            const refundEntries = order.statusHistory
+              .filter((entry: any) => 
+                (entry.status === 'REFUNDED' || entry.status === 'PARTIALLY_REFUNDED')
+              );
+              
+            console.log(`Found ${refundEntries.length} refund status entries`);
+            
+            const refundEntry = refundEntries.sort((a: any, b: any) => 
+              new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+            )[0];
+              
+            if (refundEntry) {
+              console.log('Latest refund entry:', refundEntry);
+              
+              if (refundEntry.notes) {
+                refundNotes = refundEntry.notes;
+                console.log('Found refund notes:', refundNotes);
+              } else {
+                console.log('Refund entry has no notes');
+              }
+            } else {
+              console.log('No refund entries found in status history');
+            }
+          } else {
+            console.log(`Order ${order.id} has no status history`);
+          }
+          
           return {
             ...order,
+            // Add the refund notes to the order object
+            notes: (order.status === 'REFUNDED' || order.status === 'PARTIALLY_REFUNDED') 
+              ? (refundNotes || order.notes || '') 
+              : (order.notes || ''),
             items: order.items.map((item: any) => ({
               ...item,
               name: item.productName || item.name,
@@ -539,13 +593,49 @@ const OrdersPage = () => {
 
   const handleRefundOrder = async (orderId: string) => {
     try {
+      // Reset modal state
+      setShowRefundModal(null);
+      
+      // Get the current order to check its status
+      const orderToRefund = orders.find(order => order.id === orderId);
+      
+      // Get current user info
+      const auth = getAuth();
+      const user = auth.currentUser;
+      const userEmail = user?.email || 'Unknown user';
+      
+      // Format the notes - only include the actual notes, not the prefix
+      const formattedNotes = refundNotes.trim() 
+        ? refundNotes.trim() 
+        : `Refunded by ${userEmail}`;
+      
+      if (orderToRefund?.status === 'COMPLETED') {
+        // For completed orders, we need to first cancel the order
+        console.log('Order is in COMPLETED state, cancelling first before refunding');
+        
+        // First cancel the order
+        const cancelResponse = await apiMethods.pos.updateOrderStatus(orderId, {
+          status: 'CANCELLED',
+          notes: 'Order cancelled before refund by POS user'
+        });
+        
+        if (!cancelResponse.success) {
+          throw new Error(cancelResponse.message || 'Failed to cancel order before refund');
+        }
+        
+        // Wait a moment for the backend to process the cancellation
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+      
+      // Now refund the order
       const response = await apiMethods.pos.updateOrderStatus(orderId, {
         status: 'REFUNDED',
-        notes: 'Order refunded by POS user'
+        notes: formattedNotes
       });
 
       if (response.success) {
         toast.success('Order marked as refunded');
+        setRefundNotes(''); // Clear notes
         fetchOrders(); // Refresh orders list
       } else {
         throw new Error(response.message || 'Failed to mark order as refunded');
@@ -565,9 +655,41 @@ const OrdersPage = () => {
         return;
       }
 
+      // Get the current order to check its status
+      const orderToRefund = orders.find(order => order.id === orderId);
+      
+      // Get current user info
+      const auth = getAuth();
+      const user = auth.currentUser;
+      const userEmail = user?.email || 'Unknown user';
+      
+      // Format the notes - only include the actual notes with amount, not the prefix
+      const formattedNotes = partialRefundNotes.trim() 
+        ? `${partialRefundNotes.trim()} (Amount: AED ${amount})` 
+        : `Refunded by ${userEmail} (Amount: AED ${amount})`;
+      
+      if (orderToRefund?.status === 'COMPLETED') {
+        // For completed orders, we need to first cancel the order
+        console.log('Order is in COMPLETED state, cancelling first before partial refund');
+        
+        // First cancel the order
+        const cancelResponse = await apiMethods.pos.updateOrderStatus(orderId, {
+          status: 'CANCELLED',
+          notes: 'Order cancelled before partial refund by POS user'
+        });
+        
+        if (!cancelResponse.success) {
+          throw new Error(cancelResponse.message || 'Failed to cancel order before partial refund');
+        }
+        
+        // Wait a moment for the backend to process the cancellation
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+
+      // Now partially refund the order
       const response = await apiMethods.pos.updateOrderStatus(orderId, {
         status: 'PARTIALLY_REFUNDED',
-        notes: `Order partially refunded by POS user. Amount: ${amount}`,
+        notes: formattedNotes,
         partialRefundAmount: amount
       });
 
@@ -575,6 +697,7 @@ const OrdersPage = () => {
         toast.success('Order marked as partially refunded');
         setShowPartialRefundModal(null);
         setPartialRefundAmount('');
+        setPartialRefundNotes(''); // Clear notes
         fetchOrders(); // Refresh orders list
       } else {
         throw new Error(response.message || 'Failed to mark order as partially refunded');
@@ -1255,12 +1378,30 @@ const OrdersPage = () => {
                         
                         {/* Display refund status */}
                         {order.status === 'REFUNDED' && (
-                          <p className="font-medium text-red-600 mt-2">Status: Fully Refunded</p>
+                          <div className="mt-2 pt-2 border-t border-gray-200">
+                            <p className="font-medium text-red-600">Status: Fully Refunded</p>
+                            {order.notes && (
+                              <div className="bg-red-50 p-2 rounded-md mt-1 border border-red-200">
+                                <p className="text-red-700 text-sm">
+                                  <span className="font-medium">Refund Notes:</span> {order.notes}
+                                </p>
+                              </div>
+                            )}
+                          </div>
                         )}
                         {order.status === 'PARTIALLY_REFUNDED' && order.partialRefundAmount && (
-                          <p className="font-medium text-orange-600 mt-2">
-                            Status: Partially Refunded (AED {order.partialRefundAmount.toFixed(2)})
-                          </p>
+                          <div className="mt-2 pt-2 border-t border-gray-200">
+                            <p className="font-medium text-orange-600">
+                              Status: Partially Refunded (AED {order.partialRefundAmount.toFixed(2)})
+                            </p>
+                            {order.notes && (
+                              <div className="bg-orange-50 p-2 rounded-md mt-1 border border-orange-200">
+                                <p className="text-orange-700 text-sm">
+                                  <span className="font-medium">Refund Notes:</span> {order.notes}
+                                </p>
+                              </div>
+                            )}
+                          </div>
                         )}
                         
                         {/* Delivery/Pickup Details */}
@@ -1568,7 +1709,7 @@ const OrdersPage = () => {
                           Gift Receipt
                         </button>
                       )}
-                    {(hasPartialPayment(order) || hasPendingPayment(order)) && !isFullyPaid(order) && (
+                    {(hasPartialPayment(order) || hasPendingPayment(order)) && !isFullyPaid(order) && !['REFUNDED', 'PARTIALLY_REFUNDED'].includes(order.status) && (
                       <button
                         onClick={() => setSelectedOrderForPayment(order)}
                         className="px-4 py-2 text-sm font-medium text-indigo-600 bg-indigo-100 rounded-md hover:bg-indigo-200 flex-1 flex items-center justify-center gap-2"
@@ -1579,14 +1720,21 @@ const OrdersPage = () => {
                     {(order.status === 'CANCELLED' || order.status === 'COMPLETED') && (
                       <>
                         <button
-                          onClick={() => handleRefundOrder(order.id)}
+                          onClick={() => {
+                            setRefundNotes('');
+                            setShowRefundModal(order.id);
+                          }}
                           className="text-sm text-orange-600 hover:text-orange-800 flex items-center gap-1 mr-3"
                         >
                           <RotateCcw className="h-4 w-4" />
                           Mark as Refunded
                         </button>
                         <button
-                          onClick={() => setShowPartialRefundModal(order.id)}
+                          onClick={() => {
+                            setPartialRefundAmount('');
+                            setPartialRefundNotes('');
+                            setShowPartialRefundModal(order.id);
+                          }}
                           className="text-sm text-orange-600 hover:text-orange-800 flex items-center gap-1"
                         >
                           <RotateCcw className="h-4 w-4" />
@@ -1667,21 +1815,74 @@ const OrdersPage = () => {
         />
       )}
 
+      {/* Full Refund Modal */}
+      {showRefundModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold mb-4">Refund Order</h3>
+            <p className="text-gray-600 mb-4">
+              Are you sure you want to mark this order as refunded?
+            </p>
+            <div className="mb-4">
+              <label htmlFor="refundNotes" className="block text-sm font-medium text-gray-700 mb-1">
+                Refund Notes (Optional)
+              </label>
+              <textarea
+                id="refundNotes"
+                value={refundNotes}
+                onChange={(e) => setRefundNotes(e.target.value)}
+                placeholder="Enter any notes about this refund"
+                className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[80px]"
+              />
+            </div>
+            <div className="flex justify-end gap-3 mt-4">
+              <button
+                onClick={() => setShowRefundModal(null)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleRefundOrder(showRefundModal)}
+                className="px-4 py-2 text-sm font-medium text-white bg-orange-600 rounded-md hover:bg-orange-700"
+              >
+                Confirm Refund
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Partial Refund Modal */}
       {showPartialRefundModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
             <h3 className="text-lg font-semibold mb-4">Partial Refund</h3>
-            <p className="text-gray-600 mb-6">
-              Enter the amount you want to refund:
-            </p>
-            <input
-              type="number"
-              value={partialRefundAmount}
-              onChange={(e) => setPartialRefundAmount(e.target.value)}
-              placeholder="Refund Amount"
-              className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
+            <div className="mb-4">
+              <label htmlFor="partialRefundAmount" className="block text-sm font-medium text-gray-700 mb-1">
+                Refund Amount
+              </label>
+              <input
+                id="partialRefundAmount"
+                type="number"
+                value={partialRefundAmount}
+                onChange={(e) => setPartialRefundAmount(e.target.value)}
+                placeholder="Enter amount to refund"
+                className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div className="mb-4">
+              <label htmlFor="partialRefundNotes" className="block text-sm font-medium text-gray-700 mb-1">
+                Refund Notes (Optional)
+              </label>
+              <textarea
+                id="partialRefundNotes"
+                value={partialRefundNotes}
+                onChange={(e) => setPartialRefundNotes(e.target.value)}
+                placeholder="Enter any notes about this partial refund"
+                className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[80px]"
+              />
+            </div>
             <div className="flex justify-end gap-3 mt-4">
               <button
                 onClick={() => setShowPartialRefundModal(null)}
@@ -1693,7 +1894,7 @@ const OrdersPage = () => {
                 onClick={() => handlePartialRefund(showPartialRefundModal)}
                 className="px-4 py-2 text-sm font-medium text-white bg-orange-600 rounded-md hover:bg-orange-700"
               >
-                Refund
+                Confirm Partial Refund
               </button>
             </div>
           </div>

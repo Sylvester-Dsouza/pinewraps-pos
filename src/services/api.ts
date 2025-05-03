@@ -931,12 +931,16 @@ export const apiMethods = {
       }
     },
 
-    getOrders: async (params?: { status?: string, startDate?: string, endDate?: string }) => {
+    getOrders: async (params?: { status?: string, startDate?: string, endDate?: string, paymentStatus?: string, pickupDate?: string, deliveryDate?: string }) => {
       try {
         console.log('Fetching orders with params:', params);
+        // Add includeStatusHistory parameter to get refund notes
         const url = '/api/pos/orders';
         const config = {
-          params: params || undefined,
+          params: {
+            ...params,
+            includeStatusHistory: true // Explicitly request status history
+          },
           headers: {
             'Cache-Control': 'no-cache',
             'Pragma': 'no-cache'
