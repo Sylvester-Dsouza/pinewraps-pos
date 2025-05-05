@@ -11,10 +11,10 @@ import Header from '@/components/header/header';
 import { useQuery } from '@tanstack/react-query';
 import Image from 'next/image';
 import { nanoid } from 'nanoid';
-import { CartItem, CustomImage } from '@/types/cart';
+import { CartItem, CustomImage, CartProduct } from '@/types/cart';
 import { useDrawerStatus } from '@/providers/drawer-status-provider';
 
-import { Search, X, Minus, Plus } from 'lucide-react';
+import { Search, X, Minus, Plus, Edit } from 'lucide-react';
 
 const sanitizeImageUrl = (url: string | undefined) => {
   if (!url) return null;
@@ -42,6 +42,7 @@ export default function POSPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [editingCartItem, setEditingCartItem] = useState<CartItem | null>(null);
   const [isCheckoutModalOpen, setIsCheckoutModalOpen] = useState(false);
   const checkoutDetailsRef = useRef<any>(null);
   const [checkoutDetails, setCheckoutDetails] = useState<any>(null);
@@ -424,6 +425,60 @@ export default function POSPage() {
     toast.success('Removed from cart');
   };
 
+  // Handle editing cart item
+  const handleEditCartItem = (item: CartItem) => {
+    // Set the selected product to open the product details modal
+    // Need to ensure we're using the full Product type, not CartProduct
+    const fullProduct = productsData?.find(p => p.id === item.product.id) || item.product as unknown as Product;
+    setSelectedProduct(fullProduct);
+    // Store the item being edited
+    setEditingCartItem(item);
+  };
+  
+  // Handle updating cart item after edit
+  const handleUpdateCartItem = (updatedItem: {
+    product: Product;
+    quantity: number;
+    selectedVariations: Array<{
+      id: string;
+      type: string;
+      value: string;
+      priceAdjustment: number;
+      customText?: string;
+    }>;
+    notes?: string;
+    customImages?: CustomImage[];
+    totalPrice: number;
+  }) => {
+    if (!editingCartItem) return;
+    
+    // Create updated cart item with the original ID
+    const cartItem: CartItem = {
+      id: editingCartItem.id,
+      product: updatedItem.product as unknown as CartProduct,
+      quantity: updatedItem.quantity,
+      selectedVariations: updatedItem.selectedVariations,
+      notes: updatedItem.notes,
+      customImages: updatedItem.customImages,
+      totalPrice: updatedItem.totalPrice
+    };
+    
+    // Update the cart by replacing the edited item
+    setCart(prevCart => {
+      const updatedCart = prevCart.map(item => 
+        item.id === editingCartItem.id ? cartItem : item
+      );
+      localStorage.setItem('pos-cart', JSON.stringify(updatedCart));
+      return updatedCart;
+    });
+    
+    // Reset editing state
+    setEditingCartItem(null);
+    setSelectedProduct(null);
+    
+    toast.success('Item updated');
+  };
+
   // Handle updating quantity
   const handleUpdateQuantity = (itemId: string, newQuantity: number) => {
     if (newQuantity < 1) {
@@ -794,6 +849,13 @@ export default function POSPage() {
                         </button>
                       </div>
                       <button
+                        onClick={() => handleEditCartItem(item)}
+                        className="p-6 text-blue-600 hover:bg-blue-50 active:bg-blue-100 transition-colors border-l border-gray-100"
+                        title="Edit item"
+                      >
+                        <Edit className="h-6 w-6" />
+                      </button>
+                      <button
                         onClick={() => handleRemoveFromCart(item.id)}
                         className="p-6 text-red-600 hover:bg-red-50 active:bg-red-100 transition-colors border-l border-gray-100"
                       >
@@ -828,8 +890,27 @@ export default function POSPage() {
         <ProductDetailsModal
           product={selectedProduct}
           isOpen={!!selectedProduct}
-          onClose={() => setSelectedProduct(null)}
-          onAddToOrder={handleAddToOrder}
+          onClose={() => {
+            setSelectedProduct(null);
+            setEditingCartItem(null);
+          }}
+          onAddToOrder={editingCartItem ? handleUpdateCartItem : handleAddToOrder}
+          editMode={!!editingCartItem}
+          existingItem={editingCartItem ? {
+            id: editingCartItem.id,
+            product: selectedProduct, // Use the full Product type here
+            quantity: editingCartItem.quantity,
+            selectedVariations: editingCartItem.selectedVariations.map(v => ({
+              id: v.id,
+              type: v.type,
+              value: v.value,
+              priceAdjustment: v.priceAdjustment || 0, // Ensure priceAdjustment is always defined
+              customText: v.customText
+            })),
+            notes: editingCartItem.notes,
+            customImages: editingCartItem.customImages,
+            totalPrice: editingCartItem.totalPrice
+          } : undefined}
         />
       )}
 

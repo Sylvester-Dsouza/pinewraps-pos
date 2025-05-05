@@ -18,11 +18,29 @@ interface ProductDetailsModalProps {
       type: string;
       value: string;
       priceAdjustment: number;
+      customText?: string;
     }>;
     notes?: string;
     customImages?: CustomImage[];
     totalPrice: number;
   }) => void;
+  // For editing existing cart items
+  editMode?: boolean;
+  existingItem?: {
+    id: string;
+    product: Product;
+    quantity: number;
+    selectedVariations: Array<{
+      id: string;
+      type: string;
+      value: string;
+      priceAdjustment: number;
+      customText?: string;
+    }>;
+    notes?: string;
+    customImages?: CustomImage[];
+    totalPrice: number;
+  };
 }
 
 interface SelectedOption {
@@ -69,6 +87,8 @@ export default function ProductDetailsModal({
   isOpen,
   onClose,
   onAddToOrder,
+  editMode = false,
+  existingItem,
 }: ProductDetailsModalProps) {
   const [quantity, setQuantity] = useState(1);
   const [selectedOptions, setSelectedOptions] = useState<SelectedOption[]>([]);
@@ -84,17 +104,70 @@ export default function ProductDetailsModal({
   const [expandedOptions, setExpandedOptions] = useState<Record<string, boolean>>({});
   const [loadingAddons, setLoadingAddons] = useState(false);
   
-  // Reset state when product changes
+  // Reset state when product changes or initialize from existing item in edit mode
   useEffect(() => {
-    setQuantity(1);
-    setSelectedOptions([]);
-    setSelectedVariant(null);
-    setCustomPrice(null);
-    setNotes("");
-    setSelectedAddons([]);
-    setAddonCustomTexts({});
-    setCustomImages([]);
-    setExpandedOptions({});
+    if (editMode && existingItem) {
+      // Initialize state from existing cart item
+      setQuantity(existingItem.quantity);
+      setNotes(existingItem.notes || "");
+      setCustomImages(existingItem.customImages || []);
+      
+      // Handle custom price if needed
+      if (product.allowCustomPrice && existingItem.totalPrice / existingItem.quantity !== product.basePrice) {
+        setCustomPrice(existingItem.totalPrice / existingItem.quantity);
+      } else {
+        setCustomPrice(null);
+      }
+      
+      // Initialize selected options based on existing variations
+      const optionsToSelect: SelectedOption[] = [];
+      
+      // Process existing variations to set selected options
+      if (existingItem.selectedVariations && existingItem.selectedVariations.length > 0) {
+        existingItem.selectedVariations.forEach(variation => {
+          // Find matching option and value in the product
+          const matchingOption = product.options?.find(option => option.name === variation.type);
+          if (matchingOption) {
+            const matchingValue = matchingOption.values.find(val => val.value === variation.value);
+            if (matchingValue) {
+              optionsToSelect.push({
+                optionId: matchingOption.id,
+                valueId: matchingValue.id
+              });
+            }
+          }
+        });
+      }
+      
+      setSelectedOptions(optionsToSelect);
+      
+      // Find matching variant if applicable
+      if (product.variants && product.variants.length > 0 && optionsToSelect.length > 0) {
+        const matchingVariant = product.variants.find(variant => {
+          const variantValues = variant.values as ProductVariantValue[];
+          return optionsToSelect.every(selectedOption => 
+            variantValues.some(value => value.valueId === selectedOption.valueId)
+          );
+        });
+        
+        if (matchingVariant) {
+          setSelectedVariant(matchingVariant);
+        }
+      }
+      
+      console.log('Initialized from existing item:', existingItem);
+    } else {
+      // Reset state for new item
+      setQuantity(1);
+      setSelectedOptions([]);
+      setSelectedVariant(null);
+      setCustomPrice(null);
+      setNotes("");
+      setSelectedAddons([]);
+      setAddonCustomTexts({});
+      setCustomImages([]);
+      setExpandedOptions({});
+    }
     
     console.log('Product details:', product);
     console.log('Product allowCustomImages:', product.allowCustomImages);
@@ -107,6 +180,46 @@ export default function ProductDetailsModal({
           if (response.success && response.data) {
             setProductAddons(response.data);
             console.log('Product addons:', response.data);
+            
+            // If we're in edit mode and have existing variations, initialize the addon selections
+            if (editMode && existingItem && existingItem.selectedVariations) {
+              // Extract addon selections from the existing variations
+              const addonSelections: SelectedAddonOption[] = [];
+              const customTexts: Record<string, string> = {};
+              
+              existingItem.selectedVariations.forEach(variation => {
+                // Find matching addon and option in the fetched addons
+                const matchingAddon = response.data.find(addon => 
+                  addon.options.some(option => option.name === variation.value)
+                );
+                
+                if (matchingAddon) {
+                  const matchingOption = matchingAddon.options.find(option => option.name === variation.value);
+                  if (matchingOption) {
+                    // Add to selected addons
+                    const selectionIndex = addonSelections.filter(s => s.addonId === matchingAddon.id).length;
+                    addonSelections.push({
+                      addonId: matchingAddon.id,
+                      optionId: matchingOption.id,
+                      selectionIndex: selectionIndex
+                    });
+                    
+                    // If there's custom text, add it to the custom texts
+                    if (variation.customText) {
+                      customTexts[`${matchingAddon.id}_${matchingOption.id}_${selectionIndex}`] = variation.customText;
+                    }
+                  }
+                }
+              });
+              
+              // Set the selected addons and custom texts
+              if (addonSelections.length > 0) {
+                setSelectedAddons(addonSelections);
+                setAddonCustomTexts(customTexts);
+                console.log('Initialized addon selections:', addonSelections);
+                console.log('Initialized custom texts:', customTexts);
+              }
+            }
           }
         })
         .catch(error => {
@@ -1010,7 +1123,7 @@ export default function ProductDetailsModal({
                       </div>
                     </div>
 
-                    {/* Add to Order Button */}
+                    {/* Add to Order / Update Item Button */}
                     <button
                       onClick={handleAddToOrder}
                       disabled={!isReadyToAdd()}
@@ -1020,7 +1133,10 @@ export default function ProductDetailsModal({
                           : 'bg-gray-200 text-gray-500 cursor-not-allowed'
                       }`}
                     >
-                      {`Add to Order - AED ${calculateTotalPrice().toFixed(2)}`}
+                      {editMode 
+                        ? `Update Item - AED ${calculateTotalPrice().toFixed(2)}` 
+                        : `Add to Order - AED ${calculateTotalPrice().toFixed(2)}`
+                      }
                       {!isReadyToAdd() && (
                         <div className="text-sm mt-1">Please select all required options</div>
                       )}
