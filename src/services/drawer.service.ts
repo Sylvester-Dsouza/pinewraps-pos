@@ -30,6 +30,8 @@ export interface DrawerSession {
     lastName: string;
   };
   paymentTotals?: Record<string, number>;
+  // Added for till closing report
+  completedOrders?: number;
 }
 
 export interface DrawerLog {
