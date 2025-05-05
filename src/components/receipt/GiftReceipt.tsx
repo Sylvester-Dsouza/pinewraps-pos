@@ -71,13 +71,14 @@ export const generateGiftReceiptContent = (order: Order): string => `
       <div class="divider"></div>
       
       <div style="margin: 10px 0;">
-        <p style="margin: 2px 0; font-weight: bold;">Customer Details:</p>
-        ${order.customerName ? `<p style="margin: 2px 0;">${formatLineItem('Name:', order.customerName)}</p>` : ''}
-        ${order.customerPhone ? `<p style="margin: 2px 0;">${formatLineItem('Phone:', order.customerPhone)}</p>` : ''}
-        ${order.customerEmail ? `<p style="margin: 2px 0;">${formatLineItem('Email:', order.customerEmail)}</p>` : ''}
+        <p style="margin: 2px 0; font-weight: bold;">Gift Recipient:</p>
+        ${order.giftRecipientName ? `<p style="margin: 2px 0;">${formatLineItem('Name:', order.giftRecipientName)}</p>` : ''}
+        ${order.giftRecipientPhone ? `<p style="margin: 2px 0;">${formatLineItem('Phone:', order.giftRecipientPhone)}</p>` : ''}
+        ${order.giftMessage ? `<p style="margin: 2px 0;">${formatLineItem('Message:', order.giftMessage)}</p>` : ''}
       </div>
       
       <div class="divider"></div>
+      
       <div style="margin: 10px 0;">
         <p style="margin: 2px 0; font-weight: bold;">${order.deliveryMethod === 'DELIVERY' ? 'Delivery Details' : 'Pickup Details'}</p>
         ${order.deliveryMethod === 'DELIVERY' ? `
