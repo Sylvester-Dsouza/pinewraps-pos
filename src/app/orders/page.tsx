@@ -1257,7 +1257,7 @@ const OrdersPage = () => {
         ) : orders.length === 0 ? (
           <div className="text-center text-gray-500 py-8">No orders found</div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="flex flex-wrap -mx-3 content-start">
             {orders
               .filter(order => {
                 // Apply search term filtering
@@ -1343,8 +1343,9 @@ const OrdersPage = () => {
                 return true;
               })
               .map((order) => (
-              <div key={order.id} className="bg-white rounded-lg shadow-sm p-6 h-full">
-                <div className="flex flex-col h-full">
+              <div key={order.id} className="w-full md:w-1/2 px-3 mb-6">
+                <div className="bg-white rounded-lg shadow-sm p-6 h-full">
+                  <div className="flex flex-col">
                   <div className="flex justify-between items-start gap-4 mb-4">
                     <div>
                       <div className="flex items-center gap-2 mb-2">
@@ -1371,9 +1372,9 @@ const OrdersPage = () => {
                       </div>
                       
                       <div className="text-sm text-gray-600 space-y-1">
-                        <p>Customer: {order.customerName}</p>
-                        <p>Phone: {order.customerPhone}</p>
-                        {order.customerEmail && <p>Email: {order.customerEmail}</p>}
+                        <p className="text-sm break-words overflow-hidden">Customer: {order.customerName}</p>
+                        <p className="text-sm break-words overflow-hidden">Phone: {order.customerPhone}</p>
+                        {order.customerEmail && <p className="break-words overflow-hidden">Email: {order.customerEmail}</p>}
                         <p>Date: {format(new Date(order.createdAt), 'PPpp')}</p>
                         
                         {/* Display refund status */}
@@ -1413,15 +1414,19 @@ const OrdersPage = () => {
                                 <p>Date & Time: {format(new Date(order.deliveryDate), 'PP')} - {order.deliveryTimeSlot}</p>
                               )}
                               {order.streetAddress && (
-                                <p>Address: {[
-                                  order.streetAddress,
-                                  order.apartment,
-                                  order.city,
-                                  order.emirate
-                                ].filter(Boolean).join(', ')}</p>
+                                <div className="break-words overflow-hidden">
+                                  <p className="font-medium mb-1">Address:</p>
+                                  <p className="ml-2">{order.streetAddress}</p>
+                                  {order.apartment && (
+                                    <p className="ml-2 break-all">{order.apartment}</p>
+                                  )}
+                                  {(order.city || order.emirate) && (
+                                    <p className="ml-2">{[order.city, order.emirate].filter(Boolean).join(', ')}</p>
+                                  )}
+                                </div>
                               )}
                               {order.deliveryInstructions && (
-                                <p>Instructions: {order.deliveryInstructions}</p>
+                                <p className="break-words overflow-hidden">Instructions: {order.deliveryInstructions}</p>
                               )}
                               {/* Add button to update order details */}
                               {!['COMPLETED', 'CANCELLED'].includes(order.status) && (
@@ -1473,13 +1478,13 @@ const OrdersPage = () => {
                               <h4 className="font-semibold text-gray-700">Gift Information:</h4>
                             </div>
                             {order.giftRecipientName && (
-                              <p className="text-sm">Recipient: {order.giftRecipientName}</p>
+                              <p className="text-sm break-words overflow-hidden">Recipient: {order.giftRecipientName}</p>
                             )}
                             {order.giftRecipientPhone && (
-                              <p className="text-sm">Recipient Phone: {order.giftRecipientPhone}</p>
+                              <p className="text-sm break-words overflow-hidden">Recipient Phone: {order.giftRecipientPhone}</p>
                             )}
                             {order.giftMessage && (
-                              <p className="text-sm">Message: "{order.giftMessage}"</p>
+                              <p className="text-sm break-words overflow-hidden">Message: "{order.giftMessage}"</p>
                             )}
                             {order.giftCashAmount && parseFloat(String(order.giftCashAmount)) > 0 && (
                               <p className="text-sm">Cash Gift: AED {parseFloat(String(order.giftCashAmount)).toFixed(2)}</p>
@@ -1500,25 +1505,25 @@ const OrdersPage = () => {
                     </div>
                   </div>
                   
-                  <div className="flex-grow">
+                  <div>
                     <h4 className="font-semibold mb-2">Order Items</h4>
                     <div className="space-y-2">
                       {order.items.map((item, index) => (
                         <div key={index} className="flex justify-between items-start text-sm">
                           <div className="flex-1">
-                            <p className="font-medium">{item.productName}</p>
+                            <p className="font-medium break-words overflow-hidden">{item.productName}</p>
                             <p className="text-gray-600">Quantity: {item.quantity}</p>
                             {item.selectedVariations && item.selectedVariations.length > 0 && (
                               <div className="text-gray-600">
                                 {item.selectedVariations.map((v, idx) => (
-                                  <p key={idx} className="text-sm">
+                                  <p key={idx} className="text-sm break-words overflow-hidden">
                                     {v.type}: <span className="font-medium">{v.value}</span>
                                   </p>
                                 ))}
                               </div>
                             )}
                             {item.notes && (
-                              <p className="text-gray-600 mt-1">Notes: {item.notes}</p>
+                              <p className="text-gray-600 mt-1 break-words overflow-hidden">Notes: {item.notes}</p>
                             )}
                             {item.customImages && item.customImages.length > 0 && (
                               <div className="mt-2">
@@ -1730,31 +1735,31 @@ const OrdersPage = () => {
                     </div>
                   </div>
                   
-                  <div className="flex items-center gap-2 mt-4">
+                  <div className="flex flex-wrap gap-2 mt-4">
                     <button
                       onClick={() => setSelectedOrder(order)}
-                      className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 flex-1"
+                      className="px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 min-w-fit"
                     >
                       View Receipt
                     </button>
                     {!['COMPLETED', 'CANCELLED', 'REFUNDED', 'PARTIALLY_REFUNDED'].includes(order.status) && (
                       <button
                         onClick={() => isSuperAdmin ? setShowCancelConfirm(order.id) : handleCancelAttempt()}
-                        className={`px-4 py-2 text-sm font-medium ${isSuperAdmin ? 'text-red-700 bg-red-100 hover:bg-red-200' : 'text-gray-500 bg-gray-100 hover:bg-gray-200'} rounded-md flex-1`}
+                        className={`px-3 py-2 text-sm font-medium ${isSuperAdmin ? 'text-red-700 bg-red-100 hover:bg-red-200' : 'text-gray-500 bg-gray-100 hover:bg-gray-200'} rounded-md min-w-fit`}
                       >
                         Cancel Order
                       </button>
                     )}
                     <button
                       onClick={() => handleReorder(order)}
-                      className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 flex-1"
+                      className="px-3 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-fit"
                     >
                       Reorder
                     </button>
                     <button
                         onClick={() => handleDownloadInvoice(order.id)}
                         disabled={downloadingInvoices[order.id]}
-                        className="px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 flex items-center gap-2 min-w-fit whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         {downloadingInvoices[order.id] ? (
                           <Loader2 className="h-4 w-4 animate-spin" />
@@ -1766,7 +1771,7 @@ const OrdersPage = () => {
                       {order.isGift && (
                         <button
                           onClick={() => handleViewGiftReceipt(order)}
-                          className="px-3 py-2 text-sm font-medium text-pink-700 bg-pink-100 rounded-md hover:bg-pink-200 flex items-center gap-2"
+                          className="px-3 py-2 text-sm font-medium text-pink-700 bg-pink-100 rounded-md hover:bg-pink-200 flex items-center gap-2 min-w-fit whitespace-nowrap"
                         >
                           <Download className="h-4 w-4" />
                           Gift Receipt
@@ -1775,7 +1780,7 @@ const OrdersPage = () => {
                     {(hasPartialPayment(order) || hasPendingPayment(order)) && !isFullyPaid(order) && !['REFUNDED', 'PARTIALLY_REFUNDED'].includes(order.status) && (
                       <button
                         onClick={() => setSelectedOrderForPayment(order)}
-                        className="px-4 py-2 text-sm font-medium text-indigo-600 bg-indigo-100 rounded-md hover:bg-indigo-200 flex-1 flex items-center justify-center gap-2"
+                        className="px-3 py-2 text-sm font-medium text-indigo-600 bg-indigo-100 rounded-md hover:bg-indigo-200 min-w-fit flex items-center justify-center gap-2"
                       >
                         {hasPendingPayment(order) ? '💰 Pay Now' : '💰 Pay Remaining'}
                       </button>
@@ -1787,7 +1792,7 @@ const OrdersPage = () => {
                             setRefundNotes('');
                             setShowRefundModal(order.id);
                           }}
-                          className="text-sm text-orange-600 hover:text-orange-800 flex items-center gap-1 mr-3"
+                          className="px-3 py-2 text-sm font-medium text-orange-600 bg-orange-100 rounded-md hover:bg-orange-200 flex items-center gap-1 min-w-fit whitespace-nowrap"
                         >
                           <RotateCcw className="h-4 w-4" />
                           Mark as Refunded
@@ -1798,13 +1803,14 @@ const OrdersPage = () => {
                             setPartialRefundNotes('');
                             setShowPartialRefundModal(order.id);
                           }}
-                          className="text-sm text-orange-600 hover:text-orange-800 flex items-center gap-1"
+                          className="px-3 py-2 text-sm font-medium text-orange-600 bg-orange-100 rounded-md hover:bg-orange-200 flex items-center gap-1 min-w-fit whitespace-nowrap"
                         >
                           <RotateCcw className="h-4 w-4" />
                           Mark as Partial Refund
                         </button>
                       </>
                     )}
+                  </div>
                   </div>
                 </div>
               </div>

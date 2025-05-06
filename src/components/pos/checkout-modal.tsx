@@ -817,50 +817,64 @@ export default function CheckoutModal({
       }
 
       // Process custom images for each cart item
-      const processedCart = await Promise.all(
-        cart.map(async (item) => {
-          if (item.customImages && item.customImages.length > 0) {
-            try {
-              // Create a temporary order ID for storage path
-              const tempOrderId = nanoid();
+      const processedCart = [];
+      
+      // Process items sequentially to ensure all images are uploaded properly
+      for (const item of cart) {
+        if (item.customImages && item.customImages.length > 0) {
+          try {
+            // Create a temporary order ID for storage path
+            const tempOrderId = nanoid();
 
-              console.log(`Processing ${item.customImages.length} custom images for item ${item.id}`);
+            console.log(`Processing ${item.customImages.length} custom images for item ${item.id}`);
 
-              // Add timeout to prevent hanging on image upload
-              const uploadPromise = uploadCustomImages(item.customImages, tempOrderId);
-              const timeoutPromise = new Promise((_, reject) => {
-                setTimeout(() => reject(new Error('Image upload timed out')), 10000);
-              });
+            // Use our improved uploadCustomImages function which handles retries and validation
+            const uploadedImages = await uploadCustomImages(item.customImages, tempOrderId);
 
-              // Race between upload and timeout
-              const uploadedImages = await Promise.race([uploadPromise, timeoutPromise]) as CustomImage[];
-
-              // Log the uploaded images
-              console.log('Uploaded images for item:', item.id, uploadedImages.map(img => ({ id: img.id, url: img.url })));
-
-              // Return updated cart item with uploaded image URLs
-              return {
-                ...item,
-                customImages: uploadedImages.map(img => ({
-                  ...img,
-                  url: img.url || '' // Ensure URL is never undefined
-                }))
-              };
-            } catch (error) {
-              console.error('Error uploading images:', error);
-              // Continue with order even if image upload fails
-              return {
-                ...item,
-                customImages: item.customImages.map(img => ({
-                  ...img,
-                  url: img.url || '' // Ensure URL is never undefined
-                }))
-              };
+            // Verify all images were uploaded successfully
+            const successfulUploads = uploadedImages.filter(img => img.url && img.url.startsWith('http')).length;
+            const totalImages = item.customImages.length;
+            
+            console.log(`Uploaded ${successfulUploads}/${totalImages} images for item ${item.id}`);
+            
+            if (successfulUploads < totalImages) {
+              console.warn(`Some images (${totalImages - successfulUploads}) failed to upload for item ${item.id}`);
             }
+
+            // Log the uploaded images
+            console.log('Uploaded images for item:', item.id, uploadedImages.map(img => ({ id: img.id, url: img.url })));
+
+            // Add the processed item to the cart
+            processedCart.push({
+              ...item,
+              customImages: uploadedImages.map(img => ({
+                ...img,
+                url: img.url || '' // Ensure URL is never undefined
+              }))
+            });
+          } catch (error) {
+            console.error(`Error processing images for item ${item.id}:`, error);
+            // Continue with order even if image upload fails, but log the error
+            toast.error(`Some images for item ${item.name || item.id} could not be uploaded. The order will continue, but you may need to add images later.`);
+            
+            processedCart.push({
+              ...item,
+              customImages: item.customImages.map(img => ({
+                ...img,
+                url: img.url || '' // Ensure URL is never undefined
+              }))
+            });
           }
-          return item;
-        })
-      );
+        } else {
+          // No custom images, just add the item as is
+          processedCart.push(item);
+        }
+      }
+      
+      // Verify all items were processed
+      if (processedCart.length !== cart.length) {
+        console.error(`Item count mismatch: expected ${cart.length}, got ${processedCart.length}`);
+      }
 
       // Update cart with processed images
       setCart(processedCart);
