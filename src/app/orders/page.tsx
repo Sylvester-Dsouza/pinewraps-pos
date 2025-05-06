@@ -1663,7 +1663,70 @@ const OrdersPage = () => {
                     )}
                     
                     <div className="mt-3 pt-2 border-t border-gray-200">
-                      <p className="font-medium text-gray-700">Total Amount: AED {order.totalAmount?.toFixed(2) || '0.00'}</p>
+                      <h4 className="font-medium text-gray-700 mb-2">Order Summary:</h4>
+                      <div className="space-y-1">
+                        {/* Always show subtotal */}
+                        <div className="flex justify-between text-sm">
+                          <span>Subtotal:</span>
+                          <span>AED {order.subtotal?.toFixed(2) || order.totalAmount?.toFixed(2) || '0.00'}</span>
+                        </div>
+                        
+                        {/* Show coupon discount if available */}
+                        {order.couponDiscount > 0 && order.couponCode && (
+                          <div className="flex justify-between text-sm text-green-600">
+                            <span>Coupon Discount ({order.couponCode}):</span>
+                            <span>-AED {order.couponDiscount.toFixed(2)}</span>
+                          </div>
+                        )}
+                        {order.couponDiscount > 0 && !order.couponCode && (
+                          <div className="flex justify-between text-sm text-green-600">
+                            <span>Discount:</span>
+                            <span>-AED {order.couponDiscount.toFixed(2)}</span>
+                          </div>
+                        )}
+                        {/* For backward compatibility with older orders */}
+                        {!order.couponDiscount && (order as any).metadata?.discount > 0 && (
+                          <div className="flex justify-between text-sm text-green-600">
+                            <span>
+                              {(order as any).metadata?.coupon?.code ? 
+                                `Coupon Discount (${(order as any).metadata.coupon.code})` : 
+                                'Discount'}
+                            </span>
+                            <span>-AED {(order as any).metadata.discount.toFixed(2)}</span>
+                          </div>
+                        )}
+                        {!order.couponDiscount && !(order as any).metadata?.discount && (order as any).metadata?.coupon?.discount > 0 && (
+                          <div className="flex justify-between text-sm text-green-600">
+                            <span>
+                              {(order as any).metadata?.coupon?.code ? 
+                                `Coupon Discount (${(order as any).metadata.coupon.code})` : 
+                                'Discount'}
+                            </span>
+                            <span>-AED {(order as any).metadata.coupon.discount.toFixed(2)}</span>
+                          </div>
+                        )}
+                        
+                        {/* Show delivery charge if applicable */}
+                        {order.deliveryMethod === 'DELIVERY' && order.deliveryCharge && order.deliveryCharge > 0 && (
+                          <div className="flex justify-between text-sm">
+                            <span>Delivery Charge:</span>
+                            <span>AED {order.deliveryCharge.toFixed(2)}</span>
+                          </div>
+                        )}
+                        
+                        {/* Show tax if available */}
+                        {(order as any).metadata?.tax && (order as any).metadata.tax > 0 && (
+                          <div className="flex justify-between text-sm">
+                            <span>Tax:</span>
+                            <span>AED {(order as any).metadata.tax.toFixed(2)}</span>
+                          </div>
+                        )}
+                        
+                        <div className="flex justify-between font-medium text-gray-900 pt-1 border-t border-gray-100">
+                          <span>Total:</span>
+                          <span>AED {order.totalAmount?.toFixed(2) || '0.00'}</span>
+                        </div>
+                      </div>
                     </div>
                   </div>
                   

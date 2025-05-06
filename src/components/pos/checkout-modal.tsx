@@ -456,6 +456,9 @@ export default function CheckoutModal({
       // This ensures the backend validation passes (payment amount matches order total)
       total: hasPartialPayment ? totalPaidAmount : totalWithDelivery,
       subtotal: cartTotal,
+      // Include coupon code and discount amount
+      couponCode: appliedCoupon ? appliedCoupon.code : undefined,
+      couponDiscount: appliedCoupon ? appliedCoupon.discount : 0,
       allowPartialPayment: hasPartialPayment, // Flag to tell backend this order allows partial payment
       // Store the real total for reference
       actualTotal: totalWithDelivery,
@@ -522,7 +525,15 @@ export default function CheckoutModal({
           canReturnToKitchen: hasKitchenProducts,
           canReturnToDesign: hasDesignProducts,
           finalCheckNotes: ''
-        }
+        },
+        // Include coupon information in metadata
+        coupon: appliedCoupon ? {
+          code: appliedCoupon.code,
+          type: appliedCoupon.type,
+          value: appliedCoupon.value,
+          discount: appliedCoupon.discount
+        } : null,
+        discount: appliedCoupon ? appliedCoupon.discount : 0
       }
     };
 

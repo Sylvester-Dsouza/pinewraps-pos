@@ -139,6 +139,8 @@ export interface POSOrderData {
   payments: OrderPayment[];
   total: number;
   subtotal?: number;
+  couponCode?: string;
+  couponDiscount?: number;
   allowPartialPayment?: boolean; // Flag to indicate if this order allows partial payments
   actualTotal?: number; // The real total amount when using partial payments
 
@@ -205,6 +207,13 @@ export interface POSOrderData {
       canReturnToDesign: boolean;
       finalCheckNotes: string;
     };
+    coupon?: {
+      code: string;
+      type: string;
+      value: number;
+      discount: number;
+    };
+    discount?: number;
   };
 }
 
@@ -259,6 +268,8 @@ export interface Order {
   items: OrderItem[];
   totalAmount: number;
   subtotal?: number;
+  couponCode?: string;
+  couponDiscount?: number;
 
   // Processing flags based on order flow
   requiresKitchen?: boolean;

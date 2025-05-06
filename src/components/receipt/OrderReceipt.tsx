@@ -138,11 +138,88 @@ export const generateReceiptContent = (order: Order): string => `
     <div class="divider"></div>
     
     <div style="margin: 10px 0;">
+      <h3 style="margin: 5px 0; text-align: center; font-size: 14px;">Order Summary</h3>
+      <div class="divider"></div>
+      
+      <!-- Always show subtotal -->
       <p style="margin: 2px 0;">${formatLineItem('Subtotal:', formatCurrency(order.subtotal || order.totalAmount))}</p>
-      ${order.deliveryMethod === 'DELIVERY' && order.deliveryCharge ? `<p style="margin: 2px 0;">${formatLineItem('Delivery:', formatCurrency(order.deliveryCharge))}</p>` : ''}
-      ${(order as any).metadata?.tax ? `<p style="margin: 2px 0;">${formatLineItem('Tax:', formatCurrency((order as any).metadata.tax))}</p>` : ''}
-      ${(order as any).metadata?.discount ? `<p style="margin: 2px 0;">${formatLineItem('Discount:', formatCurrency(-(order as any).metadata.discount))}</p>` : ''}
-      <p style="margin: 2px 0; font-weight: bold;">${formatLineItem('Total:', formatCurrency(order.totalAmount))}</p>
+      
+      <!-- Display coupon discount if available -->
+      ${order.couponDiscount > 0 && order.couponCode ? `<p style="margin: 2px 0;">${formatLineItem(`Coupon Discount (${order.couponCode}):`, formatCurrency(-order.couponDiscount))}</p>` : ''}
+      ${order.couponDiscount > 0 && !order.couponCode ? `<p style="margin: 2px 0;">${formatLineItem('Discount:', formatCurrency(-order.couponDiscount))}</p>` : ''}
+      
+      <!-- For backward compatibility with older orders -->
+      ${!order.couponDiscount && (order as any).metadata?.discount > 0 && (order as any).metadata?.coupon?.code ? 
+        `<p style="margin: 2px 0;">${formatLineItem(`Coupon Discount (${(order as any).metadata.coupon.code}):`, formatCurrency(-(order as any).metadata.discount))}</p>` : ''}
+      ${!order.couponDiscount && (order as any).metadata?.discount > 0 && !(order as any).metadata?.coupon?.code ? 
+        `<p style="margin: 2px 0;">${formatLineItem('Discount:', formatCurrency(-(order as any).metadata.discount))}</p>` : ''}
+      ${!order.couponDiscount && !(order as any).metadata?.discount && (order as any).metadata?.coupon?.discount > 0 && (order as any).metadata?.coupon?.code ? 
+        `<p style="margin: 2px 0;">${formatLineItem(`Coupon Discount (${(order as any).metadata.coupon.code}):`, formatCurrency(-(order as any).metadata.coupon.discount))}</p>` : ''}
+      ${!order.couponDiscount && !(order as any).metadata?.discount && (order as any).metadata?.coupon?.discount > 0 && !(order as any).metadata?.coupon?.code ? 
+        `<p style="margin: 2px 0;">${formatLineItem('Discount:', formatCurrency(-(order as any).metadata.coupon.discount))}</p>` : ''}
+      
+      <!-- Display delivery charge if applicable -->
+      ${order.deliveryMethod === 'DELIVERY' && order.deliveryCharge && order.deliveryCharge > 0 ? `<p style="margin: 2px 0;">${formatLineItem('Delivery Charge:', formatCurrency(order.deliveryCharge))}</p>` : ''}
+      
+      <!-- Calculate tax as 5% of subtotal after coupon discount -->
+      ${(() => {
+        // Get the subtotal
+        const subtotal = order.subtotal || order.totalAmount || 0;
+        
+        // Get the coupon discount
+        let couponDiscount = 0;
+        if (order.couponDiscount && order.couponDiscount > 0) {
+          couponDiscount = order.couponDiscount;
+        } else if ((order as any).metadata?.discount && (order as any).metadata.discount > 0) {
+          couponDiscount = (order as any).metadata.discount;
+        } else if ((order as any).metadata?.coupon?.discount && (order as any).metadata.coupon.discount > 0) {
+          couponDiscount = (order as any).metadata.coupon.discount;
+        }
+        
+        // Calculate the taxable amount (subtotal - coupon discount)
+        const taxableAmount = Math.max(0, subtotal - couponDiscount);
+        
+        // Calculate tax (5% of taxable amount)
+        const taxRate = 0.05;
+        const tax = taxableAmount * taxRate;
+        
+        // Return the tax line
+        return `<p style="margin: 2px 0;">${formatLineItem(`Tax (5%):`, formatCurrency(tax))}</p>`;
+      })()}
+      
+      <div class="divider"></div>
+      
+      <!-- Total amount with recalculated tax -->
+      ${(() => {
+        // Get the subtotal
+        const subtotal = order.subtotal || order.totalAmount || 0;
+        
+        // Get the coupon discount
+        let couponDiscount = 0;
+        if (order.couponDiscount && order.couponDiscount > 0) {
+          couponDiscount = order.couponDiscount;
+        } else if ((order as any).metadata?.discount && (order as any).metadata.discount > 0) {
+          couponDiscount = (order as any).metadata.discount;
+        } else if ((order as any).metadata?.coupon?.discount && (order as any).metadata.coupon.discount > 0) {
+          couponDiscount = (order as any).metadata.coupon.discount;
+        }
+        
+        // Get the delivery charge
+        const deliveryCharge = (order.deliveryMethod === 'DELIVERY' && order.deliveryCharge) ? order.deliveryCharge : 0;
+        
+        // Calculate the taxable amount (subtotal - coupon discount)
+        const taxableAmount = Math.max(0, subtotal - couponDiscount);
+        
+        // Calculate tax (5% of taxable amount)
+        const taxRate = 0.05;
+        const tax = taxableAmount * taxRate;
+        
+        // Calculate the total (taxable amount + tax + delivery charge)
+        const total = taxableAmount + tax + deliveryCharge;
+        
+        // Return the total line
+        return `<p style="margin: 2px 0; font-weight: bold;">${formatLineItem('Total:', formatCurrency(total))}</p>`;
+      })()}
     </div>
     
     <div class="divider"></div>
