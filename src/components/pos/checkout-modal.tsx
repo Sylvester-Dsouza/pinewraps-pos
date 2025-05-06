@@ -1770,9 +1770,25 @@ export default function CheckoutModal({
     setCouponError('');
 
     try {
-      const response = await apiMethods.pos.validateCoupon(couponCode, cartTotal);
+      // Trim the coupon code to remove any whitespace
+      const trimmedCouponCode = couponCode.trim();
+      console.log('Validating coupon code:', trimmedCouponCode);
+      
+      const response = await apiMethods.pos.validateCoupon(trimmedCouponCode, cartTotal);
       console.log('Coupon Response:', response);
 
+      // Check if the API returned an error
+      if (!response.success) {
+        // The API returns error messages in different formats depending on the endpoint
+        // Use type assertion to access possible error message properties
+        const responseAny = response as any;
+        const errorMessage = responseAny.message || responseAny.error || 'Invalid coupon code';
+        setCouponError(errorMessage);
+        setAppliedCoupon(null);
+        return;
+      }
+      
+      // Check if the API returned valid data
       if (!response.data || !response.data.code) {
         setCouponError('Invalid coupon code');
         setAppliedCoupon(null);
@@ -1780,20 +1796,32 @@ export default function CheckoutModal({
       }
 
       // Parse numeric values and validate
-      // The API now returns numeric values directly
       let parsedValue = response.data.value;
       
-      // For backward compatibility, handle string values if they exist
+      // Ensure we have a valid numeric value
       if (typeof parsedValue === 'string') {
+        // Remove any non-numeric characters except decimal point
         parsedValue = parseFloat(String(parsedValue).replace(/[^\d.]/g, ''));
+      } else if (typeof parsedValue === 'number') {
+        // If it's already a number, we're good
+        parsedValue = parsedValue;
+      } else {
+        // If it's neither string nor number, default to 0
+        parsedValue = 0;
       }
       
-      console.log('Parsed coupon value:', parsedValue);
+      console.log('Parsed coupon value:', parsedValue, 'Type:', response.data.type);
       
+      // Validate the coupon value
       if (isNaN(parsedValue) || parsedValue <= 0) {
         setCouponError('Invalid coupon value');
         setAppliedCoupon(null);
         return;
+      }
+      
+      // Additional validation for percentage coupons
+      if (response.data.type === 'PERCENTAGE' && parsedValue > 100) {
+        console.warn(`Percentage coupon with value > 100%: ${parsedValue}%`);
       }
 
       // Check minimum order amount if specified
