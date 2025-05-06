@@ -1769,7 +1769,16 @@ export default function CheckoutModal({
       }
 
       // Parse numeric values and validate
-      const parsedValue = parseFloat(String(response.data.value));
+      // The API now returns numeric values directly
+      let parsedValue = response.data.value;
+      
+      // For backward compatibility, handle string values if they exist
+      if (typeof parsedValue === 'string') {
+        parsedValue = parseFloat(String(parsedValue).replace(/[^\d.]/g, ''));
+      }
+      
+      console.log('Parsed coupon value:', parsedValue);
+      
       if (isNaN(parsedValue) || parsedValue <= 0) {
         setCouponError('Invalid coupon value');
         setAppliedCoupon(null);
@@ -1788,12 +1797,20 @@ export default function CheckoutModal({
       if (response.data.type === 'PERCENTAGE') {
         discount = (cartTotal * parsedValue) / 100;
         // Apply max discount if specified
-        if (response.data.maxDiscount && discount > response.data.maxDiscount) {
-          discount = response.data.maxDiscount;
+        if (response.data.maxDiscount) {
+          // The API now returns numeric values directly
+          const maxDiscount = response.data.maxDiscount;
+          
+          if (discount > maxDiscount) {
+            discount = maxDiscount;
+          }
         }
       } else { // FIXED_AMOUNT
-        discount = parsedValue;
+        // For fixed amount, make sure we don't discount more than the cart total
+        discount = Math.min(parsedValue, cartTotal);
       }
+      
+      console.log('Calculated discount:', discount);
 
       // Set the applied coupon with calculated discount
       setAppliedCoupon({
@@ -2758,7 +2775,7 @@ export default function CheckoutModal({
                                     Discount ({appliedCoupon.code})
                                     {appliedCoupon.type === 'PERCENTAGE'
                                       ? ` (${appliedCoupon.value}%)`
-                                      : `AED ${appliedCoupon.value} off`
+                                      : ` (AED ${appliedCoupon.value.toFixed(2)} off)`
                                     }
                                   </p>
                                   <button
