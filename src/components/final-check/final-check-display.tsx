@@ -259,83 +259,92 @@ export default function FinalCheckDisplay({ staffRoles, router: externalRouter }
 
   // Get orders by status
   const getOrdersByStatus = (status: FinalCheckOrderStatus) => {
-    return orders
-      .filter(order => {
-        if (status === "FINAL_CHECK_COMPLETE") {
-          // Show both FINAL_CHECK_COMPLETE and COMPLETED orders in the Ready column
-          return order.status === "FINAL_CHECK_COMPLETE" || order.status === "COMPLETED";
+    // First filter orders by status
+    const filteredOrders = orders.filter(order => {
+      if (status === "FINAL_CHECK_COMPLETE") {
+        // Show both FINAL_CHECK_COMPLETE and COMPLETED orders in the Ready column
+        return order.status === "FINAL_CHECK_COMPLETE" || order.status === "COMPLETED";
+      }
+      return order.status === status;
+    });
+    
+    // Sort orders based on status
+    return filteredOrders.sort((a, b) => {
+      // For Ready column (FINAL_CHECK_COMPLETE), sort by latest first (reverse chronological)
+      if (status === "FINAL_CHECK_COMPLETE") {
+        // Use creation date for sorting Ready column - latest first
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      }
+      
+      // For other columns, maintain the original sorting logic
+      // Get the relevant date for each order (pickup or delivery)
+      const getOrderDate = (order: FinalCheckOrder) => {
+        let dateStr = '';
+        let timeStr = '';
+        
+        // Determine which date and time to use based on delivery method
+        if (order.deliveryMethod === 'PICKUP' && order.pickupDate) {
+          dateStr = order.pickupDate;
+          timeStr = order.pickupTimeSlot || '';
+        } else if (order.deliveryMethod === 'DELIVERY' && order.deliveryDate) {
+          dateStr = order.deliveryDate;
+          timeStr = order.deliveryTimeSlot || '';
+        } else {
+          // If no pickup or delivery date, use created date
+          return new Date(order.createdAt);
         }
-        return order.status === status;
-      })
-      .sort((a, b) => {
-        // Get the relevant date for each order (pickup or delivery)
-        const getOrderDate = (order: FinalCheckOrder) => {
-          let dateStr = '';
-          let timeStr = '';
+        
+        // Create a date object from the date string
+        const date = new Date(dateStr);
+        
+        // Extract hour from time slot if available
+        if (timeStr) {
+          // Try first to match time format like "10:00 AM - 11:00 AM"
+          const timeSlotParts = timeStr.split(' - ');
+          const startTime = timeSlotParts[0] || '';
           
-          // Determine which date and time to use based on delivery method
-          if (order.deliveryMethod === 'PICKUP' && order.pickupDate) {
-            dateStr = order.pickupDate;
-            timeStr = order.pickupTimeSlot || '';
-          } else if (order.deliveryMethod === 'DELIVERY' && order.deliveryDate) {
-            dateStr = order.deliveryDate;
-            timeStr = order.deliveryTimeSlot || '';
-          } else {
-            // If no pickup or delivery date, use created date
-            return new Date(order.createdAt);
-          }
-          
-          // Create a date object from the date string
-          const date = new Date(dateStr);
-          
-          // Extract hour from time slot if available
-          if (timeStr) {
-            // Try first to match time format like "10:00 AM - 11:00 AM"
-            const timeSlotParts = timeStr.split(' - ');
-            const startTime = timeSlotParts[0] || '';
+          if (startTime) {
+            // Try to match standard time format (e.g., "10:00 AM")
+            const match = startTime.match(/(\d+):(\d+)\s*(AM|PM)/i);
             
-            if (startTime) {
-              // Try to match standard time format (e.g., "10:00 AM")
-              const match = startTime.match(/(\d+):(\d+)\s*(AM|PM)/i);
+            if (match) {
+              let hour = parseInt(match[1], 10);
+              const minute = parseInt(match[2], 10);
               
-              if (match) {
-                let hour = parseInt(match[1], 10);
-                const minute = parseInt(match[2], 10);
-                
-                // Convert to 24-hour format
-                if (match[3].toUpperCase() === 'PM' && hour < 12) {
-                  hour += 12;
-                } else if (match[3].toUpperCase() === 'AM' && hour === 12) {
-                  hour = 0;
-                }
-                
-                date.setHours(hour, minute, 0, 0);
-              } else {
-                // Alternative approach for other time formats
-                const matches = startTime.match(/\d+/g) || ['0', '0'];
-                const hours = matches[0] || '0';
-                const minutes = matches[1] || '0';
-                const isPM = startTime.toLowerCase().includes('pm');
-                
-                let hoursNum = parseInt(hours, 10);
-                if (isPM && hoursNum < 12) hoursNum += 12;
-                if (!isPM && hoursNum === 12) hoursNum = 0;
-                
-                date.setHours(hoursNum, parseInt(minutes, 10), 0, 0);
+              // Convert to 24-hour format
+              if (match[3].toUpperCase() === 'PM' && hour < 12) {
+                hour += 12;
+              } else if (match[3].toUpperCase() === 'AM' && hour === 12) {
+                hour = 0;
               }
+              
+              date.setHours(hour, minute, 0, 0);
+            } else {
+              // Alternative approach for other time formats
+              const matches = startTime.match(/\d+/g) || ['0', '0'];
+              const hours = matches[0] || '0';
+              const minutes = matches[1] || '0';
+              const isPM = startTime.toLowerCase().includes('pm');
+              
+              let hoursNum = parseInt(hours, 10);
+              if (isPM && hoursNum < 12) hoursNum += 12;
+              if (!isPM && hoursNum === 12) hoursNum = 0;
+              
+              date.setHours(hoursNum, parseInt(minutes, 10), 0, 0);
             }
           }
-          
-          return date;
-        };
+        }
         
-        // Get dates for comparison
-        const dateA = getOrderDate(a);
-        const dateB = getOrderDate(b);
-        
-        // Simple chronological sort - earlier dates first
-        return dateA.getTime() - dateB.getTime();
-      });
+        return date;
+      };
+      
+      // Get dates for comparison
+      const dateA = getOrderDate(a);
+      const dateB = getOrderDate(b);
+      
+      // Simple chronological sort - earlier dates first
+      return dateA.getTime() - dateB.getTime();
+    });
   };
 
   const fetchOrders = async () => {
