@@ -8,18 +8,16 @@ import { nanoid } from 'nanoid';
  * @param file The file to upload
  * @param orderId The order ID to use in the storage path
  * @param index The index of the image in the order
- * @param retryCount The number of retries
  * @returns Promise with the download URL
  */
 export const uploadCustomImage = async (
   file: File,
   orderId: string,
-  index: number = 0,
-  retryCount: number = 0
+  index: number
 ): Promise<string> => {
   try {
-    // Validate file
-    if (!file) {
+    // Skip invalid files
+    if (!file || !(file instanceof File)) {
       console.warn('Invalid file provided to uploadCustomImage');
       return '';
     }
@@ -31,17 +29,14 @@ export const uploadCustomImage = async (
     // Create a reference to the storage location
     const storageRef = ref(storage, `orders/${orderId}/images/${fileName}`);
     
-    console.log(`Starting upload for file ${fileName} to path orders/${orderId}/images/ (attempt ${retryCount + 1})`);
+    console.log(`Starting upload for file ${fileName} to path orders/${orderId}/images/`);
     
     // Upload the file with a timeout
     const uploadPromise = uploadBytes(storageRef, file);
     
-    // Set a timeout to prevent hanging - use a longer timeout for larger files
-    const fileSize = file.size;
-    const timeoutMs = Math.min(30000, 15000 + Math.floor(fileSize / 100000) * 5000); // Base 15s + 5s per 100KB, max 30s
-    
+    // Set a timeout to prevent hanging
     const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error(`Upload timed out after ${timeoutMs}ms`)), timeoutMs);
+      setTimeout(() => reject(new Error('Upload timed out')), 15000); // Increased timeout
     });
     
     // Race between upload and timeout
@@ -50,7 +45,7 @@ export const uploadCustomImage = async (
     // Get the download URL
     const downloadURL = await getDownloadURL(snapshot.ref);
     
-    console.log(`Successfully uploaded image ${index} to Firebase: ${downloadURL}`);
+    console.log(`Successfully uploaded image to Firebase: ${downloadURL}`);
     
     // Verify the URL is valid
     if (!downloadURL || typeof downloadURL !== 'string' || downloadURL.trim() === '') {
@@ -60,22 +55,8 @@ export const uploadCustomImage = async (
     
     return downloadURL;
   } catch (error) {
-    console.error(`Error uploading image ${index} to Firebase Storage:`, error);
-    
-    // Retry logic - attempt up to 3 retries with exponential backoff
-    if (retryCount < 3) {
-      const backoffTime = Math.pow(2, retryCount) * 1000; // 1s, 2s, 4s
-      console.log(`Retrying upload for image ${index} after ${backoffTime}ms (attempt ${retryCount + 1}/3)`);
-      
-      // Wait for backoff period
-      await new Promise(resolve => setTimeout(resolve, backoffTime));
-      
-      // Retry the upload
-      return uploadCustomImage(file, orderId, index, retryCount + 1);
-    }
-    
-    // After all retries failed
-    console.error(`All ${retryCount + 1} attempts to upload image ${index} failed`);
+    console.error('Error uploading image to Firebase Storage:', error);
+    // Return empty string instead of throwing to prevent the whole process from failing
     return '';
   }
 };
@@ -100,73 +81,60 @@ export const uploadCustomImages = async (
     
     console.log(`Starting upload of ${validImages.length} images for order ${orderId}`);
     
-    // Process images sequentially to avoid overwhelming Firebase
-    const results: CustomImage[] = [];
-    
-    for (let index = 0; index < validImages.length; index++) {
-      const image = validImages[index];
-      
+    const uploadPromises = validImages.map(async (image, index) => {
       // Skip if no file or already has URL
       if (!image.file || (image.url && image.url.startsWith('http'))) {
         console.log(`Image ${index} already has URL or no file:`, image.url);
-        results.push(image);
-        continue;
+        return image;
       }
       
       try {
-        // Upload the file and get the download URL
+        // Upload the file and get the download URL with a timeout
         console.log(`Uploading image ${index} for order ${orderId}`);
         const downloadURL = await uploadCustomImage(image.file, orderId, index);
         
-        // Verify we got a valid URL
-        if (!downloadURL || downloadURL.trim() === '') {
-          console.warn(`No valid URL returned for image ${index}, retrying once more`);
-          // One more attempt if we didn't get a URL
-          const retryURL = await uploadCustomImage(image.file, orderId, index);
-          
-          if (!retryURL || retryURL.trim() === '') {
-            throw new Error(`Failed to get valid URL for image ${index} after retry`);
-          }
-          
-          console.log(`Retry successful for image ${index}, got URL: ${retryURL}`);
-          
-          // Add the successfully uploaded image to results
-          results.push({
-            ...image,
-            url: retryURL
-          });
-        } else {
-          console.log(`Successfully uploaded image ${index}, got URL: ${downloadURL}`);
-          
-          // Add the successfully uploaded image to results
-          results.push({
-            ...image,
-            url: downloadURL
-          });
-        }
+        console.log(`Successfully uploaded image ${index}, got URL: ${downloadURL}`);
+        
+        // Return updated image object with URL
+        const updatedImage = {
+          ...image,
+          url: downloadURL || '' // Ensure we always have at least an empty string
+        };
+        
+        console.log(`Returning updated image object:`, {
+          id: updatedImage.id,
+          url: updatedImage.url
+        });
+        
+        return updatedImage;
       } catch (error) {
         console.error(`Error uploading image at index ${index}:`, error);
-        // Add the original image to results if upload fails
-        results.push({
+        // Return the original image if upload fails
+        return {
           ...image,
           url: image.url || '' // Use empty string instead of null
-        });
+        };
       }
-    }
+    });
     
-    // Verify all images were processed
-    if (results.length !== validImages.length) {
-      console.error(`Image count mismatch: expected ${validImages.length}, got ${results.length}`);
-    }
+    // Wait for all uploads to complete with a global timeout
+    const timeoutPromise = new Promise<CustomImage[]>((_, reject) => {
+      setTimeout(() => reject(new Error('All image uploads timed out')), 30000); // Increased timeout
+    });
     
-    // Log successful uploads
-    const successfulUploads = results.filter(img => img.url && img.url.startsWith('http')).length;
-    console.log(`Successfully uploaded ${successfulUploads}/${validImages.length} images for order ${orderId}`);
+    const uploadedImages = await Promise.race<CustomImage[]>([
+      Promise.all(uploadPromises),
+      timeoutPromise
+    ]);
     
-    return results;
+    console.log(`Completed uploading ${uploadedImages.length} images:`, 
+      uploadedImages.map(img => ({ id: img.id, url: img.url }))
+    );
+    
+    return uploadedImages;
   } catch (error) {
-    console.error('Error in uploadCustomImages:', error);
-    // Return original images with their existing URLs if the whole process fails
+    console.error('Error uploading images to Firebase Storage:', error);
+    // Return original images with empty URLs if the whole process fails
     return images.map(img => ({
       ...img,
       url: img.url || '' // Use empty string instead of null

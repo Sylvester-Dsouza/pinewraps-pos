@@ -52,7 +52,7 @@ import Cookies from 'js-cookie';
 import { useRouter } from 'next/navigation';
 import crypto from 'crypto';
 import { drawerService } from '@/services/drawer.service';
-import { uploadCustomImages } from '@/utils/firebase-storage';
+import { uploadCustomImages, uploadCustomImage } from '@/utils/firebase-storage';
 import axios from 'axios';
 import OrderReceipt, { generateReceiptContent } from '@/components/receipt/OrderReceipt';
 
@@ -817,64 +817,87 @@ export default function CheckoutModal({
       }
 
       // Process custom images for each cart item
-      const processedCart = [];
-      
-      // Process items sequentially to ensure all images are uploaded properly
-      for (const item of cart) {
-        if (item.customImages && item.customImages.length > 0) {
-          try {
-            // Create a temporary order ID for storage path
-            const tempOrderId = nanoid();
+      const processedCart = await Promise.all(
+        cart.map(async (item) => {
+          if (item.customImages && item.customImages.length > 0) {
+            try {
+              // Create a temporary order ID for storage path
+              const tempOrderId = nanoid();
 
-            console.log(`Processing ${item.customImages.length} custom images for item ${item.id}`);
+              console.log(`Processing ${item.customImages.length} custom images for item ${item.id}`);
+              
+              // Process each image individually with retry logic
+              const processedImages = await Promise.all(
+                item.customImages.map(async (image, index) => {
+                  // Skip if already has valid URL
+                  if (image.url && image.url.startsWith('http')) {
+                    console.log(`Image ${index} already has valid URL: ${image.url}`);
+                    return image;
+                  }
+                  
+                  // Try uploading with retries
+                  let attempts = 0;
+                  const maxAttempts = 3;
+                  let uploadedImage = { ...image };
+                  
+                  while (attempts < maxAttempts) {
+                    try {
+                      attempts++;
+                      console.log(`Uploading image ${index} for item ${item.id}, attempt ${attempts}`);
+                      
+                      if (!image.file) {
+                        console.warn(`No file for image ${index}, skipping upload`);
+                        break;
+                      }
+                      
+                      // Upload single image with longer timeout
+                      const downloadURL = await uploadCustomImage(image.file, tempOrderId, index);
+                      
+                      if (downloadURL && downloadURL.startsWith('http')) {
+                        console.log(`Successfully uploaded image ${index}, got URL: ${downloadURL}`);
+                        uploadedImage.url = downloadURL;
+                        break; // Success, exit retry loop
+                      } else {
+                        console.warn(`Failed to get valid URL for image ${index}, attempt ${attempts}`);
+                        // Will retry if attempts < maxAttempts
+                      }
+                    } catch (err) {
+                      console.error(`Error uploading image ${index}, attempt ${attempts}:`, err);
+                      // Will retry if attempts < maxAttempts
+                    }
+                  }
+                  
+                  return uploadedImage;
+                })
+              );
 
-            // Use our improved uploadCustomImages function which handles retries and validation
-            const uploadedImages = await uploadCustomImages(item.customImages, tempOrderId);
+              // Log the uploaded images
+              console.log('Processed images for item:', item.id, processedImages.map(img => ({ id: img.id, url: img.url })));
+              
+              // Verify all images have valid URLs
+              const validImages = processedImages.filter(img => img.url && img.url.startsWith('http'));
+              console.log(`${validImages.length} of ${processedImages.length} images have valid URLs`);
 
-            // Verify all images were uploaded successfully
-            const successfulUploads = uploadedImages.filter(img => img.url && img.url.startsWith('http')).length;
-            const totalImages = item.customImages.length;
-            
-            console.log(`Uploaded ${successfulUploads}/${totalImages} images for item ${item.id}`);
-            
-            if (successfulUploads < totalImages) {
-              console.warn(`Some images (${totalImages - successfulUploads}) failed to upload for item ${item.id}`);
+              // Return updated cart item with uploaded image URLs
+              return {
+                ...item,
+                customImages: processedImages
+              };
+            } catch (error) {
+              console.error('Error processing images for item:', item.id, error);
+              // Continue with order even if image upload fails, but log the error
+              return {
+                ...item,
+                customImages: item.customImages.map(img => ({
+                  ...img,
+                  url: img.url || '' // Ensure URL is never undefined
+                }))
+              };
             }
-
-            // Log the uploaded images
-            console.log('Uploaded images for item:', item.id, uploadedImages.map(img => ({ id: img.id, url: img.url })));
-
-            // Add the processed item to the cart
-            processedCart.push({
-              ...item,
-              customImages: uploadedImages.map(img => ({
-                ...img,
-                url: img.url || '' // Ensure URL is never undefined
-              }))
-            });
-          } catch (error) {
-            console.error(`Error processing images for item ${item.id}:`, error);
-            // Continue with order even if image upload fails, but log the error
-            toast.error(`Some images for item ${item.name || item.id} could not be uploaded. The order will continue, but you may need to add images later.`);
-            
-            processedCart.push({
-              ...item,
-              customImages: item.customImages.map(img => ({
-                ...img,
-                url: img.url || '' // Ensure URL is never undefined
-              }))
-            });
           }
-        } else {
-          // No custom images, just add the item as is
-          processedCart.push(item);
-        }
-      }
-      
-      // Verify all items were processed
-      if (processedCart.length !== cart.length) {
-        console.error(`Item count mismatch: expected ${cart.length}, got ${processedCart.length}`);
-      }
+          return item;
+        })
+      );
 
       // Update cart with processed images
       setCart(processedCart);
