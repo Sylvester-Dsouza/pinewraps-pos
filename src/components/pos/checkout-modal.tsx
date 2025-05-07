@@ -232,14 +232,18 @@ export default function CheckoutModal({
   // Prepare order data for API
   const preparePOSOrderData = useCallback((processedCart = cart) => {
     const sanitizedCustomerDetails = sanitizeCustomerDetails();
-    const totalWithDelivery = deliveryMethodState === DeliveryMethod.DELIVERY ? cartTotal + (deliveryDetailsState?.charge || 0) : cartTotal;
+    // Calculate totalWithDelivery with proper rounding to avoid floating point issues
+    const totalWithDelivery = deliveryMethodState === DeliveryMethod.DELIVERY ? 
+      Number((cartTotal + (deliveryDetailsState?.charge || 0)).toFixed(2)) : 
+      Number(cartTotal.toFixed(2));
 
     // Create order items from cart
     const orderItems = processedCart.map(item => {
       // For custom products, use the product's basePrice directly (which was set to the custom price)
       // and ignore variation price adjustments
       if (item.product.allowCustomPrice) {
-        const unitPrice = item.product.basePrice;
+        // Ensure unitPrice is properly rounded to avoid floating point issues
+        const unitPrice = Number(item.product.basePrice.toFixed(2));
 
         const itemData: POSOrderItemData = {
           id: nanoid(),
@@ -282,12 +286,15 @@ export default function CheckoutModal({
 
         return itemData;
       } else {
-        // Calculate unit price including variations
+        // Calculate unit price including variations with proper rounding
         const variationPriceAdjustments = (item.selectedVariations || []).reduce(
-          (total, variation) => total + (variation.price || variation.priceAdjustment || 0),
+          (total, variation) => {
+            const adjustmentAmount = variation.price || variation.priceAdjustment || 0;
+            return Number((total + adjustmentAmount).toFixed(2));
+          },
           0
         );
-        const unitPrice = item.product.basePrice + variationPriceAdjustments;
+        const unitPrice = Number((item.product.basePrice + variationPriceAdjustments).toFixed(2));
 
         const itemData: POSOrderItemData = {
           id: nanoid(),
@@ -350,6 +357,16 @@ export default function CheckoutModal({
     // Round the total to 2 decimal places to avoid floating point precision issues
     const roundedTotal = Number(totalWithDelivery.toFixed(2));
     console.log('Preparing order with final total:', roundedTotal);
+    
+    // For debugging - log the cart items and their prices
+    console.log('Cart items for order:', processedCart.map(item => ({
+      name: item.product.name,
+      basePrice: item.product.basePrice,
+      quantity: item.quantity,
+      totalPrice: item.totalPrice,
+      variations: item.selectedVariations?.length || 0,
+      isCustomPrice: item.product.allowCustomPrice
+    })));
     
     if (payments.length === 0 && currentPaymentMethodState) {
       // Create a default payment with the selected payment method
@@ -429,7 +446,18 @@ export default function CheckoutModal({
     // We already have roundedTotal from above, no need to recalculate
 
     // Calculate the total amount actually being paid (important for partial payments)
-    const totalPaidAmount = payments.reduce((sum, payment) => sum + payment.amount, 0);
+    // Ensure proper rounding to avoid floating point issues
+    const totalPaidAmount = payments.reduce((sum, payment) => {
+      return Number((sum + Number(payment.amount.toFixed(2))).toFixed(2));
+    }, 0);
+    
+    // Log the payment validation data for debugging
+    console.log('Payment validation:', {
+      roundedTotal,
+      totalPaidAmount: Number(totalPaidAmount.toFixed(2)),
+      difference: Math.abs(roundedTotal - Number(totalPaidAmount.toFixed(2))),
+      payments: payments.map(p => ({ method: p.method, amount: p.amount }))
+    });
 
     const orderData: POSOrderData = {
       // Order metadata
@@ -485,13 +513,14 @@ export default function CheckoutModal({
       // This ensures the backend validation passes (payment amount matches order total)
       // Always use rounded values to avoid floating point precision issues
       total: hasPartialPayment ? Number(totalPaidAmount.toFixed(2)) : roundedTotal,
+      // For non-partial payments, make sure actualTotal exactly matches the total
+      // This is critical for the backend validation
+      actualTotal: roundedTotal, // Using the rounded total to ensure exact match with payment amount
       subtotal: cartTotal,
       // Include coupon code and discount amount
       couponCode: appliedCoupon ? appliedCoupon.code : undefined,
       couponDiscount: appliedCoupon ? appliedCoupon.discount : 0,
       allowPartialPayment: hasPartialPayment, // Flag to tell backend this order allows partial payment
-      // Store the real total for reference
-      actualTotal: totalWithDelivery,
 
       // Payment details
       paymentMethod: getApiPaymentMethod(),
@@ -742,18 +771,21 @@ export default function CheckoutModal({
     return paymentsState.reduce((total, payment) => total + payment.amount, 0);
   }, [paymentsState]);
 
-  // Calculate final total including discounts and delivery
+  // Calculate final total including discounts and delivery with proper rounding
   const calculateFinalTotal = useCallback(() => {
-    let total = cartTotal;
+    // Start with cart total, ensuring it's properly rounded
+    let total = Number(cartTotal.toFixed(2));
 
-    // Apply coupon discount if available
+    // Apply coupon discount if available, with proper rounding
     if (appliedCoupon) {
-      total -= appliedCoupon.discount;
+      const discount = Number(appliedCoupon.discount.toFixed(2));
+      total = Number((total - discount).toFixed(2));
     }
 
-    // Add delivery charge if applicable
+    // Add delivery charge if applicable, with proper rounding
     if (deliveryMethodState === DeliveryMethod.DELIVERY && deliveryDetailsState?.emirate) {
-      total += deliveryDetailsState.charge || 0;
+      const charge = Number((deliveryDetailsState.charge || 0).toFixed(2));
+      total = Number((total + charge).toFixed(2));
     }
 
     return Math.max(0, total); // Ensure total is not negative
