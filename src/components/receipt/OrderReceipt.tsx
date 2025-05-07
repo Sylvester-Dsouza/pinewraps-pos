@@ -179,9 +179,10 @@ export const generateReceiptContent = (order: Order): string => `
         // Calculate the taxable amount (subtotal - coupon discount)
         const taxableAmount = Math.max(0, subtotal - couponDiscount);
         
-        // Calculate tax (5% of taxable amount)
-        const taxRate = 0.05;
-        const tax = taxableAmount * taxRate;
+        // Calculate tax using the formula: total / 1.05 = amount before VAT, then VAT = total - amountBeforeVAT
+        // This matches the calculation used in the checkout page and order emails
+        const amountBeforeVAT = Math.round((taxableAmount / 1.05) * 100) / 100;
+        const tax = Math.round((taxableAmount - amountBeforeVAT) * 100) / 100;
         
         // Return the tax line
         return `<p style="margin: 2px 0;">${formatLineItem(`Tax (5%):`, formatCurrency(tax))}</p>`;
@@ -210,12 +211,14 @@ export const generateReceiptContent = (order: Order): string => `
         // Calculate the taxable amount (subtotal - coupon discount)
         const taxableAmount = Math.max(0, subtotal - couponDiscount);
         
-        // Calculate tax (5% of taxable amount)
-        const taxRate = 0.05;
-        const tax = taxableAmount * taxRate;
+        // Calculate tax using the formula: total / 1.05 = amount before VAT, then VAT = total - amountBeforeVAT
+        // This matches the calculation used in the checkout page and order emails
+        const amountBeforeVAT = Math.round((taxableAmount / 1.05) * 100) / 100;
+        const tax = Math.round((taxableAmount - amountBeforeVAT) * 100) / 100;
         
-        // Calculate the total (taxable amount + tax + delivery charge)
-        const total = taxableAmount + tax + deliveryCharge;
+        // Calculate the total (taxable amount + delivery charge)
+        // Note: taxableAmount already includes VAT, so we don't add tax separately
+        const total = taxableAmount + deliveryCharge;
         
         // Return the total line
         return `<p style="margin: 2px 0; font-weight: bold;">${formatLineItem('Total:', formatCurrency(total))}</p>`;

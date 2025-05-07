@@ -167,12 +167,18 @@ export default function CheckoutModal({
   // Payment state
   const [showRemainingPaymentModal, setShowRemainingPaymentModal] = useState(false);
   const [showSplitPaymentModal, setShowSplitPaymentModal] = useState(false);
-  const [currentPaymentMethodState, setCurrentPaymentMethodState] = useState<POSPaymentMethod>(POSPaymentMethod.CASH);
+  const [currentPaymentMethodState, setCurrentPaymentMethodState] = useState<POSPaymentMethod | null>(
+    paymentMethod || null
+  );
   const [currentPaymentReferenceState, setCurrentPaymentReferenceState] = useState('');
   const [currentPaymentAmountState, setCurrentPaymentAmountState] = useState('');
   const [isPartialPaymentState, setIsPartialPaymentState] = useState(false);
   const [isSplitPaymentState, setIsSplitPaymentState] = useState(false);
   const [partialPaymentMethod, setPartialPaymentMethod] = useState<POSPaymentMethod>(POSPaymentMethod.CASH);
+
+  // Loading state for image uploads and order processing
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [loadingMessage, setLoadingMessage] = useState<string>('');
 
   // Updated split payment state variables
   const [splitMethod1, setSplitMethod1] = useState<POSPaymentMethod>(POSPaymentMethod.CASH);
@@ -816,6 +822,23 @@ export default function CheckoutModal({
         }
       }
 
+      // Set loading state during image upload process
+      setIsLoading(true);
+      setLoadingMessage('Uploading images... This may take a moment');
+
+      // Check if any items have custom images that need to be uploaded
+      const hasCustomImages = cart.some(item => 
+        item.customImages && 
+        item.customImages.length > 0 && 
+        item.customImages.some(img => img.file && (!img.url || !img.url.startsWith('http')))
+      );
+
+      if (hasCustomImages) {
+        console.log('Custom images detected, starting upload process before order creation');
+      } else {
+        console.log('No custom images to upload, proceeding with order creation');
+      }
+
       // Process custom images for each cart item
       const processedCart = await Promise.all(
         cart.map(async (item) => {
@@ -843,6 +866,7 @@ export default function CheckoutModal({
                   while (attempts < maxAttempts) {
                     try {
                       attempts++;
+                      setLoadingMessage(`Uploading image ${index+1} for ${item.product.name} (Attempt ${attempts}/${maxAttempts})`);
                       console.log(`Uploading image ${index} for item ${item.id}, attempt ${attempts}`);
                       
                       if (!image.file) {
@@ -860,10 +884,18 @@ export default function CheckoutModal({
                       } else {
                         console.warn(`Failed to get valid URL for image ${index}, attempt ${attempts}`);
                         // Will retry if attempts < maxAttempts
+                        if (attempts < maxAttempts) {
+                          // Add a small delay before retry
+                          await new Promise(resolve => setTimeout(resolve, 1000));
+                        }
                       }
                     } catch (err) {
                       console.error(`Error uploading image ${index}, attempt ${attempts}:`, err);
                       // Will retry if attempts < maxAttempts
+                      if (attempts < maxAttempts) {
+                        // Add a small delay before retry
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                      }
                     }
                   }
                   
@@ -878,6 +910,17 @@ export default function CheckoutModal({
               const validImages = processedImages.filter(img => img.url && img.url.startsWith('http'));
               console.log(`${validImages.length} of ${processedImages.length} images have valid URLs`);
 
+              // Check if any required images failed to upload
+              if (validImages.length < processedImages.length) {
+                const failedCount = processedImages.length - validImages.length;
+                console.warn(`${failedCount} images failed to upload for item ${item.id}`);
+                
+                // If all uploads failed, throw an error to trigger the catch block
+                if (validImages.length === 0 && processedImages.length > 0) {
+                  throw new Error(`All ${processedImages.length} image uploads failed for item ${item.id}`);
+                }
+              }
+
               // Return updated cart item with uploaded image URLs
               return {
                 ...item,
@@ -885,22 +928,42 @@ export default function CheckoutModal({
               };
             } catch (error) {
               console.error('Error processing images for item:', item.id, error);
-              // Continue with order even if image upload fails, but log the error
-              return {
-                ...item,
-                customImages: item.customImages.map(img => ({
-                  ...img,
-                  url: img.url || '' // Ensure URL is never undefined
-                }))
-              };
+              
+              // Show error to user
+              toast.error(`Failed to upload images for ${item.product.name}. Please try again.`);
+              
+              // Stop the checkout process if image upload fails
+              setIsLoading(false);
+              throw new Error(`Image upload failed for item ${item.id}: ${error.message}`);
             }
           }
           return item;
         })
+      ).catch(error => {
+        console.error('Failed to process cart images:', error);
+        setIsLoading(false);
+        throw error; // Re-throw to stop the checkout process
+      });
+
+      // Verify all items with custom images have at least one valid image URL
+      const itemsWithMissingImages = processedCart.filter(item => 
+        item.customImages && 
+        item.customImages.length > 0 && 
+        !item.customImages.some(img => img.url && img.url.startsWith('http'))
       );
+
+      if (itemsWithMissingImages.length > 0) {
+        const itemNames = itemsWithMissingImages.map(item => item.product.name).join(', ');
+        const errorMessage = `Failed to upload images for: ${itemNames}. Please try again.`;
+        console.error(errorMessage);
+        toast.error(errorMessage);
+        setIsLoading(false);
+        throw new Error(errorMessage);
+      }
 
       // Update cart with processed images
       setCart(processedCart);
+      setLoadingMessage('Images uploaded successfully. Creating order...');
 
       // Validate order details
       validateOrderDetails();
@@ -2887,6 +2950,21 @@ export default function CheckoutModal({
                                 </div>
                               </div>
                             )}
+
+                            {/* VAT calculation using the formula: total / 1.05 = amount before VAT, then VAT = total - amountBeforeVAT */}
+                            <div className="flex justify-between items-center font-medium">
+                              <p className="text-xl">Includes VAT (5%)</p>
+                              <p className="text-xl">
+                                {(() => {
+                                  // Calculate the discounted subtotal
+                                  const discountedTotal = appliedCoupon ? cartTotal - appliedCoupon.discount : cartTotal;
+                                  // Calculate amount before VAT and VAT amount using improved rounding
+                                  const amountBeforeVAT = Math.round((discountedTotal / 1.05) * 100) / 100;
+                                  const vatAmount = Math.round((discountedTotal - amountBeforeVAT) * 100) / 100;
+                                  return `AED ${vatAmount.toFixed(2)}`;
+                                })()}
+                              </p>
+                            </div>
 
                             <div className="flex justify-between items-center font-medium pt-2 border-t border-gray-200">
                               <p className="text-2xl font-bold">Total</p>

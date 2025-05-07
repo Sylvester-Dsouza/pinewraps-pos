@@ -1719,13 +1719,26 @@ const OrdersPage = () => {
                           </div>
                         )}
                         
-                        {/* Show tax if available */}
-                        {(order as any).metadata?.tax && (order as any).metadata.tax > 0 && (
-                          <div className="flex justify-between text-sm">
-                            <span>Tax:</span>
-                            <span>AED {(order as any).metadata.tax.toFixed(2)}</span>
-                          </div>
-                        )}
+                        {/* Calculate and show VAT using the formula: total / 1.05 = amount before VAT, then VAT = total - amountBeforeVAT */}
+                        <div className="flex justify-between text-sm">
+                          <span>Includes VAT (5%):</span>
+                          <span>
+                            {(() => {
+                              // Get the subtotal and any discounts
+                              const subtotal = (order as any).subtotal || (order as any).total || 0;
+                              const discount = (order as any).discount || (order as any).metadata?.discount || (order as any).metadata?.coupon?.discount || 0;
+                              
+                              // Calculate the discounted subtotal
+                              const discountedSubtotal = subtotal - discount;
+                              
+                              // Calculate amount before VAT and VAT amount using improved rounding
+                              const amountBeforeVAT = Math.round((discountedSubtotal / 1.05) * 100) / 100;
+                              const vatAmount = Math.round((discountedSubtotal - amountBeforeVAT) * 100) / 100;
+                              
+                              return `AED ${vatAmount.toFixed(2)}`;
+                            })()}
+                          </span>
+                        </div>
                         
                         <div className="flex justify-between font-medium text-gray-900 pt-1 border-t border-gray-100">
                           <span>Total:</span>
