@@ -375,12 +375,16 @@ export default function ParkedOrdersPage() {
       params.append('customerPhone', order.customerPhone || '');
       params.append('deliveryMethod', normalizedDeliveryMethod);
       
-      // Navigate to POS page with the parked order data
-      router.push(`/pos?${params.toString()}`);
-      
       // Store cart items and checkout details in localStorage for the POS page to access
       localStorage.setItem('pos-cart', JSON.stringify(cartItems));
       localStorage.setItem('pos-checkout-details', JSON.stringify(checkoutDetails));
+      
+      // Set a flag in localStorage to indicate we're loading a parked order
+      localStorage.setItem('pos-loading-parked-order', 'true');
+      
+      // Navigate to POS page with minimal parameters
+      // This prevents URL parameters from affecting subsequent orders
+      router.push('/pos');
       
       toast.success('Order loaded successfully');
     } catch (error) {
