@@ -452,12 +452,19 @@ export default function CheckoutModal({
     }, 0);
     
     // Log the payment validation data for debugging
+    const finalOrderTotal = hasPartialPayment ? Number(totalPaidAmount.toFixed(2)) : roundedTotal;
     console.log('Payment validation:', {
       roundedTotal,
       totalPaidAmount: Number(totalPaidAmount.toFixed(2)),
-      difference: Math.abs(roundedTotal - Number(totalPaidAmount.toFixed(2))),
+      finalOrderTotal,
+      difference: Math.abs(totalPaidAmount - finalOrderTotal),
       payments: payments.map(p => ({ method: p.method, amount: p.amount }))
     });
+    
+    // Verify that payment amounts match the order total
+    if (!hasPartialPayment && Math.abs(totalPaidAmount - finalOrderTotal) > 0.01) {
+      console.warn(`Payment validation warning: Payment total (${totalPaidAmount}) doesn't match order total (${finalOrderTotal})`);
+    }
 
     const orderData: POSOrderData = {
       // Order metadata
@@ -509,13 +516,13 @@ export default function CheckoutModal({
 
         return paymentData;
       }),
-      // Use the actual amount paid for the total when it's a partial payment
+      // IMPORTANT: Always set both total and actualTotal to the same value to avoid validation errors
       // This ensures the backend validation passes (payment amount matches order total)
       // Always use rounded values to avoid floating point precision issues
       total: hasPartialPayment ? Number(totalPaidAmount.toFixed(2)) : roundedTotal,
       // For non-partial payments, make sure actualTotal exactly matches the total
       // This is critical for the backend validation
-      actualTotal: roundedTotal, // Using the rounded total to ensure exact match with payment amount
+      actualTotal: hasPartialPayment ? Number(totalPaidAmount.toFixed(2)) : roundedTotal, // Must match total exactly
       subtotal: cartTotal,
       // Include coupon code and discount amount
       couponCode: appliedCoupon ? appliedCoupon.code : undefined,
@@ -1063,6 +1070,14 @@ export default function CheckoutModal({
         }))
       });
 
+      // Log the final order data with totals before sending to API
+      console.log('Final order data with totals:', {
+        total: orderData.total,
+        actualTotal: orderData.actualTotal,
+        subtotal: orderData.subtotal,
+        paymentTotal: orderData.payments.reduce((sum, p) => sum + p.amount, 0)
+      });
+      
       // Create order
       const response = await apiMethods.pos.createOrder(orderData);
 
