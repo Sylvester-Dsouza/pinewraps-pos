@@ -187,17 +187,52 @@ export default function ProductDetailsModal({
               const addonSelections: SelectedAddonOption[] = [];
               const customTexts: Record<string, string> = {};
               
+              // Log existing variations for debugging
+              console.log('Existing variations to match with addons:', existingItem.selectedVariations);
+              
+              // Log all existing variations for debugging
+              console.log('Existing variations to match with addons:', JSON.stringify(existingItem.selectedVariations, null, 2));
+              console.log('Available addons:', JSON.stringify(response.data.map(a => ({ id: a.id, name: a.name })), null, 2));
+              
+              // Create a map to track which addon groups have been processed
+              const processedAddonCounts: Record<string, number> = {};
+              
               existingItem.selectedVariations.forEach(variation => {
-                // Find matching addon and option in the fetched addons
-                const matchingAddon = response.data.find(addon => 
+                // For Sets category, the type is often the addon name and value is the option name
+                console.log('Processing variation:', JSON.stringify(variation, null, 2));
+                
+                // Try multiple matching strategies
+                let matchingAddon = null;
+                let matchingOption = null;
+                
+                // Strategy 1: Direct match by addon name (type) and option name (value)
+                matchingAddon = response.data.find(addon => 
+                  addon.name === variation.type || 
                   addon.options.some(option => option.name === variation.value)
                 );
                 
                 if (matchingAddon) {
-                  const matchingOption = matchingAddon.options.find(option => option.name === variation.value);
+                  console.log(`Strategy 1: Found matching addon: ${matchingAddon.name}`);
+                  
+                  // Try to find the matching option
+                  matchingOption = matchingAddon.options.find(option => 
+                    option.name === variation.value ||
+                    option.id === variation.id
+                  );
+                  
                   if (matchingOption) {
-                    // Add to selected addons
-                    const selectionIndex = addonSelections.filter(s => s.addonId === matchingAddon.id).length;
+                    console.log(`Strategy 1: Found matching option: ${matchingOption.name}`);
+                    
+                    // Initialize counter for this addon if not exists
+                    if (!processedAddonCounts[matchingAddon.id]) {
+                      processedAddonCounts[matchingAddon.id] = 0;
+                    }
+                    
+                    // Use the counter as selection index
+                    const selectionIndex = processedAddonCounts[matchingAddon.id]++;
+                    
+                    console.log(`Adding selection for ${matchingAddon.name} at index ${selectionIndex}`);
+                    
                     addonSelections.push({
                       addonId: matchingAddon.id,
                       optionId: matchingOption.id,
@@ -207,6 +242,80 @@ export default function ProductDetailsModal({
                     // If there's custom text, add it to the custom texts
                     if (variation.customText) {
                       customTexts[`${matchingAddon.id}_${matchingOption.id}_${selectionIndex}`] = variation.customText;
+                    }
+                  } else {
+                    console.warn(`Strategy 1: Found addon ${matchingAddon.name} but no matching option for ${variation.value}`);
+                  }
+                } else {
+                  console.log('Strategy 1 failed, trying Strategy 2...');
+                  
+                  // Strategy 2: Try matching by looking at all addons and options
+                  for (const addon of response.data) {
+                    for (const option of addon.options) {
+                      // Check if option name matches the variation value
+                      if (option.name === variation.value) {
+                        matchingAddon = addon;
+                        matchingOption = option;
+                        break;
+                      }
+                    }
+                    if (matchingAddon) break;
+                  }
+                  
+                  if (matchingAddon && matchingOption) {
+                    console.log(`Strategy 2: Found matching addon: ${matchingAddon.name}, option: ${matchingOption.name}`);
+                    
+                    // Initialize counter for this addon if not exists
+                    if (!processedAddonCounts[matchingAddon.id]) {
+                      processedAddonCounts[matchingAddon.id] = 0;
+                    }
+                    
+                    // Use the counter as selection index
+                    const selectionIndex = processedAddonCounts[matchingAddon.id]++;
+                    
+                    console.log(`Adding selection for ${matchingAddon.name} at index ${selectionIndex}`);
+                    
+                    addonSelections.push({
+                      addonId: matchingAddon.id,
+                      optionId: matchingOption.id,
+                      selectionIndex: selectionIndex
+                    });
+                    
+                    // If there's custom text, add it to the custom texts
+                    if (variation.customText) {
+                      customTexts[`${matchingAddon.id}_${matchingOption.id}_${selectionIndex}`] = variation.customText;
+                    }
+                  } else {
+                    // Strategy 3: Try to match by type as addon name and find any option
+                    matchingAddon = response.data.find(addon => addon.name === variation.type);
+                    
+                    if (matchingAddon && matchingAddon.options.length > 0) {
+                      console.log(`Strategy 3: Found addon by name match: ${matchingAddon.name}`);
+                      
+                      // Use the first option as a fallback
+                      matchingOption = matchingAddon.options[0];
+                      console.log(`Strategy 3: Using first option as fallback: ${matchingOption.name}`);
+                      
+                      // Initialize counter for this addon if not exists
+                      if (!processedAddonCounts[matchingAddon.id]) {
+                        processedAddonCounts[matchingAddon.id] = 0;
+                      }
+                      
+                      // Use the counter as selection index
+                      const selectionIndex = processedAddonCounts[matchingAddon.id]++;
+                      
+                      addonSelections.push({
+                        addonId: matchingAddon.id,
+                        optionId: matchingOption.id,
+                        selectionIndex: selectionIndex
+                      });
+                      
+                      // If there's custom text, add it to the custom texts
+                      if (variation.customText) {
+                        customTexts[`${matchingAddon.id}_${matchingOption.id}_${selectionIndex}`] = variation.customText;
+                      }
+                    } else {
+                      console.warn('All strategies failed. Could not find matching addon/option for variation:', variation);
                     }
                   }
                 }

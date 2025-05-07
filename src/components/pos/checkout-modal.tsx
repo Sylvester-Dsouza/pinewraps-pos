@@ -346,11 +346,16 @@ export default function CheckoutModal({
 
     // Ensure we have at least one payment in the payments array
     let payments = [...paymentsState];
+    
+    // Round the total to 2 decimal places to avoid floating point precision issues
+    const roundedTotal = Number(totalWithDelivery.toFixed(2));
+    console.log('Preparing order with final total:', roundedTotal);
+    
     if (payments.length === 0 && currentPaymentMethodState) {
       // Create a default payment with the selected payment method
       const defaultPayment: Payment = {
         id: nanoid(),
-        amount: totalWithDelivery,
+        amount: roundedTotal, // Use the rounded final total
         method: currentPaymentMethodState,
         reference: currentPaymentMethodState === POSPaymentMethod.CARD ? currentPaymentReferenceState || null : null,
         status: POSPaymentStatus.FULLY_PAID
@@ -358,45 +363,62 @@ export default function CheckoutModal({
 
       // Add specific fields based on payment method
       if (currentPaymentMethodState === POSPaymentMethod.CASH) {
-        defaultPayment.cashAmount = totalWithDelivery;
+        defaultPayment.cashAmount = roundedTotal;
         defaultPayment.changeAmount = 0;
       } else if (currentPaymentMethodState === POSPaymentMethod.CARD) {
         defaultPayment.reference = currentPaymentReferenceState || null;
       } else if (currentPaymentMethodState === POSPaymentMethod.SPLIT) {
         defaultPayment.isSplitPayment = true;
 
-        // Get the amounts for both payment methods
-        const amount1 = parseFloat(splitAmount1) || 0;
-        const amount2 = parseFloat(splitAmount2) || 0;
+        // Get the amounts for both payment methods and ensure they're properly rounded
+        const amount1 = Number(parseFloat(splitAmount1 || '0').toFixed(2));
+        const amount2 = Number(parseFloat(splitAmount2 || '0').toFixed(2));
+        
+        // Ensure the total of split payments matches the rounded total
+        const splitTotal = Number((amount1 + amount2).toFixed(2));
+        
+        if (splitTotal !== roundedTotal) {
+          console.warn(`Split payment total (${splitTotal}) doesn't match order total (${roundedTotal}). Adjusting amount2.`);
+          // Adjust amount2 to make the total match
+          const adjustedAmount2 = Number((roundedTotal - amount1).toFixed(2));
+          defaultPayment.splitAmount1 = amount1;
+          defaultPayment.splitAmount2 = adjustedAmount2;
+        } else {
+          defaultPayment.splitAmount1 = amount1;
+          defaultPayment.splitAmount2 = amount2;
+        }
 
         // Store payment method information
         defaultPayment.splitMethod1 = splitMethod1;
         defaultPayment.splitMethod2 = splitMethod2;
-        defaultPayment.splitAmount1 = amount1;
-        defaultPayment.splitAmount2 = amount2;
         defaultPayment.splitReference1 = splitReference1 || null;
         defaultPayment.splitReference2 = splitReference2 || null;
 
         // For backward compatibility
         if (splitMethod1 === POSPaymentMethod.CASH || splitMethod2 === POSPaymentMethod.CASH) {
-          defaultPayment.cashPortion = splitMethod1 === POSPaymentMethod.CASH ? amount1 : amount2;
+          defaultPayment.cashPortion = splitMethod1 === POSPaymentMethod.CASH ? 
+            defaultPayment.splitAmount1 : defaultPayment.splitAmount2;
         } else {
           defaultPayment.cashPortion = 0;
         }
 
         if (splitMethod1 === POSPaymentMethod.CARD || splitMethod2 === POSPaymentMethod.CARD) {
-          defaultPayment.cardPortion = splitMethod1 === POSPaymentMethod.CARD ? amount1 : amount2;
-          defaultPayment.cardReference = splitMethod1 === POSPaymentMethod.CARD ? splitReference1 : splitReference2;
+          defaultPayment.cardPortion = splitMethod1 === POSPaymentMethod.CARD ? 
+            defaultPayment.splitAmount1 : defaultPayment.splitAmount2;
+          defaultPayment.cardReference = splitMethod1 === POSPaymentMethod.CARD ? 
+            splitReference1 : splitReference2;
         } else {
           defaultPayment.cardPortion = 0;
           defaultPayment.cardReference = null;
         }
       } else if (currentPaymentMethodState === POSPaymentMethod.PARTIAL) {
         defaultPayment.isPartialPayment = true;
-        // Default to half now, half later
-        defaultPayment.amount = totalWithDelivery / 2;
-        defaultPayment.remainingAmount = totalWithDelivery / 2;
-        defaultPayment.futurePaymentMethod = POSPaymentMethod.CARD
+        // Default to half now, half later (rounded properly)
+        const halfAmount = Number((roundedTotal / 2).toFixed(2));
+        const remainingAmount = Number((roundedTotal - halfAmount).toFixed(2));
+        defaultPayment.amount = halfAmount;
+        defaultPayment.remainingAmount = remainingAmount;
+        defaultPayment.futurePaymentMethod = POSPaymentMethod.CARD;
       }
 
       payments = [defaultPayment];
@@ -404,7 +426,7 @@ export default function CheckoutModal({
 
     // Check if this is a partial payment order
     const hasPartialPayment = payments.some(p => p.isPartialPayment || p.status === POSPaymentStatus.PARTIALLY_PAID);
-    const finalTotal = calculateFinalTotal();
+    // We already have roundedTotal from above, no need to recalculate
 
     // Calculate the total amount actually being paid (important for partial payments)
     const totalPaidAmount = payments.reduce((sum, payment) => sum + payment.amount, 0);
@@ -452,7 +474,8 @@ export default function CheckoutModal({
           paymentData.cardReference = p.cardReference || splitCardReference || null;
         } else if (p.method === POSPaymentMethod.PARTIAL || p.isPartialPayment) {
           paymentData.isPartialPayment = true;
-          paymentData.remainingAmount = finalTotal - p.amount;
+          // Use roundedTotal instead of finalTotal and ensure proper rounding
+          paymentData.remainingAmount = Number((roundedTotal - p.amount).toFixed(2));
           paymentData.futurePaymentMethod = p.futurePaymentMethod || POSPaymentMethod.CARD;
         }
 
@@ -460,7 +483,8 @@ export default function CheckoutModal({
       }),
       // Use the actual amount paid for the total when it's a partial payment
       // This ensures the backend validation passes (payment amount matches order total)
-      total: hasPartialPayment ? totalPaidAmount : totalWithDelivery,
+      // Always use rounded values to avoid floating point precision issues
+      total: hasPartialPayment ? Number(totalPaidAmount.toFixed(2)) : roundedTotal,
       subtotal: cartTotal,
       // Include coupon code and discount amount
       couponCode: appliedCoupon ? appliedCoupon.code : undefined,
