@@ -370,14 +370,11 @@ export default function CheckoutModal({
       } else if (currentPaymentMethodState === POSPaymentMethod.CARD) {
         defaultPayment.reference = currentPaymentReferenceState || null;
       } else if (currentPaymentMethodState === POSPaymentMethod.SPLIT) {
-        defaultPayment.isSplitPayment = true;
-
-        // Get the amounts for both payment methods and ensure they're properly rounded
-        const amount1 = Number(parseFloat(splitAmount1 || '0').toFixed(2));
-        const amount2 = Number(parseFloat(splitAmount2 || '0').toFixed(2));
-        
-        // Ensure the total of split payments matches the rounded total
+        // Calculate split payment amounts
+        const amount1 = Number(splitAmount1);
+        const amount2 = Number(splitAmount2);
         const splitTotal = Number((amount1 + amount2).toFixed(2));
+        const roundedTotal = Number(calculateFinalTotal().toFixed(2));
         
         if (splitTotal !== roundedTotal) {
           console.warn(`Split payment total (${splitTotal}) doesn't match order total (${roundedTotal}). Adjusting amount2.`);
@@ -390,29 +387,49 @@ export default function CheckoutModal({
           defaultPayment.splitSecondAmount = amount2;
         }
 
-        // Store payment method information
         defaultPayment.splitFirstMethod = splitMethod1;
         defaultPayment.splitSecondMethod = splitMethod2;
         defaultPayment.splitFirstReference = splitReference1 || null;
         defaultPayment.splitSecondReference = splitReference2 || null;
 
-        // For backward compatibility
-        if (splitMethod1 === POSPaymentMethod.CASH || splitMethod2 === POSPaymentMethod.CASH) {
-          defaultPayment.cashPortion = splitMethod1 === POSPaymentMethod.CASH ? 
-            defaultPayment.splitFirstAmount : defaultPayment.splitSecondAmount;
-        } else {
-          defaultPayment.cashPortion = 0;
-        }
+        // Create two separate payments for split payment
+        const firstPayment = {
+          ...defaultPayment,
+          amount: defaultPayment.splitFirstAmount,
+          method: splitMethod1,
+          reference: splitReference1 || null,
+          isSplitPayment: true,
+          metadata: {
+            isSplitPayment: true,
+            splitFirstMethod: splitMethod1,
+            splitFirstAmount: defaultPayment.splitFirstAmount,
+            splitFirstReference: splitReference1 || null,
+            splitSecondMethod: splitMethod2,
+            splitSecondAmount: defaultPayment.splitSecondAmount,
+            splitSecondReference: splitReference2 || null
+          }
+        };
 
-        if (splitMethod1 === POSPaymentMethod.CARD || splitMethod2 === POSPaymentMethod.CARD) {
-          defaultPayment.cardPortion = splitMethod1 === POSPaymentMethod.CARD ? 
-            defaultPayment.splitFirstAmount : defaultPayment.splitSecondAmount;
-          defaultPayment.cardReference = splitMethod1 === POSPaymentMethod.CARD ? 
-            splitReference1 : splitReference2;
-        } else {
-          defaultPayment.cardPortion = 0;
-          defaultPayment.cardReference = null;
-        }
+        const secondPayment = {
+          ...defaultPayment,
+          amount: defaultPayment.splitSecondAmount,
+          method: splitMethod2,
+          reference: splitReference2 || null,
+          isSplitPayment: true,
+          metadata: {
+            isSplitPayment: true,
+            splitFirstMethod: splitMethod1,
+            splitFirstAmount: defaultPayment.splitFirstAmount,
+            splitFirstReference: splitReference1 || null,
+            splitSecondMethod: splitMethod2,
+            splitSecondAmount: defaultPayment.splitSecondAmount,
+            splitSecondReference: splitReference2 || null
+          }
+        };
+
+        // Replace the default payment with our two split payments
+        payments = [firstPayment, secondPayment];
+        return;
       } else if (currentPaymentMethodState === POSPaymentMethod.PARTIAL) {
         defaultPayment.isPartialPayment = true;
         const finalTotal = calculateFinalTotal();
