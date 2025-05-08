@@ -153,6 +153,7 @@ export interface POSOrderData {
   couponDiscount?: number;
   allowPartialPayment?: boolean; // Flag to indicate if this order allows partial payments
   actualTotal?: number; // The real total amount when using partial payments
+  amountToPay?: number;
   paidAmount?: number;      // Amount paid for partial payments
   remainingAmount?: number; // Remaining amount for partial payments
 
@@ -224,6 +225,7 @@ export interface POSOrderData {
       type: string;
       value: number;
       discount: number;
+      appliedTotal: number;
     };
     discount?: number;
   };

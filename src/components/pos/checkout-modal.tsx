@@ -246,10 +246,15 @@ export default function CheckoutModal({
     
     const cartTotal = Number(rawCartTotal.toFixed(2));
     
-    // Calculate totalWithDelivery with proper rounding
+    // Calculate final total with coupon discount
+    const rawDiscount = appliedCoupon ? appliedCoupon.discount : 0;
+    const couponDiscount = Number(rawDiscount.toFixed(2));
+    const finalTotal = Number((cartTotal - couponDiscount).toFixed(2));
+
+    // Add delivery charge if applicable
     const totalWithDelivery = deliveryMethodState === DeliveryMethod.DELIVERY ? 
-      Number((cartTotal + (deliveryDetailsState?.charge || 0)).toFixed(2)) : 
-      cartTotal;
+      Number((finalTotal + (deliveryDetailsState?.charge || 0)).toFixed(2)) : 
+      finalTotal;
 
     // Create order items from cart
     const orderItems = processedCart.map(item => {
@@ -381,14 +386,27 @@ export default function CheckoutModal({
       variations: item.selectedVariations?.length || 0,
       isCustomPrice: item.product.allowCustomPrice
     })));
+
+    // Log coupon information if applied
+    if (appliedCoupon) {
+      console.log('Applied coupon:', {
+        code: appliedCoupon.code,
+        type: appliedCoupon.type,
+        value: appliedCoupon.value,
+        discount: appliedCoupon.discount
+      });
+    }
     
     if (payments.length === 0 && currentPaymentMethodState) {
       // Create a default payment with the selected payment method
       const defaultPayment: Payment = {
         id: nanoid(),
-        amount: roundedTotal, // Use the rounded final total
+        amount: currentPaymentMethodState === POSPaymentMethod.PBL ? calculateFinalTotal() : roundedTotal, // For PBL use final total, otherwise use rounded total
         method: currentPaymentMethodState,
-        reference: currentPaymentMethodState === POSPaymentMethod.CARD ? currentPaymentReferenceState || null : null,
+        reference: (currentPaymentMethodState === POSPaymentMethod.CARD ||
+                   currentPaymentMethodState === POSPaymentMethod.BANK_TRANSFER ||
+                   currentPaymentMethodState === POSPaymentMethod.PBL ||
+                   currentPaymentMethodState === POSPaymentMethod.TALABAT) ? currentPaymentReferenceState || null : null,
         status: POSPaymentStatus.FULLY_PAID
       };
 
@@ -484,7 +502,7 @@ export default function CheckoutModal({
       } else if (totalPaidAmount <= 0) {
         throw new Error(`Partial payment amount must be greater than 0`);
       }
-    } else if (Math.abs(totalPaidAmount - finalOrderTotal) > 0.01) {
+    } else if (currentPaymentMethodState !== POSPaymentMethod.PBL && Math.abs(totalPaidAmount - finalOrderTotal) > 0.01) {
       throw new Error(`Total payment amount (${totalPaidAmount}) does not match order total (${finalOrderTotal})`);
     }
 
@@ -547,17 +565,19 @@ export default function CheckoutModal({
         return paymentData;
       }),
       // Use the final order total that includes coupon discounts
-      total: finalOrderTotal, // This should be the discounted total
+      total: finalTotal, // This should be the discounted total
       actualTotal: cartTotal, // This should be the original total before discount
       subtotal: cartTotal,
       // Always include coupon information
       couponCode: appliedCoupon ? appliedCoupon.code : null,
-      couponDiscount: appliedCoupon ? appliedCoupon.discount : 0,
+      couponDiscount: couponDiscount,
       couponType: appliedCoupon ? appliedCoupon.type : null,
       couponValue: appliedCoupon ? appliedCoupon.value : null,
       // For partial payments, include the paid and remaining amounts
-      paidAmount: hasPartialPayment ? Number(totalPaidAmount.toFixed(2)) : finalOrderTotal,
-      remainingAmount: hasPartialPayment ? Number((finalOrderTotal - totalPaidAmount).toFixed(2)) : 0,
+      paidAmount: hasPartialPayment ? Number(totalPaidAmount.toFixed(2)) : finalTotal,
+      remainingAmount: hasPartialPayment ? Number((finalTotal - totalPaidAmount).toFixed(2)) : 0,
+      // Total amount to be paid (after coupon discount)
+      amountToPay: finalTotal,
       allowPartialPayment: hasPartialPayment, // Flag to tell backend this order allows partial payment
 
       // Payment details
@@ -628,9 +648,9 @@ export default function CheckoutModal({
           code: appliedCoupon.code,
           type: appliedCoupon.type,
           value: appliedCoupon.value,
-          discount: appliedCoupon.discount
-        } : null,
-        discount: appliedCoupon ? appliedCoupon.discount : 0
+          discount: couponDiscount,
+          appliedTotal: finalTotal // Include the total after coupon discount
+        } : null
       }
     };
 
@@ -1814,7 +1834,10 @@ export default function CheckoutModal({
       id: nanoid(),
       amount,
       method: currentPaymentMethodState,
-      reference: currentPaymentMethodState === POSPaymentMethod.CARD ? currentPaymentReferenceState : null,
+      reference: (currentPaymentMethodState === POSPaymentMethod.CARD ||
+                 currentPaymentMethodState === POSPaymentMethod.BANK_TRANSFER ||
+                 currentPaymentMethodState === POSPaymentMethod.PBL ||
+                 currentPaymentMethodState === POSPaymentMethod.TALABAT) ? currentPaymentReferenceState : null,
       status: POSPaymentStatus.FULLY_PAID
     };
 
