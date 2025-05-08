@@ -83,21 +83,29 @@ export interface OrderPayment {
   reference?: string | null;
   status?: POSPaymentStatus;
   
-  // Cash payment specific fields
+  // Cash payment fields
   cashAmount?: number;
   changeAmount?: number;
   
-  // Split payment specific fields
+  // Split payment fields
   isSplitPayment?: boolean;
+  splitFirstMethod?: POSPaymentMethod;
+  splitFirstAmount?: number;
+  splitFirstReference?: string | null;
+  splitSecondMethod?: POSPaymentMethod;
+  splitSecondAmount?: number;
+  splitSecondReference?: string | null;
+  
+  // Legacy split payment fields - for backward compatibility
   cashPortion?: number;
   cardPortion?: number;
   cardReference?: string;
   
-  // Partial payment specific fields
+  // Partial payment fields
   isPartialPayment?: boolean;
   remainingAmount?: number;
   futurePaymentMethod?: POSPaymentMethod;
-
+  
   // Payment metadata
   metadata?: {
     source?: string;
@@ -140,9 +148,13 @@ export interface POSOrderData {
   total: number;
   subtotal?: number;
   couponCode?: string;
+  couponType?: string;
+  couponValue?: number;
   couponDiscount?: number;
   allowPartialPayment?: boolean; // Flag to indicate if this order allows partial payments
   actualTotal?: number; // The real total amount when using partial payments
+  paidAmount?: number;      // Amount paid for partial payments
+  remainingAmount?: number; // Remaining amount for partial payments
 
   // Customer details
   customerName: string;
@@ -269,6 +281,8 @@ export interface Order {
   totalAmount: number;
   subtotal?: number;
   couponCode?: string;
+  couponType?: string;
+  couponValue?: number;
   couponDiscount?: number;
 
   // Processing flags based on order flow

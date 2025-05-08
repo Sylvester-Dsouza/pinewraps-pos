@@ -232,10 +232,24 @@ export default function CheckoutModal({
   // Prepare order data for API
   const preparePOSOrderData = useCallback((processedCart = cart) => {
     const sanitizedCustomerDetails = sanitizeCustomerDetails();
-    // Calculate totalWithDelivery with proper rounding to avoid floating point issues
+    
+    // Calculate cart total with proper rounding
+    const rawCartTotal = processedCart.reduce((total, item) => {
+      const unitPrice = item.product.allowCustomPrice
+        ? Number(item.product.basePrice)
+        : Number(item.product.basePrice) + (item.selectedVariations || []).reduce(
+            (vTotal, v) => vTotal + (Number(v.price) || Number(v.priceAdjustment) || 0),
+            0
+          );
+      return total + (unitPrice * item.quantity);
+    }, 0);
+    
+    const cartTotal = Number(rawCartTotal.toFixed(2));
+    
+    // Calculate totalWithDelivery with proper rounding
     const totalWithDelivery = deliveryMethodState === DeliveryMethod.DELIVERY ? 
       Number((cartTotal + (deliveryDetailsState?.charge || 0)).toFixed(2)) : 
-      Number(cartTotal.toFixed(2));
+      cartTotal;
 
     // Create order items from cart
     const orderItems = processedCart.map(item => {
@@ -251,7 +265,7 @@ export default function CheckoutModal({
           productName: item.product.name,
           quantity: item.quantity,
           unitPrice: unitPrice,
-          totalPrice: unitPrice * item.quantity,
+          totalPrice: Number((unitPrice * item.quantity).toFixed(2)),
           sku: item.product.sku || '',
           requiresKitchen: item.product.requiresKitchen || false,
           requiresDesign: item.product.requiresDesign || false,
@@ -302,7 +316,7 @@ export default function CheckoutModal({
           productName: item.product.name,
           quantity: item.quantity,
           unitPrice: unitPrice,
-          totalPrice: unitPrice * item.quantity,
+          totalPrice: Number((unitPrice * item.quantity).toFixed(2)),
           sku: item.product.sku || '',
           requiresKitchen: item.product.requiresKitchen || false,
           requiresDesign: item.product.requiresDesign || false,
@@ -398,30 +412,30 @@ export default function CheckoutModal({
           console.warn(`Split payment total (${splitTotal}) doesn't match order total (${roundedTotal}). Adjusting amount2.`);
           // Adjust amount2 to make the total match
           const adjustedAmount2 = Number((roundedTotal - amount1).toFixed(2));
-          defaultPayment.splitAmount1 = amount1;
-          defaultPayment.splitAmount2 = adjustedAmount2;
+          defaultPayment.splitFirstAmount = amount1;
+          defaultPayment.splitSecondAmount = adjustedAmount2;
         } else {
-          defaultPayment.splitAmount1 = amount1;
-          defaultPayment.splitAmount2 = amount2;
+          defaultPayment.splitFirstAmount = amount1;
+          defaultPayment.splitSecondAmount = amount2;
         }
 
         // Store payment method information
-        defaultPayment.splitMethod1 = splitMethod1;
-        defaultPayment.splitMethod2 = splitMethod2;
-        defaultPayment.splitReference1 = splitReference1 || null;
-        defaultPayment.splitReference2 = splitReference2 || null;
+        defaultPayment.splitFirstMethod = splitMethod1;
+        defaultPayment.splitSecondMethod = splitMethod2;
+        defaultPayment.splitFirstReference = splitReference1 || null;
+        defaultPayment.splitSecondReference = splitReference2 || null;
 
         // For backward compatibility
         if (splitMethod1 === POSPaymentMethod.CASH || splitMethod2 === POSPaymentMethod.CASH) {
           defaultPayment.cashPortion = splitMethod1 === POSPaymentMethod.CASH ? 
-            defaultPayment.splitAmount1 : defaultPayment.splitAmount2;
+            defaultPayment.splitFirstAmount : defaultPayment.splitSecondAmount;
         } else {
           defaultPayment.cashPortion = 0;
         }
 
         if (splitMethod1 === POSPaymentMethod.CARD || splitMethod2 === POSPaymentMethod.CARD) {
           defaultPayment.cardPortion = splitMethod1 === POSPaymentMethod.CARD ? 
-            defaultPayment.splitAmount1 : defaultPayment.splitAmount2;
+            defaultPayment.splitFirstAmount : defaultPayment.splitSecondAmount;
           defaultPayment.cardReference = splitMethod1 === POSPaymentMethod.CARD ? 
             splitReference1 : splitReference2;
         } else {
@@ -430,11 +444,10 @@ export default function CheckoutModal({
         }
       } else if (currentPaymentMethodState === POSPaymentMethod.PARTIAL) {
         defaultPayment.isPartialPayment = true;
-        // Default to half now, half later (rounded properly)
-        const halfAmount = Number((roundedTotal / 2).toFixed(2));
-        const remainingAmount = Number((roundedTotal - halfAmount).toFixed(2));
-        defaultPayment.amount = halfAmount;
-        defaultPayment.remainingAmount = remainingAmount;
+        const finalTotal = calculateFinalTotal();
+        const paymentAmount = currentPaymentAmountState ? Number(currentPaymentAmountState) : 0;
+        defaultPayment.amount = paymentAmount;
+        defaultPayment.remainingAmount = Number((finalTotal - paymentAmount).toFixed(2));
         defaultPayment.futurePaymentMethod = POSPaymentMethod.CARD;
       }
 
@@ -442,28 +455,37 @@ export default function CheckoutModal({
     }
 
     // Check if this is a partial payment order
-    const hasPartialPayment = payments.some(p => p.isPartialPayment || p.status === POSPaymentStatus.PARTIALLY_PAID);
+    const hasPartialPayment = currentPaymentMethodState === POSPaymentMethod.PARTIAL || 
+      payments.some(p => p.isPartialPayment || p.status === POSPaymentStatus.PARTIALLY_PAID);
     // We already have roundedTotal from above, no need to recalculate
 
+    // Calculate the final total including all discounts
+    const finalOrderTotal = calculateFinalTotal();
+    
     // Calculate the total amount actually being paid (important for partial payments)
-    // Ensure proper rounding to avoid floating point issues
     const totalPaidAmount = payments.reduce((sum, payment) => {
       return Number((sum + Number(payment.amount.toFixed(2))).toFixed(2));
     }, 0);
     
     // Log the payment validation data for debugging
-    const finalOrderTotal = hasPartialPayment ? Number(totalPaidAmount.toFixed(2)) : roundedTotal;
     console.log('Payment validation:', {
-      roundedTotal,
-      totalPaidAmount: Number(totalPaidAmount.toFixed(2)),
       finalOrderTotal,
+      totalPaidAmount: Number(totalPaidAmount.toFixed(2)),
+      hasPartialPayment,
       difference: Math.abs(totalPaidAmount - finalOrderTotal),
-      payments: payments.map(p => ({ method: p.method, amount: p.amount }))
+      payments: payments.map(p => ({ method: p.method, amount: p.amount, isPartialPayment: p.isPartialPayment }))
     });
     
-    // Verify that payment amounts match the order total
-    if (!hasPartialPayment && Math.abs(totalPaidAmount - finalOrderTotal) > 0.01) {
-      console.warn(`Payment validation warning: Payment total (${totalPaidAmount}) doesn't match order total (${finalOrderTotal})`);
+    // For non-partial payments, verify that payment amounts match the order total
+    // For partial payments, only verify that amount doesn't exceed total and is greater than 0
+    if (hasPartialPayment) {
+      if (totalPaidAmount >= finalOrderTotal) {
+        throw new Error(`Partial payment (${totalPaidAmount}) must be less than the total (${finalOrderTotal})`);
+      } else if (totalPaidAmount <= 0) {
+        throw new Error(`Partial payment amount must be greater than 0`);
+      }
+    } else if (Math.abs(totalPaidAmount - finalOrderTotal) > 0.01) {
+      throw new Error(`Total payment amount (${totalPaidAmount}) does not match order total (${finalOrderTotal})`);
     }
 
     const orderData: POSOrderData = {
@@ -489,44 +511,53 @@ export default function CheckoutModal({
             parseFloat(p.changeAmount as unknown as string || '0');
         } else if (p.method === POSPaymentMethod.SPLIT) {
           paymentData.isSplitPayment = true;
-          // Use the actual cash and card portions from the payment object
-          // Only use the 50/50 split as a fallback if no values are provided
-          if (p.cashPortion !== undefined && p.cashPortion !== null) {
-            paymentData.cashPortion = p.cashPortion;
-          } else {
-            // Fallback to entered values, but never default to 50/50 split
-            const cashAmount = parseFloat(splitCashAmount) || 0;
-            paymentData.cashPortion = cashAmount;
+          // Add split payment details using new schema
+          if (p.splitFirstMethod && p.splitFirstAmount) {
+            paymentData.splitFirstMethod = p.splitFirstMethod;
+            paymentData.splitFirstAmount = Number(p.splitFirstAmount);
+            paymentData.splitFirstReference = p.splitFirstReference || null;
+          }
+          
+          if (p.splitSecondMethod && p.splitSecondAmount) {
+            paymentData.splitSecondMethod = p.splitSecondMethod;
+            paymentData.splitSecondAmount = Number(p.splitSecondAmount);
+            paymentData.splitSecondReference = p.splitSecondReference || null;
           }
 
-          if (p.cardPortion !== undefined && p.cardPortion !== null) {
-            paymentData.cardPortion = p.cardPortion;
-          } else {
-            // Fallback to entered values, but never default to 50/50 split
-            const cardAmount = parseFloat(splitCardAmount) || 0;
-            paymentData.cardPortion = cardAmount;
+          // For backward compatibility with old split payments
+          if (!p.splitFirstMethod && !p.splitSecondMethod) {
+            // Convert old cash/card split to new format
+            if (p.cashPortion) {
+              paymentData.splitFirstMethod = POSPaymentMethod.CASH;
+              paymentData.splitFirstAmount = Number(p.cashPortion);
+            }
+            if (p.cardPortion) {
+              paymentData.splitSecondMethod = POSPaymentMethod.CARD;
+              paymentData.splitSecondAmount = Number(p.cardPortion);
+              paymentData.splitSecondReference = p.cardReference || null;
+            }
           }
-          paymentData.cardReference = p.cardReference || splitCardReference || null;
         } else if (p.method === POSPaymentMethod.PARTIAL || p.isPartialPayment) {
           paymentData.isPartialPayment = true;
-          // Use roundedTotal instead of finalTotal and ensure proper rounding
-          paymentData.remainingAmount = Number((roundedTotal - p.amount).toFixed(2));
+          // Use finalOrderTotal which already includes coupon discounts
+          paymentData.remainingAmount = Number((finalOrderTotal - p.amount).toFixed(2));
           paymentData.futurePaymentMethod = p.futurePaymentMethod || POSPaymentMethod.CARD;
         }
 
         return paymentData;
       }),
-      // IMPORTANT: Always set both total and actualTotal to the same value to avoid validation errors
-      // This ensures the backend validation passes (payment amount matches order total)
-      // Always use rounded values to avoid floating point precision issues
-      total: hasPartialPayment ? Number(totalPaidAmount.toFixed(2)) : roundedTotal,
-      // For non-partial payments, make sure actualTotal exactly matches the total
-      // This is critical for the backend validation
-      actualTotal: hasPartialPayment ? Number(totalPaidAmount.toFixed(2)) : roundedTotal, // Must match total exactly
+      // Use the final order total that includes coupon discounts
+      total: finalOrderTotal, // This should be the discounted total
+      actualTotal: cartTotal, // This should be the original total before discount
       subtotal: cartTotal,
-      // Include coupon code and discount amount
-      couponCode: appliedCoupon ? appliedCoupon.code : undefined,
+      // Always include coupon information
+      couponCode: appliedCoupon ? appliedCoupon.code : null,
       couponDiscount: appliedCoupon ? appliedCoupon.discount : 0,
+      couponType: appliedCoupon ? appliedCoupon.type : null,
+      couponValue: appliedCoupon ? appliedCoupon.value : null,
+      // For partial payments, include the paid and remaining amounts
+      paidAmount: hasPartialPayment ? Number(totalPaidAmount.toFixed(2)) : finalOrderTotal,
+      remainingAmount: hasPartialPayment ? Number((finalOrderTotal - totalPaidAmount).toFixed(2)) : 0,
       allowPartialPayment: hasPartialPayment, // Flag to tell backend this order allows partial payment
 
       // Payment details
@@ -861,7 +892,8 @@ export default function CheckoutModal({
       // If current payment method is PARTIAL and amount is entered, add it as a payment first
       if (currentPaymentMethodState === POSPaymentMethod.PARTIAL && currentPaymentAmountState) {
         const amount = parseFloat(currentPaymentAmountState);
-        if (amount && !isNaN(amount) && amount > 0 && amount < calculateFinalTotal()) {
+        const finalTotal = calculateFinalTotal();
+        if (amount && !isNaN(amount) && amount > 0 && amount < finalTotal) {
           const payment: Payment = {
             id: nanoid(),
             amount,
@@ -872,7 +904,7 @@ export default function CheckoutModal({
                       partialPaymentMethod === POSPaymentMethod.TALABAT) ? currentPaymentReferenceState || null : null,
             status: POSPaymentStatus.PARTIALLY_PAID,
             isPartialPayment: true,
-            remainingAmount: calculateFinalTotal() - amount,
+            remainingAmount: finalTotal - amount,
             futurePaymentMethod: partialPaymentMethod // Use the same payment method for future payment
           };
 
@@ -3435,13 +3467,13 @@ export default function CheckoutModal({
                                   <div className="flex items-center justify-between bg-gray-50 p-4 rounded-xl">
                                     <div className="space-y-1">
                                       <div className="text-sm font-medium text-gray-900">
-                                        Total: AED {cartTotal.toFixed(2)}
+                                        Total: AED {calculateFinalTotal().toFixed(2)}
                                       </div>
                                       <div className="text-sm text-gray-500">
                                         Paying Now: AED {(parseFloat(currentPaymentAmountState) || 0).toFixed(2)}
                                       </div>
                                       <div className="text-sm text-gray-500">
-                                        Remaining: AED {(cartTotal - (parseFloat(currentPaymentAmountState) || 0)).toFixed(2)}
+                                        Remaining: AED {(calculateFinalTotal() - (parseFloat(currentPaymentAmountState) || 0)).toFixed(2)}
                                       </div>
                                     </div>
                                   </div>
@@ -3506,7 +3538,15 @@ export default function CheckoutModal({
                                 disabled={isSubmitting || isParkingOrder}
                                 className={`flex-[2] inline-flex justify-center rounded-lg border border-transparent shadow-sm px-6 py-4 bg-black text-xl font-medium text-white hover:bg-gray-900 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors`}
                               >
-                                {isSubmitting ? "Processing..." : "Complete Order"}
+                                <div className="flex flex-col items-center justify-center">
+                                  <span>{isSubmitting ? "Processing..." : "Complete Order"}</span>
+                                  <span className="text-sm mt-1">
+                                    {currentPaymentMethodState === POSPaymentMethod.PARTIAL && currentPaymentAmountState
+                                      ? `Pay Now: AED ${Number(currentPaymentAmountState).toFixed(2)}`
+                                      : `AED ${calculateFinalTotal().toFixed(2)}`
+                                    }
+                                  </span>
+                                </div>
                               </button>
                               <button
                                 type="button"

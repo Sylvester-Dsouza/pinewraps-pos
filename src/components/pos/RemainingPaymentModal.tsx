@@ -243,12 +243,13 @@ export default function RemainingPaymentModal({
           reference: splitMethod2 === POSPaymentMethod.CARD ? splitReference2 : null,
           status: POSPaymentStatus.FULLY_PAID,
           isSplitPayment: true,
-          splitMethod1: splitMethod1,
-          splitMethod2: splitMethod2,
-          splitAmount1: amount1,
-          splitAmount2: amount2,
-          splitReference1: splitReference1 || null,
-          splitReference2: splitReference2 || null,
+          splitFirstMethod: splitMethod1,
+          splitSecondMethod: splitMethod2,
+          splitFirstAmount: amount1,
+          splitSecondAmount: amount2,
+          splitFirstReference: splitReference1 || null,
+          splitSecondReference: splitReference2 || null,
+          // For backward compatibility
           cashPortion: splitMethod1 === POSPaymentMethod.CASH ? amount1 : 
                       (splitMethod2 === POSPaymentMethod.CASH ? amount2 : 0),
           cardPortion: splitMethod1 === POSPaymentMethod.CARD ? amount1 : 

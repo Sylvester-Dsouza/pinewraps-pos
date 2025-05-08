@@ -271,6 +271,19 @@ const OrdersPage = () => {
         
         // Transform the data to match the Order interface
         const transformedOrders = response.data.map((order: any) => {
+          // Debug order items
+          console.log('Processing order:', order.id);
+          order.items?.forEach((item: any) => {
+            console.log('Item:', {
+              id: item.id,
+              name: item.name,
+              category: item.category,
+              totalPrice: item.totalPrice,
+              total: item.total,
+              quantity: item.quantity,
+              unitPrice: item.unitPrice
+            });
+          });
           // Ensure payment data is correctly transformed
           const transformedPayments = order.payments?.map((payment: any) => {
             // Make sure split payment data is correctly processed
@@ -374,9 +387,9 @@ const OrdersPage = () => {
                   priceAdjustment: 0
                 };
               }),
-              totalPrice: Number(item.totalPrice) || 0
+              totalPrice: Number(item.totalPrice || item.total || (item.quantity * item.unitPrice)) || 0
             })),
-            totalAmount: Number(order.total || order.totalAmount) || 0,
+            totalAmount: Number(order.totalAmount || order.total || order.subtotal || 0),
             paidAmount: Number(order.paidAmount) || 0,
             changeAmount: Number(order.changeAmount) || 0,
             // Normalize payment information
@@ -574,15 +587,39 @@ const OrdersPage = () => {
         return;
       }
 
-      console.log('Cancelling order:', orderId);
-      const success = await apiMethods.pos.cancelOrder(orderId);
+      // Get the current order to check its status
+      const orderToCancel = orders.find(order => order.id === orderId);
+      
+      if (!orderToCancel) {
+        throw new Error('Order not found');
+      }
 
-      if (success) {
-        toast.success('Order cancelled successfully');
-        setShowCancelConfirm(null);
-        fetchOrders(); // Refresh orders list
+      console.log('Cancelling order:', orderId, 'with status:', orderToCancel.status);
+
+      // For completed orders, proceed with cancel and refund
+      if (orderToCancel.status === 'COMPLETED') {
+        const success = await apiMethods.pos.cancelOrder(orderId);
+        if (success) {
+          toast.success('Completed order cancelled and will be refunded');
+          setShowCancelConfirm(null);
+          fetchOrders();
+        } else {
+          throw new Error('Failed to cancel completed order');
+        }
       } else {
-        throw new Error('Failed to cancel order');
+        // For non-completed orders, just update the status to CANCELLED
+        const response = await apiMethods.pos.updateOrderStatus(orderId, {
+          status: 'CANCELLED',
+          notes: 'Order cancelled by POS user'
+        });
+
+        if (response.success) {
+          toast.success('Order cancelled successfully');
+          setShowCancelConfirm(null);
+          fetchOrders();
+        } else {
+          throw new Error(response.message || 'Failed to cancel order');
+        }
       }
     } catch (error: any) {
       console.error('Error cancelling order:', error);
@@ -726,6 +763,9 @@ const OrdersPage = () => {
   };
 
   const calculateRemainingAmount = (order: Order) => {
+    // Get the final total after coupon discount
+    const finalTotal = order.totalAmount - (order.couponDiscount || 0);
+    
     // For orders with pending payments, we need to handle them differently
     if (hasPendingPayment(order)) {
       // Find pending payments
@@ -739,9 +779,9 @@ const OrdersPage = () => {
         return pendingPayments.reduce((sum, payment) => sum + payment.amount, 0);
       }
       
-      // If order has PENDING_PAYMENT status but no pending payments, use the total amount
+      // If order has PENDING_PAYMENT status but no pending payments, use the final total
       if (order.status === 'PENDING_PAYMENT') {
-        return order.totalAmount;
+        return finalTotal;
       }
     }
     
@@ -815,8 +855,9 @@ const OrdersPage = () => {
       return false;
     }
     
-    const totalPaid = order.payments?.reduce((sum, payment) => sum + payment.amount, 0) || 0;
-    return Math.abs(totalPaid - order.totalAmount) < 0.01; // Using a small epsilon for floating point comparison
+    const paidAmount = order.payments?.reduce((sum, payment) => sum + payment.amount, 0) || 0;
+    const finalTotal = order.totalAmount - (order.couponDiscount || 0);
+    return Math.max(0, finalTotal - paidAmount) === 0; // Using a small epsilon for floating point comparison
   };
 
   const handlePaymentComplete = async () => {

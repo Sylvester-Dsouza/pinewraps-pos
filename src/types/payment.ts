@@ -18,19 +18,19 @@ export interface Payment {
   cashAmount?: number | string;
   changeAmount?: number | string;
   
-  // Split payment specific fields
+  // Split payment fields
   isSplitPayment?: boolean;
+  splitFirstMethod?: POSPaymentMethod;
+  splitFirstAmount?: number;
+  splitFirstReference?: string | null;
+  splitSecondMethod?: POSPaymentMethod;
+  splitSecondAmount?: number;
+  splitSecondReference?: string | null;
+  
+  // Legacy split payment fields - for backward compatibility
   cashPortion?: number;
   cardPortion?: number;
   cardReference?: string;
-  
-  // Enhanced split payment fields
-  splitMethod1?: POSPaymentMethod;
-  splitMethod2?: POSPaymentMethod;
-  splitAmount1?: number;
-  splitAmount2?: number;
-  splitReference1?: string | null;
-  splitReference2?: string | null;
   
   // Partial payment specific fields
   isPartialPayment?: boolean;
@@ -61,9 +61,12 @@ export interface CardPayment extends Payment {
 export interface SplitPayment extends Payment {
   method: POSPaymentMethod.SPLIT;
   isSplitPayment: true;
-  cashPortion: number;
-  cardPortion: number;
-  cardReference: string | null;
+  splitFirstMethod: POSPaymentMethod;
+  splitFirstAmount: number;
+  splitFirstReference?: string | null;
+  splitSecondMethod: POSPaymentMethod;
+  splitSecondAmount: number;
+  splitSecondReference?: string | null;
 }
 
 /**
