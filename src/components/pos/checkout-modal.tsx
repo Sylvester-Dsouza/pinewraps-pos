@@ -407,15 +407,17 @@ export default function CheckoutModal({
     
     if (payments.length === 0 && currentPaymentMethodState) {
       // Create a default payment with the selected payment method
+      const finalTotal = calculateFinalTotal();
       const defaultPayment: Payment = {
         id: nanoid(),
-        amount: currentPaymentMethodState === POSPaymentMethod.PBL ? calculateFinalTotal() : roundedTotal, // For PBL use final total, otherwise use rounded total
+        amount: finalTotal, // Always use final total for consistency
         method: currentPaymentMethodState,
         reference: (currentPaymentMethodState === POSPaymentMethod.CARD ||
                    currentPaymentMethodState === POSPaymentMethod.BANK_TRANSFER ||
                    currentPaymentMethodState === POSPaymentMethod.PBL ||
-                   currentPaymentMethodState === POSPaymentMethod.TALABAT) ? currentPaymentReferenceState || null : null,
-        status: POSPaymentStatus.FULLY_PAID
+                   currentPaymentMethodState === POSPaymentMethod.TALABAT ||
+                   currentPaymentMethodState === POSPaymentMethod.PAY_LATER) ? currentPaymentReferenceState || null : null,
+        status: currentPaymentMethodState === POSPaymentMethod.PAY_LATER ? POSPaymentStatus.PENDING : POSPaymentStatus.FULLY_PAID
       };
 
       // Add specific fields based on payment method
@@ -480,13 +482,19 @@ export default function CheckoutModal({
       payments = [defaultPayment];
     }
 
+    // Calculate the final total including all discounts
+    const finalOrderTotal = calculateFinalTotal();
+    
+    // For PBL and pay later orders, always use the final total as the payment amount
+    if (currentPaymentMethodState === POSPaymentMethod.PBL || currentPaymentMethodState === POSPaymentMethod.PAY_LATER) {
+      if (payments.length > 0) {
+        payments[0].amount = finalOrderTotal;
+      }
+    }
+    
     // Check if this is a partial payment order
     const hasPartialPayment = currentPaymentMethodState === POSPaymentMethod.PARTIAL || 
       payments.some(p => p.isPartialPayment || p.status === POSPaymentStatus.PARTIALLY_PAID);
-    // We already have roundedTotal from above, no need to recalculate
-
-    // Calculate the final total including all discounts
-    const finalOrderTotal = calculateFinalTotal();
     
     // Calculate the total amount actually being paid (important for partial payments)
     const totalPaidAmount = payments.reduce((sum, payment) => {
@@ -510,7 +518,10 @@ export default function CheckoutModal({
       } else if (totalPaidAmount <= 0) {
         throw new Error(`Partial payment amount must be greater than 0`);
       }
-    } else if (currentPaymentMethodState !== POSPaymentMethod.PBL && Math.abs(totalPaidAmount - finalOrderTotal) > 0.01) {
+    } else if (![
+      POSPaymentMethod.PBL,
+      POSPaymentMethod.PAY_LATER
+    ].includes(currentPaymentMethodState) && Math.abs(totalPaidAmount - finalOrderTotal) > 0.01) {
       throw new Error(`Total payment amount (${totalPaidAmount}) does not match order total (${finalOrderTotal})`);
     }
 
