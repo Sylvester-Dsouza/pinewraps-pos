@@ -90,16 +90,11 @@ export interface OrderPayment {
   // Split payment fields
   isSplitPayment?: boolean;
   splitFirstMethod?: POSPaymentMethod;
-  splitFirstAmount?: number;
-  splitFirstReference?: string | null;
   splitSecondMethod?: POSPaymentMethod;
+  splitFirstAmount?: number;
   splitSecondAmount?: number;
+  splitFirstReference?: string | null;
   splitSecondReference?: string | null;
-  
-  // Legacy split payment fields - for backward compatibility
-  cashPortion?: number;
-  cardPortion?: number;
-  cardReference?: string;
   
   // Partial payment fields
   isPartialPayment?: boolean;
