@@ -289,11 +289,42 @@ export default function RemainingPaymentModal({
       const response = await apiMethods.pos.updateOrderPayment(orderId, payment);
       console.log('Payment response:', response);
       
-      // If it's a cash payment or has a cash portion, print receipt and open drawer
-      if ((paymentMethod === POSPaymentMethod.CASH || 
-          (isSplitPayment && (splitMethod1 === POSPaymentMethod.CASH || splitMethod2 === POSPaymentMethod.CASH))) && 
-          response.success) {
-        await printAndOpenDrawer(response.data as Order);
+      // Always print receipt, but only open drawer for cash payments
+      if (response.success) {
+        const hasCashPayment = paymentMethod === POSPaymentMethod.CASH || 
+          (isSplitPayment && (splitMethod1 === POSPaymentMethod.CASH || splitMethod2 === POSPaymentMethod.CASH));
+
+        try {
+          const PRINTER_PROXY_URL = process.env.NEXT_PUBLIC_PRINTER_PROXY_URL || 'http://localhost:3005';
+          const printerConfig = await getPrinterConfig(PRINTER_PROXY_URL);
+          const requestData = {
+            ip: printerConfig.ip,
+            port: printerConfig.port,
+            skipConnectivityCheck: true,
+            type: 'order',
+            orderId: orderId,
+            order: response.data as Order,
+            openDrawer: hasCashPayment // Only open drawer for cash payments
+          };
+
+          // Use the appropriate endpoint based on whether we need to open the drawer
+          const endpoint = hasCashPayment ? '/cash-order' : '/print-receipt';
+          
+          const fetchResponse = await fetch(`${PRINTER_PROXY_URL}${endpoint}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(requestData)
+          });
+
+          const responseData = await fetchResponse.json();
+          if (!responseData?.success) {
+            console.error('Printer operation failed:', responseData?.error);
+            toast.error('Failed to print receipt' + (hasCashPayment ? ' and open drawer' : ''));
+          }
+        } catch (error) {
+          console.error('Error with printer operation:', error);
+          toast.error('Error with printer operation');
+        }
       }
       
       // Don't show success message for Pay Later
