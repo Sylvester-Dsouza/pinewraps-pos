@@ -1664,10 +1664,10 @@ const OrdersPage = () => {
                                       : getPaymentMethodString(payment.method)}
                                 </span>
                                 
-                                {/* For Card payments, always show reference */}
-                                {payment.method === POSPaymentMethod.CARD && payment.status !== POSPaymentStatus.PARTIALLY_PAID && (
-                                  <span className="text-gray-600 ml-2">
-                                    Ref: {payment.reference || 'N/A'}
+                                {/* Show payment reference if available */}
+                                {payment.reference && (
+                                  <span className="text-gray-500 text-xs ml-2">
+                                    (Ref: {payment.reference})
                                   </span>
                                 )}
                                 
@@ -1694,12 +1694,12 @@ const OrdersPage = () => {
                                 {payment.status === POSPaymentStatus.PARTIALLY_PAID && (
                                   <div className="text-orange-600 mt-1 ml-2">
                                     <div>Paid with {getPaymentMethodString(payment.method)}: AED {payment.amount.toFixed(2)}</div>
-                                    <div>Remaining: AED {(payment.remainingAmount || 0).toFixed(2)}</div>
+                                    <div>Remaining: AED {(order.totalAmount - payment.amount).toFixed(2)}</div>
                                     {payment.futurePaymentMethod && (
                                       <div>To be paid with: {getPaymentMethodString(payment.futurePaymentMethod)}</div>
                                     )}
-                                    {payment.method === POSPaymentMethod.CARD && payment.reference && (
-                                      <div>Card Ref: {payment.reference}</div>
+                                    {payment.reference && (
+                                      <div>Reference: {payment.reference}</div>
                                     )}
                                   </div>
                                 )}
@@ -1719,7 +1719,7 @@ const OrdersPage = () => {
                               </div>
                               <div className="flex justify-between font-medium text-orange-600">
                                 <span>Remaining Amount:</span>
-                                <span>AED {calculateRemainingAmount(order).toFixed(2)}</span>
+                                <span>AED {(order.totalAmount - (order.payments?.reduce((sum, payment) => sum + payment.amount, 0) || 0)).toFixed(2)}</span>
                               </div>
                               {/* Show future payment method if available */}
                               {order.payments?.some(p => p.futurePaymentMethod) && (

@@ -244,7 +244,7 @@ export default function CheckoutModal({
   };
 
   // Prepare order data for API
-  const preparePOSOrderData = useCallback((processedCart = cart, currentPaymentMethod = currentPaymentMethodState) => {
+  const preparePOSOrderData = useCallback((processedCart = cart || [], currentPaymentMethod = currentPaymentMethodState) => {
     const sanitizedCustomerDetails = sanitizeCustomerDetails();
     
     // Calculate the final total and allow for adjustments
@@ -257,7 +257,7 @@ export default function CheckoutModal({
     const couponDiscount = appliedCoupon ? Number(appliedCoupon.discount.toFixed(2)) : 0;
 
     // Create order items from cart
-    const orderItems = processedCart.map(item => {
+    const orderItems = (processedCart || []).map(item => {
       // Always use the price from the cart for accurate calculations
       // Ensure unitPrice is properly rounded to avoid floating point issues
       const unitPrice = Number((item.totalPrice / item.quantity).toFixed(2));
@@ -371,21 +371,17 @@ export default function CheckoutModal({
         defaultPayment.reference = currentPaymentReferenceState || null;
       } else if (currentPaymentMethodState === POSPaymentMethod.SPLIT) {
         // Calculate split payment amounts
-        const amount1 = Number(splitAmount1);
-        const amount2 = Number(splitAmount2);
+        const amount1 = Number(splitAmount1) || 0;
+        const amount2 = Number(splitAmount2) || 0;
         const splitTotal = Number((amount1 + amount2).toFixed(2));
         const roundedTotal = Number(calculateFinalTotal().toFixed(2));
         
-        if (splitTotal !== roundedTotal) {
-          console.warn(`Split payment total (${splitTotal}) doesn't match order total (${roundedTotal}). Adjusting amount2.`);
-          // Adjust amount2 to make the total match
-          const adjustedAmount2 = Number((roundedTotal - amount1).toFixed(2));
-          defaultPayment.splitFirstAmount = amount1;
-          defaultPayment.splitSecondAmount = adjustedAmount2;
-        } else {
-          defaultPayment.splitFirstAmount = amount1;
-          defaultPayment.splitSecondAmount = amount2;
+        if (Math.abs(splitTotal - roundedTotal) > 0.01) {
+          throw new Error(`Split payment total (${splitTotal.toFixed(2)}) doesn't match order total (${roundedTotal.toFixed(2)}). Please check the amounts.`);
         }
+        
+        defaultPayment.splitFirstAmount = amount1;
+        defaultPayment.splitSecondAmount = amount2;
 
         defaultPayment.splitFirstMethod = splitMethod1;
         defaultPayment.splitSecondMethod = splitMethod2;
@@ -429,7 +425,6 @@ export default function CheckoutModal({
 
         // Replace the default payment with our two split payments
         payments = [firstPayment, secondPayment];
-        return;
       } else if (currentPaymentMethodState === POSPaymentMethod.PARTIAL) {
         defaultPayment.isPartialPayment = true;
         const finalTotal = calculateFinalTotal();
@@ -737,7 +732,7 @@ export default function CheckoutModal({
       payments: paymentsState,
       paymentMethod: currentPaymentMethodState,
       paymentReference: currentPaymentReferenceState || '',
-      cartItems: cart.map(item => ({
+      cartItems: (cart || []).map(item => ({
         productId: item.product.id,
         quantity: item.quantity,
         variations: (item.selectedVariations || []).map((v: any): ProductVariation => ({
@@ -2245,23 +2240,25 @@ export default function CheckoutModal({
       setIsSplitPaymentState(true);
       setCurrentPaymentMethodState(method);
 
-      // Initialize the split payment methods if they haven't been set yet
+      // Set default payment methods
+      setSplitMethod1(POSPaymentMethod.CASH);
+      setSplitMethod2(POSPaymentMethod.CARD);
+
+      // Initialize amounts if they're not set
       if (!splitAmount1 && !splitAmount2) {
-        // Set default payment methods
-        setSplitMethod1(POSPaymentMethod.CASH);
-        setSplitMethod2(POSPaymentMethod.CARD);
-
-        // Don't set default amounts - let the user enter them
-        setSplitAmount1('');
-        setSplitAmount2('');
-        setSplitReference1('');
-        setSplitReference2('');
-
-        // Update legacy variables for backward compatibility
-        setSplitCashAmount('');
-        setSplitCardAmount('');
-        setSplitCardReference('');
+        const total = calculateFinalTotal();
+        setSplitAmount1((total / 2).toFixed(2));
+        setSplitAmount2((total / 2).toFixed(2));
       }
+
+      // Clear references
+      setSplitReference1('');
+      setSplitReference2('');
+
+      // Update legacy variables for backward compatibility
+      setSplitCashAmount('');
+      setSplitCardAmount('');
+      setSplitCardReference('');
     } else {
       setIsSplitPaymentState(false);
       setCurrentPaymentMethodState(method);
