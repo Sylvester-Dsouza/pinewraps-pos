@@ -272,6 +272,11 @@ export default function CheckoutModal({
         // Ensure unitPrice is properly rounded to avoid floating point issues
         const unitPrice = Number(item.product.basePrice.toFixed(2));
 
+        // For PBL orders, ensure we use the correct total
+        if (currentPaymentMethodState === POSPaymentMethod.PBL) {
+          finalTotal = Number(finalTotal.toFixed(2));
+        }
+
         const itemData: POSOrderItemData = {
           id: nanoid(),
           productId: item.product.id,
@@ -489,6 +494,8 @@ export default function CheckoutModal({
     if (currentPaymentMethodState === POSPaymentMethod.PBL || currentPaymentMethodState === POSPaymentMethod.PAY_LATER) {
       if (payments.length > 0) {
         payments[0].amount = finalOrderTotal;
+        // For PBL orders, ensure no remaining amount
+        payments[0].remainingAmount = 0;
       }
     }
     
@@ -593,7 +600,8 @@ export default function CheckoutModal({
       couponType: appliedCoupon ? appliedCoupon.type : null,
       couponValue: appliedCoupon ? appliedCoupon.value : null,
       // For partial payments, include the paid and remaining amounts
-      paidAmount: hasPartialPayment ? Number(totalPaidAmount.toFixed(2)) : finalTotal,
+      paidAmount: currentPaymentMethodState === POSPaymentMethod.PBL ? finalTotal : 
+                 hasPartialPayment ? Number(totalPaidAmount.toFixed(2)) : finalTotal,
       remainingAmount: hasPartialPayment ? Number((finalTotal - totalPaidAmount).toFixed(2)) : 0,
       // Total amount to be paid (after coupon discount)
       amountToPay: finalTotal,
