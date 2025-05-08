@@ -4,8 +4,8 @@ import { POSPaymentMethod, POSPaymentStatus, apiMethods } from "@/services/api";
 import { toast } from "@/lib/toast-utils";
 import { nanoid } from "nanoid";
 import { api } from "@/lib/axios";
-import axios from 'axios'; // Import axios
 import { Order } from "@/types/order";
+import { orderDrawerService } from '@/services/order-drawer.service';
 
 interface RemainingPaymentModalProps {
   isOpen: boolean;
@@ -295,52 +295,42 @@ export default function RemainingPaymentModal({
           (isSplitPayment && (splitMethod1 === POSPaymentMethod.CASH || splitMethod2 === POSPaymentMethod.CASH));
 
         try {
-          const PRINTER_PROXY_URL = process.env.NEXT_PUBLIC_PRINTER_PROXY_URL || 'http://localhost:3005';
-          const printerConfig = await getPrinterConfig(PRINTER_PROXY_URL);
-          
-          // For cash payments, use the cash-order endpoint
+          // Create payment object for drawer service
+          const paymentObj = {
+            id: payment.id,
+            amount: payment.amount,
+            method: payment.method,
+            reference: payment.reference,
+            status: payment.status,
+            metadata: payment.metadata
+          };
+
+          // Use orderDrawerService to handle cash drawer and receipt printing
           if (hasCashPayment) {
-            console.log('Processing cash payment - opening drawer');
-            const cashResponse = await fetch(`${PRINTER_PROXY_URL}/cash-order`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                ip: printerConfig.ip,
-                port: printerConfig.port,
-                skipConnectivityCheck: true,
-                type: 'order',
-                orderId: orderId,
-                order: response.data as Order,
-                openDrawer: true
-              })
-            });
-
-            const cashResponseData = await cashResponse.json();
-            if (!cashResponseData?.success) {
-              console.error('Cash drawer operation failed:', cashResponseData?.error);
-              toast.error('Failed to open cash drawer');
+            console.log('Processing cash payment with orderDrawerService');
+            const success = await orderDrawerService.handleOrderCashDrawer(
+              [paymentObj],
+              undefined, // orderNumber
+              orderId,
+              response.data // complete order data
+            );
+            if (!success) {
+              console.error('Failed to print receipt and open drawer');
+              toast.error('Failed to print receipt and open drawer');
             }
-          }
-
-          // Always print the receipt
-          console.log('Printing receipt');
-          const printResponse = await fetch(`${PRINTER_PROXY_URL}/print-receipt`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              ip: printerConfig.ip,
-              port: printerConfig.port,
-              skipConnectivityCheck: true,
-              type: 'order',
-              orderId: orderId,
-              order: response.data as Order
-            })
-          });
-
-          const printResponseData = await printResponse.json();
-          if (!printResponseData?.success) {
-            console.error('Receipt printing failed:', printResponseData?.error);
-            toast.error('Failed to print receipt');
+          } else {
+            // For non-cash payments, only print receipt
+            console.log('Processing non-cash payment with orderDrawerService');
+            const success = await orderDrawerService.handleOrderCardPayment(
+              [paymentObj],
+              undefined, // orderNumber
+              orderId,
+              response.data // complete order data
+            );
+            if (!success) {
+              console.error('Failed to print receipt');
+              toast.error('Failed to print receipt');
+            }
           }
         } catch (error) {
           console.error('Error with printer operation:', error);
