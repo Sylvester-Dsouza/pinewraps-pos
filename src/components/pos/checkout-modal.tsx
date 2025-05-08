@@ -233,7 +233,7 @@ export default function CheckoutModal({
   const preparePOSOrderData = useCallback((processedCart = cart) => {
     const sanitizedCustomerDetails = sanitizeCustomerDetails();
     
-    // Calculate cart total with proper rounding
+    // Calculate cart total without rounding yet
     const rawCartTotal = processedCart.reduce((total, item) => {
       const unitPrice = item.product.allowCustomPrice
         ? Number(item.product.basePrice)
@@ -244,17 +244,25 @@ export default function CheckoutModal({
       return total + (unitPrice * item.quantity);
     }, 0);
     
-    const cartTotal = Number(rawCartTotal.toFixed(2));
+    // Use the same final total calculation as calculateFinalTotal
+    let finalTotal = rawCartTotal;
     
-    // Calculate final total with coupon discount
-    const rawDiscount = appliedCoupon ? appliedCoupon.discount : 0;
-    const couponDiscount = Number(rawDiscount.toFixed(2));
-    const finalTotal = Number((cartTotal - couponDiscount).toFixed(2));
+    // Calculate coupon discount if available
+    const couponDiscount = appliedCoupon ? Number(appliedCoupon.discount.toFixed(2)) : 0;
+    
+    // Apply coupon discount if available
+    if (appliedCoupon) {
+      finalTotal = finalTotal - couponDiscount;
+    }
 
     // Add delivery charge if applicable
-    const totalWithDelivery = deliveryMethodState === DeliveryMethod.DELIVERY ? 
-      Number((finalTotal + (deliveryDetailsState?.charge || 0)).toFixed(2)) : 
-      finalTotal;
+    if (deliveryMethodState === DeliveryMethod.DELIVERY && deliveryDetailsState?.emirate) {
+      finalTotal = finalTotal + (deliveryDetailsState.charge || 0);
+    }
+
+    // Round only at the end
+    finalTotal = Number(finalTotal.toFixed(2));
+    const totalWithDelivery = finalTotal;
 
     // Create order items from cart
     const orderItems = processedCart.map(item => {
@@ -831,20 +839,21 @@ export default function CheckoutModal({
 
   // Calculate final total including discounts and delivery with proper rounding
   const calculateFinalTotal = useCallback(() => {
-    // Start with cart total, ensuring it's properly rounded
-    let total = Number(cartTotal.toFixed(2));
+    // Start with cart total without rounding yet
+    let total = cartTotal;
 
-    // Apply coupon discount if available, with proper rounding
+    // Apply coupon discount if available
     if (appliedCoupon) {
-      const discount = Number(appliedCoupon.discount.toFixed(2));
-      total = Number((total - discount).toFixed(2));
+      total = total - appliedCoupon.discount;
     }
 
-    // Add delivery charge if applicable, with proper rounding
+    // Add delivery charge if applicable
     if (deliveryMethodState === DeliveryMethod.DELIVERY && deliveryDetailsState?.emirate) {
-      const charge = Number((deliveryDetailsState.charge || 0).toFixed(2));
-      total = Number((total + charge).toFixed(2));
+      total = total + (deliveryDetailsState.charge || 0);
     }
+
+    // Round only at the end to minimize floating point errors
+    total = Number(total.toFixed(2));
 
     return Math.max(0, total); // Ensure total is not negative
   }, [cartTotal, appliedCoupon, deliveryMethodState, deliveryDetailsState]);
