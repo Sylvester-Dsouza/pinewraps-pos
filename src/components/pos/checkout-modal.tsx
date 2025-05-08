@@ -510,13 +510,11 @@ export default function CheckoutModal({
       total: finalTotal,
       actualTotal: cartSubtotal,
       subtotal: cartSubtotal,
-      // Store coupon information directly in the order
+      // Always include coupon information
       couponCode: appliedCoupon ? appliedCoupon.code : null,
-      couponDiscount: Number(couponDiscount || 0),
+      couponDiscount: couponDiscount,
       couponType: appliedCoupon ? appliedCoupon.type : null,
-      couponValue: appliedCoupon ? Number(appliedCoupon.value) : null,
-      // Add totalAmount field that includes coupon discount
-      totalAmount: finalTotal,
+      couponValue: appliedCoupon ? appliedCoupon.value : null,
       // For PBL and pay later orders, use the final total as paid amount and no remaining amount
       paidAmount: [POSPaymentMethod.PBL, POSPaymentMethod.PAY_LATER].includes(currentPaymentMethodState) ? 
                  finalTotal : hasPartialPayment ? Number(totalPaidAmount.toFixed(2)) : finalTotal,
@@ -588,8 +586,14 @@ export default function CheckoutModal({
           canReturnToDesign: hasDesignProducts,
           finalCheckNotes: ''
         },
-        // Remove coupon from metadata since it's now in the main order data
-        coupon: null
+        // Include coupon information in metadata
+        coupon: appliedCoupon ? {
+          code: appliedCoupon.code,
+          type: appliedCoupon.type,
+          value: appliedCoupon.value,
+          discount: couponDiscount,
+          appliedTotal: finalTotal // Include the total after coupon discount
+        } : null
       }
     };
 
