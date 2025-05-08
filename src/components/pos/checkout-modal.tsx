@@ -164,17 +164,34 @@ export default function CheckoutModal({
   // Order routing state
   const [selectedRoute, setSelectedRoute] = useState<'KITCHEN' | 'DESIGN' | 'BOTH' | null>(null);
 
-  // Payment state
+  // Modal visibility state
   const [showRemainingPaymentModal, setShowRemainingPaymentModal] = useState(false);
   const [showSplitPaymentModal, setShowSplitPaymentModal] = useState(false);
-  const [currentPaymentMethodState, setCurrentPaymentMethodState] = useState<POSPaymentMethod | null>(
-    paymentMethod || null
+
+  // Payment method and reference state
+  const [currentPaymentMethodState, setCurrentPaymentMethodState] = useState<POSPaymentMethod>(
+    paymentMethod || POSPaymentMethod.CASH
   );
   const [currentPaymentReferenceState, setCurrentPaymentReferenceState] = useState('');
   const [currentPaymentAmountState, setCurrentPaymentAmountState] = useState('');
+
+  // Payment type states
   const [isPartialPaymentState, setIsPartialPaymentState] = useState(false);
   const [isSplitPaymentState, setIsSplitPaymentState] = useState(false);
   const [partialPaymentMethod, setPartialPaymentMethod] = useState<POSPaymentMethod>(POSPaymentMethod.CASH);
+
+  // Split payment states
+  const [splitCashAmount, setSplitCashAmount] = useState('');
+  const [splitCardAmount, setSplitCardAmount] = useState('');
+  const [splitCardReference, setSplitCardReference] = useState('');
+
+  // Payments state
+  const [paymentsState, setPaymentsState] = useState<Payment[]>(payments || []);
+
+  // Total with delivery calculation
+  const totalWithDelivery = useMemo(() => {
+    return cartTotal + (deliveryMethodState === DeliveryMethod.DELIVERY ? (deliveryDetailsState?.charge || 0) : 0);
+  }, [cartTotal, deliveryMethodState, deliveryDetailsState?.charge]);
 
   // Loading state for image uploads and order processing
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -189,10 +206,7 @@ export default function CheckoutModal({
   const [splitReference2, setSplitReference2] = useState('');
 
   // Legacy variables for backward compatibility
-  const [splitCashAmount, setSplitCashAmount] = useState('');
-  const [splitCardAmount, setSplitCardAmount] = useState('');
-  const [splitCardReference, setSplitCardReference] = useState('');
-  const [paymentsState, setPaymentsState] = useState<Payment[]>([]);
+  // Split payment state is now managed at the top level
 
   // Get the payment method for API
   const getApiPaymentMethod = () => {
@@ -230,122 +244,69 @@ export default function CheckoutModal({
   };
 
   // Prepare order data for API
-  const preparePOSOrderData = useCallback((processedCart = cart) => {
+  const preparePOSOrderData = useCallback((processedCart = cart, currentPaymentMethod = currentPaymentMethodState) => {
     const sanitizedCustomerDetails = sanitizeCustomerDetails();
     
     // Calculate the final total and allow for adjustments
     let finalTotal = calculateFinalTotal();
     let totalWithDelivery = finalTotal;
     const cartSubtotal = cartTotal;
+    const deliveryCharge = deliveryMethodState === DeliveryMethod.DELIVERY ? (deliveryDetailsState?.charge || 0) : 0;
     
     // Calculate coupon discount if available
     const couponDiscount = appliedCoupon ? Number(appliedCoupon.discount.toFixed(2)) : 0;
 
     // Create order items from cart
     const orderItems = processedCart.map(item => {
-      // For custom products, use the product's basePrice directly (which was set to the custom price)
-      // and ignore variation price adjustments
-      if (item.product.allowCustomPrice) {
-        // Ensure unitPrice is properly rounded to avoid floating point issues
-        const unitPrice = Number(item.product.basePrice.toFixed(2));
+      // Always use the price from the cart for accurate calculations
+      // Ensure unitPrice is properly rounded to avoid floating point issues
+      const unitPrice = Number((item.totalPrice / item.quantity).toFixed(2));
 
-        // For PBL orders, ensure we use the correct total
-        if (currentPaymentMethodState === POSPaymentMethod.PBL) {
-          finalTotal = Number(finalTotal.toFixed(2));
-        }
+      // For PBL orders, ensure we use the correct total
+      if (currentPaymentMethodState === POSPaymentMethod.PBL) {
+        finalTotal = Number(finalTotal.toFixed(2));
+      }
 
-        const itemData: POSOrderItemData = {
-          id: nanoid(),
-          productId: item.product.id,
-          productName: item.product.name,
-          quantity: item.quantity,
-          unitPrice: unitPrice,
-          totalPrice: Number((unitPrice * item.quantity).toFixed(2)),
-          sku: item.product.sku || '',
-          requiresKitchen: item.product.requiresKitchen || false,
-          requiresDesign: item.product.requiresDesign || false,
-          variations: {
-            variationsObj: (item.selectedVariations || []).reduce((acc, v) => ({
-              ...acc,
-              [v.type]: v.customText ? `${v.value} (${v.customText})` : v.value
-            }), {}),
-            selectedVariations: (item.selectedVariations || []).map(v => ({
-              id: nanoid(),
-              type: v.type,
-              value: v.value,
-              priceAdjustment: v.price || 0,
-              customText: v.customText
-            }))
-          },
+      const itemData: POSOrderItemData = {
+        id: nanoid(),
+        productId: item.product.id,
+        productName: item.product.name,
+        quantity: item.quantity,
+        unitPrice: unitPrice,
+        totalPrice: Number((unitPrice * item.quantity).toFixed(2)),
+        sku: item.product.sku || '',
+        requiresKitchen: item.product.requiresKitchen || false,
+        requiresDesign: item.product.requiresDesign || false,
+        variations: {
+          variationsObj: (item.selectedVariations || []).reduce((acc, v) => ({
+            ...acc,
+            [v.type]: v.customText ? `${v.value} (${v.customText})` : v.value
+          }), {}),
           selectedVariations: (item.selectedVariations || []).map(v => ({
             id: nanoid(),
             type: v.type,
             value: v.value,
             priceAdjustment: v.price || 0,
             customText: v.customText
-          })),
-          // Add custom images if available
-          customImages: item.customImages && item.customImages.length > 0 ? item.customImages.map(img => ({
-            id: img.id || nanoid(),
-            url: img.url || '',
-            comment: img.comment || ''
-          })) : undefined,
-          notes: item.notes
-        };
-
-        return itemData;
-      } else {
-        // Calculate unit price including variations with proper rounding
-        const variationPriceAdjustments = (item.selectedVariations || []).reduce(
-          (total, variation) => {
-            const adjustmentAmount = variation.price || variation.priceAdjustment || 0;
-            return Number((total + adjustmentAmount).toFixed(2));
-          },
-          0
-        );
-        const unitPrice = Number((item.product.basePrice + variationPriceAdjustments).toFixed(2));
-
-        const itemData: POSOrderItemData = {
+          }))
+        },
+        selectedVariations: (item.selectedVariations || []).map(v => ({
           id: nanoid(),
-          productId: item.product.id,
-          productName: item.product.name,
-          quantity: item.quantity,
-          unitPrice: unitPrice,
-          totalPrice: Number((unitPrice * item.quantity).toFixed(2)),
-          sku: item.product.sku || '',
-          requiresKitchen: item.product.requiresKitchen || false,
-          requiresDesign: item.product.requiresDesign || false,
-          variations: {
-            variationsObj: (item.selectedVariations || []).reduce((acc, v) => ({
-              ...acc,
-              [v.type]: v.customText ? `${v.value} (${v.customText})` : v.value
-            }), {}),
-            selectedVariations: (item.selectedVariations || []).map(v => ({
-              id: nanoid(),
-              type: v.type,
-              value: v.value,
-              priceAdjustment: v.price || v.priceAdjustment || 0,
-              customText: v.customText
-            }))
-          },
-          selectedVariations: (item.selectedVariations || []).map(v => ({
-            id: nanoid(),
-            type: v.type,
-            value: v.value,
-            priceAdjustment: v.price || v.priceAdjustment || 0,
-            customText: v.customText
-          })),
-          // Add custom images if available
-          customImages: item.customImages && item.customImages.length > 0 ? item.customImages.map(img => ({
-            id: img.id || nanoid(),
-            url: img.url || '',
-            comment: img.comment || ''
-          })) : undefined,
-          notes: item.notes
-        };
+          type: v.type,
+          value: v.value,
+          priceAdjustment: v.price || 0,
+          customText: v.customText
+        })),
+        // Add custom images if available
+        customImages: item.customImages && item.customImages.length > 0 ? item.customImages.map(img => ({
+          id: img.id || nanoid(),
+          url: img.url || '',
+          comment: img.comment || ''
+        })) : undefined,
+        notes: item.notes
+      };
 
-        return itemData;
-      }
+      return itemData;
     });
 
     // Let the backend handle routing based on product categories
@@ -549,11 +510,13 @@ export default function CheckoutModal({
       total: finalTotal,
       actualTotal: cartSubtotal,
       subtotal: cartSubtotal,
-      // Always include coupon information
+      // Store coupon information directly in the order
       couponCode: appliedCoupon ? appliedCoupon.code : null,
-      couponDiscount: couponDiscount,
+      couponDiscount: Number(couponDiscount || 0),
       couponType: appliedCoupon ? appliedCoupon.type : null,
-      couponValue: appliedCoupon ? appliedCoupon.value : null,
+      couponValue: appliedCoupon ? Number(appliedCoupon.value) : null,
+      // Add totalAmount field that includes coupon discount
+      totalAmount: finalTotal,
       // For PBL and pay later orders, use the final total as paid amount and no remaining amount
       paidAmount: [POSPaymentMethod.PBL, POSPaymentMethod.PAY_LATER].includes(currentPaymentMethodState) ? 
                  finalTotal : hasPartialPayment ? Number(totalPaidAmount.toFixed(2)) : finalTotal,
@@ -625,14 +588,8 @@ export default function CheckoutModal({
           canReturnToDesign: hasDesignProducts,
           finalCheckNotes: ''
         },
-        // Include coupon information in metadata
-        coupon: appliedCoupon ? {
-          code: appliedCoupon.code,
-          type: appliedCoupon.type,
-          value: appliedCoupon.value,
-          discount: couponDiscount,
-          appliedTotal: finalTotal // Include the total after coupon discount
-        } : null
+        // Remove coupon from metadata since it's now in the main order data
+        coupon: null
       }
     };
 

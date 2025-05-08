@@ -261,6 +261,15 @@ const OrdersPage = () => {
       console.log('Orders API Response:', response);
       
       if (response.success && Array.isArray(response.data)) {
+        // Debug total values from API
+        response.data.forEach((order: any) => {
+          console.log(`Order ${order.id} values:`, {
+            totalAmount: order.totalAmount,
+            total: order.total,
+            subtotal: order.subtotal,
+            rawOrder: order
+          });
+        });
         // Log the payment data for debugging
         response.data.forEach((order: any) => {
           if (order.payments && order.payments.length > 0) {
@@ -359,6 +368,17 @@ const OrdersPage = () => {
             console.log(`Order ${order.id} has no status history`);
           }
           
+          // Calculate total from items
+          const calculatedTotal = order.items.reduce((sum: number, item: any) => {
+            return sum + Number(item.totalPrice || item.total || (item.quantity * item.unitPrice)) || 0;
+          }, 0);
+          
+          // Apply any discounts
+          const discountedTotal = order.couponDiscount ? calculatedTotal - Number(order.couponDiscount) : calculatedTotal;
+          
+          // Add delivery charge
+          const finalTotal = discountedTotal + Number(order.deliveryCharge || 0);
+
           return {
             ...order,
             // Add the refund notes to the order object
@@ -389,9 +409,13 @@ const OrdersPage = () => {
               }),
               totalPrice: Number(item.totalPrice || item.total || (item.quantity * item.unitPrice)) || 0
             })),
-            totalAmount: Number(order.totalAmount || order.total || order.subtotal || 0),
+            // Assign the calculated values
+            totalAmount: finalTotal,
+            total: finalTotal,
+            subtotal: calculatedTotal,
             paidAmount: Number(order.paidAmount) || 0,
             changeAmount: Number(order.changeAmount) || 0,
+            deliveryCharge: Number(order.deliveryCharge || 0),
             // Normalize payment information
             paymentMethod: order.paymentMethod || 'CASH',
             payments: transformedPayments
@@ -1647,12 +1671,14 @@ const OrdersPage = () => {
                                   </span>
                                 )}
                                 
-                                {/* For Split payments, always show cash and card portions */}
+                                {/* For Split payments, show both payment methods used */}
                                 {(payment.method === POSPaymentMethod.SPLIT || payment.isSplitPayment) && (
                                   <div className="text-gray-600 mt-1 ml-2">
-                                    <div>Cash portion: AED {Number(payment.cashPortion).toFixed(2)}</div>
-                                    <div>Card portion: AED {Number(payment.cardPortion).toFixed(2)}</div>
-                                    {(payment.cardReference || payment.reference) && <div>Card Ref: {payment.cardReference || payment.reference}</div>}
+                                    <div>{payment.splitFirstMethod}: AED {Number(payment.splitFirstAmount).toFixed(2)}</div>
+                                    <div>{payment.splitSecondMethod}: AED {Number(payment.splitSecondAmount).toFixed(2)}</div>
+                                    {(payment.splitFirstMethod === POSPaymentMethod.CARD ? payment.splitFirstReference : payment.splitSecondReference) && (
+                                      <div>Card Ref: {payment.splitFirstMethod === POSPaymentMethod.CARD ? payment.splitFirstReference : payment.splitSecondReference}</div>
+                                    )}
                                   </div>
                                 )}
                                 
