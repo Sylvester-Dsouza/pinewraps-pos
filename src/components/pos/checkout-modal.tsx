@@ -244,25 +244,11 @@ export default function CheckoutModal({
       return total + (unitPrice * item.quantity);
     }, 0);
     
-    // Use the same final total calculation as calculateFinalTotal
-    let finalTotal = rawCartTotal;
+    // Calculate the final total using the same logic as calculateFinalTotal
+    const finalTotal = calculateFinalTotal();
     
     // Calculate coupon discount if available
     const couponDiscount = appliedCoupon ? Number(appliedCoupon.discount.toFixed(2)) : 0;
-    
-    // Apply coupon discount if available
-    if (appliedCoupon) {
-      finalTotal = finalTotal - couponDiscount;
-    }
-
-    // Add delivery charge if applicable
-    if (deliveryMethodState === DeliveryMethod.DELIVERY && deliveryDetailsState?.emirate) {
-      finalTotal = finalTotal + (deliveryDetailsState.charge || 0);
-    }
-
-    // Round only at the end
-    finalTotal = Number(finalTotal.toFixed(2));
-    const totalWithDelivery = finalTotal;
 
     // Create order items from cart
     const orderItems = processedCart.map(item => {
@@ -273,9 +259,7 @@ export default function CheckoutModal({
         const unitPrice = Number(item.product.basePrice.toFixed(2));
 
         // For PBL orders, ensure we use the correct total
-        if (currentPaymentMethodState === POSPaymentMethod.PBL) {
-          finalTotal = Number(finalTotal.toFixed(2));
-        }
+        // No need to modify finalTotal since it's already calculated correctly
 
         const itemData: POSOrderItemData = {
           id: nanoid(),
@@ -387,7 +371,7 @@ export default function CheckoutModal({
     let payments = [...paymentsState];
     
     // Round the total to 2 decimal places to avoid floating point precision issues
-    const roundedTotal = Number(totalWithDelivery.toFixed(2));
+    const roundedTotal = Number(finalTotal.toFixed(2));
     console.log('Preparing order with final total:', roundedTotal);
     
     // For debugging - log the cart items and their prices
@@ -487,16 +471,21 @@ export default function CheckoutModal({
       payments = [defaultPayment];
     }
 
-    // Calculate the final total including all discounts
+    // Calculate the final total including all discounts - this is our single source of truth
     const finalOrderTotal = calculateFinalTotal();
     
-    // For PBL and pay later orders, always use the final total as the payment amount
+    // For PBL and pay later orders, ensure we have exactly one payment with the full amount
     if (currentPaymentMethodState === POSPaymentMethod.PBL || currentPaymentMethodState === POSPaymentMethod.PAY_LATER) {
-      if (payments.length > 0) {
-        payments[0].amount = finalOrderTotal;
-        // For PBL orders, ensure no remaining amount
-        payments[0].remainingAmount = 0;
-      }
+      // Clear any existing payments and create a single payment with the full amount
+      const singlePayment: Payment = {
+        id: nanoid(),
+        amount: finalOrderTotal,
+        method: currentPaymentMethodState,
+        reference: currentPaymentReferenceState || null,
+        status: currentPaymentMethodState === POSPaymentMethod.PAY_LATER ? POSPaymentStatus.PENDING : POSPaymentStatus.FULLY_PAID,
+        remainingAmount: 0
+      };
+      payments = [singlePayment];
     }
     
     // Check if this is a partial payment order
@@ -590,9 +579,9 @@ export default function CheckoutModal({
 
         return paymentData;
       }),
-      // Use the final order total that includes coupon discounts
-      total: finalTotal, // This should be the discounted total
-      actualTotal: cartTotal, // This should be the original total before discount
+      // Use finalOrderTotal as our single source of truth for all totals
+      total: finalOrderTotal,
+      actualTotal: cartTotal,
       subtotal: cartTotal,
       // Always include coupon information
       couponCode: appliedCoupon ? appliedCoupon.code : null,
@@ -600,12 +589,12 @@ export default function CheckoutModal({
       couponType: appliedCoupon ? appliedCoupon.type : null,
       couponValue: appliedCoupon ? appliedCoupon.value : null,
       // For partial payments, include the paid and remaining amounts
-      paidAmount: currentPaymentMethodState === POSPaymentMethod.PBL ? finalTotal : 
-                 hasPartialPayment ? Number(totalPaidAmount.toFixed(2)) : finalTotal,
-      remainingAmount: hasPartialPayment ? Number((finalTotal - totalPaidAmount).toFixed(2)) : 0,
+      paidAmount: currentPaymentMethodState === POSPaymentMethod.PBL ? finalOrderTotal :
+                 hasPartialPayment ? Number(totalPaidAmount.toFixed(2)) : finalOrderTotal,
+      remainingAmount: hasPartialPayment ? Number((finalOrderTotal - totalPaidAmount).toFixed(2)) : 0,
       // Total amount to be paid (after coupon discount)
-      amountToPay: finalTotal,
-      allowPartialPayment: hasPartialPayment, // Flag to tell backend this order allows partial payment
+      amountToPay: finalOrderTotal,
+      allowPartialPayment: false, // Never allow partial payment for PBL orders // Flag to tell backend this order allows partial payment
 
       // Payment details
       paymentMethod: getApiPaymentMethod(),
