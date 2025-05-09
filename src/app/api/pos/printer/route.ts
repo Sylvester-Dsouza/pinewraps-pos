@@ -150,25 +150,38 @@ async function handlePrinterAction(data: any) {
     const proxyUrl = process.env.PRINTER_PROXY_URL || 'http://localhost:3005';
     
     // Prepare the endpoint based on the action
-    const endpoint = data.action === 'print-and-open' ? '/print-and-open' : '/test-print';
+    let endpoint = '/print-test';
+    if (data.action === 'print-and-open') {
+      endpoint = '/print-and-open';
+    } else if (data.action === 'print-only') {
+      endpoint = '/print-only';
+    }
     
     // Prepare the payload based on the action and data
     const payload: any = {
       type: data.type || 'test',
       data: {
+        ...data.data, // Keep all original data
         ip: printer.ipAddress,
-        port: printer.port
+        port: printer.port,
+        skipConnectivityCheck: true
       }
     };
     
-    // If this is an order receipt, add the order ID
-    if (data.orderId) {
-      payload.data.orderId = data.orderId;
-    }
-    
-    // If this is a split payment, add the amount
-    if (data.amount) {
-      payload.data.amount = data.amount;
+    // For till closing reports, ensure we pass all required data
+    if (data.type === 'till_close') {
+      // Ensure we have all required fields
+      if (!payload.data.closingAmount || !payload.data.openingAmount) {
+        console.error('Missing required fields for till closing report');
+        return NextResponse.json({ 
+          success: false, 
+          error: 'Missing required fields for till closing report' 
+        }, { status: 400 });
+      }
+
+      // Log the payment totals for debugging
+      console.log('Till closing payment totals:', payload.data.paymentTotals);
+      console.log('Till closing completed orders:', payload.data.completedOrders);
     }
     
     console.log(`Sending ${data.action} request to printer proxy at ${proxyUrl}${endpoint}`, payload);
