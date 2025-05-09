@@ -469,7 +469,11 @@ export default function CheckoutModal({
     
     // For non-partial payments, verify that payment amounts match the order total
     // For partial payments, only verify that amount doesn't exceed total and is greater than 0
-    if (hasPartialPayment) {
+    // For Pay By Link (PBL) and PAY_LATER, skip amount validation since they use the full amount
+    if (currentPaymentMethodState === POSPaymentMethod.PBL || currentPaymentMethodState === POSPaymentMethod.PAY_LATER) {
+      // Skip validation for Pay By Link and Pay Later orders
+      console.log('Skipping payment validation for Pay By Link/Pay Later order');
+    } else if (hasPartialPayment) {
       if (totalPaidAmount >= finalOrderTotal) {
         throw new Error(`Partial payment (${totalPaidAmount}) must be less than the total (${finalOrderTotal})`);
       } else if (totalPaidAmount <= 0) {
@@ -666,11 +670,18 @@ export default function CheckoutModal({
   }, [cart, customerDetailsState, deliveryMethodState, deliveryDetailsState, pickupDetailsState, giftDetailsState, currentPaymentMethodState]);
 
   // Sanitize functions for checkout details
-  const sanitizeCustomerDetails = () => ({
-    name: customerDetailsState.name?.trim() || 'Walk-in Customer',
-    email: customerDetailsState.email?.trim() || '',
-    phone: customerDetailsState.phone?.trim() || ''
-  });
+  const sanitizeCustomerDetails = () => {
+    // Validate customer details first
+    if (!customerDetailsState.name?.trim() || !customerDetailsState.phone?.trim()) {
+      throw new Error('Customer name and phone are required');
+    }
+
+    return {
+      name: customerDetailsState.name.trim(),
+      email: customerDetailsState.email?.trim() || '',
+      phone: customerDetailsState.phone.trim()
+    };
+  };
 
   const sanitizeDeliveryDetails = () => ({
     date: deliveryDetailsState?.date || '',

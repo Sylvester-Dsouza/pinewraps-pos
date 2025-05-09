@@ -1474,24 +1474,36 @@ const OrdersPage = () => {
                         {order.deliveryMethod === 'DELIVERY' ? (
                           <>
                             <div className="mt-2 pt-2 border-t border-gray-200">
-                              <p className="font-medium text-gray-700">Delivery Details:</p>
-                              {order.deliveryDate && order.deliveryTimeSlot && (
-                                <p>Date & Time: {format(new Date(order.deliveryDate), 'PP')} - {order.deliveryTimeSlot}</p>
+                              <h4 className="font-semibold text-gray-700">Delivery Details:</h4>
+                              {order.deliveryMethod === 'DELIVERY' && order.deliveryDate && order.deliveryTimeSlot && (
+                                <p className="text-sm break-words">Delivery Date & Time: {format(new Date(order.deliveryDate), 'PP')} - {order.deliveryTimeSlot}</p>
                               )}
                               {order.streetAddress && (
-                                <div className="break-words overflow-hidden">
-                                  <p className="font-medium mb-1">Address:</p>
-                                  <p className="ml-2">{order.streetAddress}</p>
-                                  {order.apartment && (
-                                    <p className="ml-2 break-all">{order.apartment}</p>
-                                  )}
-                                  {(order.city || order.emirate) && (
-                                    <p className="ml-2">{[order.city, order.emirate].filter(Boolean).join(', ')}</p>
-                                  )}
+                                <div className="mt-1">
+                                  <p className="text-sm font-medium text-gray-600">Address:</p>
+                                  <div className="text-sm break-all whitespace-pre-wrap max-w-full overflow-hidden overflow-wrap-anywhere">
+                                    <p className="mb-1" style={{ wordBreak: 'break-all', overflowWrap: 'anywhere' }}>
+                                      {order.streetAddress}
+                                    </p>
+                                    {order.apartment && (
+                                      <p className="text-gray-600" style={{ wordBreak: 'break-all', overflowWrap: 'anywhere' }}>
+                                        {order.apartment}
+                                      </p>
+                                    )}
+                                  </div>
                                 </div>
                               )}
+                              {order.emirate && (
+                                <p className="text-sm break-words mt-1">Emirate: {order.emirate}</p>
+                              )}
+                              {order.city && (
+                                <p className="text-sm break-words">City: {order.city}</p>
+                              )}
                               {order.deliveryInstructions && (
-                                <p className="break-words overflow-hidden">Instructions: {order.deliveryInstructions}</p>
+                                <div className="mt-1">
+                                  <p className="text-sm font-medium text-gray-600">Instructions:</p>
+                                  <p className="text-sm break-words whitespace-pre-wrap">{order.deliveryInstructions}</p>
+                                </div>
                               )}
                               {/* Add button to update order details */}
                               {!['COMPLETED', 'CANCELLED'].includes(order.status) && (
