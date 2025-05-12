@@ -320,33 +320,52 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
           
           console.log('Sending print request to printer proxy with data:', JSON.stringify(closingData, null, 2));
           
-          // Use fetch as it's more reliable for printer proxy requests (per memory guidance)
-          fetch(`${PRINTER_PROXY_URL}/print-only`, {
+          // Format amounts for better printing
+          const formattedClosingData = {
+            ...closingData,
+            closingAmount: parseFloat(String(closingData.closingAmount)).toFixed(2),
+            openingAmount: parseFloat(String(closingData.openingAmount)).toFixed(2),
+            paymentTotals: Object.entries(closingData.paymentTotals).reduce((acc, [method, amount]) => ({
+              ...acc,
+              [method]: parseFloat(String(amount)).toFixed(2)
+            }), {} as Record<string, string>)
+          };
+
+          console.log('Formatted closing data:', formattedClosingData);
+
+          // Use fetch for printer proxy requests
+          const printResponse = await fetch(`${PRINTER_PROXY_URL}/print-only`, {
             method: 'POST',
             headers: {
-              'Content-Type': 'application/json'
+              'Content-Type': 'application/json',
+              'Accept': 'application/json'
             },
             body: JSON.stringify({
-              type: 'till_close', // Use till_close instead of till_close_final to match proxy handler
-              data: closingData,
-              ...proxyConfig,
-              skipConnectivityCheck: true // Add this to skip connectivity check
+              type: 'till_close',
+              data: formattedClosingData,
+              printer: {
+                type: 'RECEIPT',
+                ...proxyConfig
+              },
+              options: {
+                skipConnectivityCheck: true,
+                copies: 1
+              }
             })
-          })
-          .then(response => response.json())
-          .then(result => {
-            console.log('Print response:', result);
-            if (result.success) {
-              console.log('Till closing receipt printed successfully');
-            } else {
-              console.error('Failed to print till closing receipt:', result.error || 'Unknown error');
-              toast.error('Till closed but receipt printing failed');
-            }
-          })
-          .catch(printError => {
-            console.error('Error printing closing receipt:', printError);
-            toast.error('Till closed but receipt printing failed');
           });
+
+          if (!printResponse.ok) {
+            const errorData = await printResponse.json().catch(() => ({}));
+            throw new Error(errorData.error || `HTTP error! status: ${printResponse.status}`);
+          }
+
+          const result = await printResponse.json();
+          
+          if (result.success) {
+            console.log('Till closing receipt printed successfully');
+          } else {
+            throw new Error(result.error || 'Unknown printer error');
+          }
         } catch (printError) {
           console.error('Error setting up print request:', printError);
           toast.error('Till closed but receipt printing failed');
