@@ -371,7 +371,7 @@ export const printContent = async (
     // Using fetch API as per requirements for printer operations
     console.log(`Sending order to ${endpoint} endpoint:`, order.orderNumber);
     
-    // Format. the request according to what the cash-order endpoint expects
+    // Format the request according to what the cash-order endpoint expects
     const response = await fetch(`${proxyUrl}${endpoint}`, {
       method: 'POST',
       headers: {
