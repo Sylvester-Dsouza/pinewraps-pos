@@ -358,7 +358,8 @@ export const printContent = async (
 ): Promise<void> => {
   try {
     const proxyUrl = process.env.NEXT_PUBLIC_PRINTER_PROXY_URL || 'http://localhost:3005';
-    const endpoint = '/print-order';
+    // Use print-only endpoint to avoid opening the cash drawer
+    const endpoint = openDrawer ? '/print-and-open' : '/print-only';
 
     // Use generateReceiptLines if order is provided, otherwise format the HTML content
     const formattedLines = order 
@@ -383,11 +384,7 @@ export const printContent = async (
             createdAt: new Date().toISOString(),
             items: []
           },
-          printer: {
-            // Let the proxy use the default printer
-            ipAddress: '',
-            port: 9100
-          }
+          lines: formattedLines
         },
         skipConnectivityCheck: true
       })
