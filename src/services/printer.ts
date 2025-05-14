@@ -357,20 +357,17 @@ export const printContent = async (
   order?: DBOrder
 ): Promise<void> => {
   try {
+    if (!order) {
+      throw new Error('Order data is required for printing receipts');
+    }
+
     const proxyUrl = process.env.NEXT_PUBLIC_PRINTER_PROXY_URL || 'http://localhost:3005';
-    // Use print-only endpoint to avoid opening the cash drawer
-    const endpoint = openDrawer ? '/print-and-open' : '/print-only';
+    // Use print-order endpoint specifically for order receipts
+    const endpoint = '/print-order';
 
-    // Use generateReceiptLines if order is provided, otherwise format the HTML content
-    const formattedLines = order 
-      ? generateReceiptLines(order)
-      : content
-        .replace(/<[^>]*>/g, '') // Remove HTML tags
-        .split('\n')
-        .map(line => line.trim())
-        .filter(line => line.length > 0)
-        .map(text => ({ text }));
+    console.log('Printing order receipt:', order.orderNumber);
 
+    // Using fetch API as per requirements for printer operations
     const response = await fetch(`${proxyUrl}${endpoint}`, {
       method: 'POST',
       headers: {
@@ -379,14 +376,13 @@ export const printContent = async (
       body: JSON.stringify({
         type: 'order',
         data: {
-          order: order || {
-            orderNumber: 'Receipt',
-            createdAt: new Date().toISOString(),
-            items: []
-          },
-          lines: formattedLines
+          order: order,
+          printer: {
+            // Let the proxy use the default printer
+          }
         },
-        skipConnectivityCheck: true
+        skipConnectivityCheck: true,
+        openDrawer: false // Never open drawer for order receipts
       })
     });
 
