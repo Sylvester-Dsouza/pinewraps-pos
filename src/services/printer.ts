@@ -121,14 +121,14 @@ export const generateReceiptLines = (order: DBOrder): { text: string; alignment?
       lines.push({ text: formatLineItem(payment.method, formatCurrency(payment.amount)) });
       if (payment.status) lines.push({ text: `Status: ${payment.status}` });
       if (payment.reference) lines.push({ text: `Reference: ${payment.reference}` });
-      if (payment.metadata?.cashAmount) lines.push({ text: formatLineItem('Cash Amount:', formatCurrency(parseFloat(payment.metadata.cashAmount))) });
-      if (payment.metadata?.changeAmount) lines.push({ text: formatLineItem('Change:', formatCurrency(typeof payment.metadata.changeAmount === 'string' ? parseFloat(payment.metadata.changeAmount) : payment.metadata.changeAmount)) });
+      if (payment.metadata?.cashAmount) lines.push({ text: formatLineItem('Cash Amount:', formatCurrency(payment.metadata.cashAmount)) });
+      if (payment.metadata?.changeAmount) lines.push({ text: formatLineItem('Change:', formatCurrency(payment.metadata.changeAmount)) });
     });
   } else {
     lines.push({ text: `Payment Method: ${order.paymentMethod || 'Not specified'}` });
     lines.push({ text: formatLineItem('Amount Paid:', formatCurrency(typeof order.paidAmount === 'string' ? parseFloat(order.paidAmount) : (order.paidAmount || 0))) });
-    if (order.changeAmount && parseFloat(String(order.changeAmount)) > 0) {
-      lines.push({ text: formatLineItem('Change', formatCurrency(parseFloat(String(order.changeAmount)))), alignment: 'right' });
+    if (order.changeAmount && order.changeAmount > 0) {
+      lines.push({ text: formatLineItem('Change', formatCurrency(order.changeAmount)), alignment: 'right' });
     }
   }
 
@@ -362,24 +362,40 @@ export const printContent = async (
     }
 
     const proxyUrl = process.env.NEXT_PUBLIC_PRINTER_PROXY_URL || 'http://localhost:3005';
-    
-    // For order receipts, use the cash-order endpoint but set openDrawer to false
-    const endpoint = '/cash-order';
+    // Use print-order endpoint specifically for order receipts
+    const endpoint = '/print-order';
 
     console.log('Printing order receipt:', order.orderNumber);
 
-    // Using fetch API as per requirements for printer operations
-    console.log(`Sending order to ${endpoint} endpoint:`, order.orderNumber);
+    // First fetch the default printer configuration
+    const defaultPrinterResponse = await fetch(`${proxyUrl}/config/default-printer`);
+    const defaultPrinterData = await defaultPrinterResponse.json();
     
-    // Format the request according to what the cash-order endpoint expects
+    if (!defaultPrinterData.success || !defaultPrinterData.printer) {
+      console.error('No default printer found, using environment variables');
+    }
+    
+    const printerConfig = defaultPrinterData.success ? defaultPrinterData.printer : null;
+    
+    // Using fetch API as per requirements for printer operations
     const response = await fetch(`${proxyUrl}${endpoint}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        order: order,
-        openDrawer: false // Never open cash drawer for regular receipts
+        type: 'order',
+        data: {
+          order: order,
+          printer: printerConfig ? {
+            ipAddress: printerConfig.ipAddress,
+            port: printerConfig.port || 9100
+          } : undefined
+        },
+        printerIp: printerConfig ? printerConfig.ipAddress : undefined,
+        printerPort: printerConfig ? (printerConfig.port || 9100) : undefined,
+        skipConnectivityCheck: true,
+        openDrawer: false // Never open drawer for order receipts
       })
     });
 
