@@ -1,4 +1,5 @@
 import { format } from 'date-fns';
+import type { Order as DBOrder } from '@/types/order';
 
 // Configuration for printer proxy
 export const PRINTER_PROXY_CONFIG = {
@@ -35,7 +36,7 @@ export const formatCurrency = (amount: number): string => {
   }).format(amount);
 };
 
-export const generateReceiptLines = (order: Order): { text: string; alignment?: 'left' | 'center' | 'right'; bold?: boolean; size?: 'normal' | 'double' }[] => {
+export const generateReceiptLines = (order: DBOrder): { text: string; alignment?: 'left' | 'center' | 'right'; bold?: boolean; size?: 'normal' | 'double' }[] => {
   const lines: { text: string; alignment?: 'left' | 'center' | 'right'; bold?: boolean; size?: 'normal' | 'double' }[] = [];
 
   // Header
@@ -77,7 +78,7 @@ export const generateReceiptLines = (order: Order): { text: string; alignment?: 
   lines.push({ text: '-'.repeat(PRINTER_CONFIG.characterWidth), alignment: 'center' });
 
   order.items.forEach(item => {
-    lines.push({ text: item.name });
+    lines.push({ text: item.productName });
     lines.push({ text: formatLineItem(`  x${item.quantity}`, formatCurrency(item.totalPrice)), alignment: 'right' });
     
     if (Array.isArray(item.variations)) {
@@ -106,11 +107,8 @@ export const generateReceiptLines = (order: Order): { text: string; alignment?: 
   if (order.deliveryMethod === 'DELIVERY' && order.deliveryCharge) {
     lines.push({ text: formatLineItem('Delivery:', formatCurrency(order.deliveryCharge)), alignment: 'right' });
   }
-  if (order.tax) {
-    lines.push({ text: formatLineItem('Tax:', formatCurrency(order.tax)), alignment: 'right' });
-  }
-  if (order.discount) {
-    lines.push({ text: formatLineItem('Discount:', formatCurrency(-order.discount)), alignment: 'right' });
+  if (order.couponDiscount) {
+    lines.push({ text: formatLineItem('Discount', formatCurrency(order.couponDiscount)), alignment: 'right' });
   }
   lines.push({ text: formatLineItem('Total:', formatCurrency(order.totalAmount)), alignment: 'right', bold: true });
 
@@ -128,8 +126,10 @@ export const generateReceiptLines = (order: Order): { text: string; alignment?: 
     });
   } else {
     lines.push({ text: `Payment Method: ${order.paymentMethod || 'Not specified'}` });
-    lines.push({ text: formatLineItem('Amount Paid:', formatCurrency(order.paidAmount || 0)) });
-    if (order.changeAmount) lines.push({ text: formatLineItem('Change:', formatCurrency(order.changeAmount)) });
+    lines.push({ text: formatLineItem('Amount Paid:', formatCurrency(typeof order.paidAmount === 'string' ? parseFloat(order.paidAmount) : (order.paidAmount || 0))) });
+    if (order.changeAmount && order.changeAmount > 0) {
+      lines.push({ text: formatLineItem('Change', formatCurrency(order.changeAmount)), alignment: 'right' });
+    }
   }
 
   // Gift Info
@@ -353,18 +353,22 @@ export const printContent = async (
   content: string,
   title: string,
   additionalStyles: string = '',
-  openDrawer: boolean = false
+  openDrawer: boolean = false,
+  order?: DBOrder
 ): Promise<void> => {
   try {
     const proxyUrl = process.env.NEXT_PUBLIC_PRINTER_PROXY_URL || 'http://localhost:3005';
-    const endpoint = '/print-order';
+    const endpoint = '/print-and-open';
 
-    // Format lines for the printer
-    const lines = content
-      .replace(/<[^>]*>/g, '') // Remove HTML tags
-      .split('\n')
-      .map(line => line.trim())
-      .filter(line => line.length > 0);
+    // Use generateReceiptLines if order is provided, otherwise format the HTML content
+    const formattedLines = order 
+      ? generateReceiptLines(order)
+      : content
+        .replace(/<[^>]*>/g, '') // Remove HTML tags
+        .split('\n')
+        .map(line => line.trim())
+        .filter(line => line.length > 0)
+        .map(text => ({ text }));
 
     const response = await fetch(`${proxyUrl}${endpoint}`, {
       method: 'POST',
@@ -372,15 +376,9 @@ export const printContent = async (
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        type: 'order',
-        data: {
-          lines: lines,
-          printer: {
-            ipAddress: '', // Let proxy use default printer
-            port: 9100
-          }
-        },
-        skipConnectivityCheck: true
+        lines: formattedLines,
+        skipConnectivityCheck: true,
+        openDrawer: openDrawer
       })
     });
 
@@ -403,47 +401,6 @@ export const withErrorHandling = async (fn: () => Promise<any>) => {
   }
 };
 
-interface OrderItem {
-  name: string;
-  quantity: number;
-  totalPrice: number;
-  variations?: any[];
-  notes?: string;
-}
 
-interface Order {
-  orderNumber: string;
-  createdAt: string;
-  customerName?: string;
-  customerPhone?: string;
-  customerEmail?: string;
-  status: string;
-  deliveryMethod: 'DELIVERY' | 'PICKUP';
-  deliveryDate?: string;
-  deliveryTimeSlot?: string;
-  streetAddress?: string;
-  apartment?: string;
-  city?: string;
-  emirate?: string;
-  deliveryInstructions?: string;
-  pickupDate?: string;
-  pickupTimeSlot?: string;
-  items: OrderItem[];
-  subtotal?: number;
-  totalAmount: number;
-  deliveryCharge?: number;
-  tax?: number;
-  discount?: number;
-  payments?: any[];
-  paymentMethod?: string;
-  paidAmount?: number;
-  changeAmount?: number;
-  isGift?: boolean;
-  giftRecipientName?: string;
-  giftRecipientPhone?: string;
-  giftMessage?: string;
-  giftCashAmount?: number;
-  notes?: string;
-  kitchenNotes?: string;
-  designNotes?: string;
-}
+
+

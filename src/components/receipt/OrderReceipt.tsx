@@ -305,7 +305,8 @@ const OrderReceipt: React.FC<OrderReceiptProps> = ({ order, onClose }) => {
           generateReceiptContent(order),
           `Order Receipt #${order.orderNumber}`,
           receiptStyles,
-          false // Don't open cash drawer
+          false, // Don't open cash drawer
+          order // Pass the order object for proper formatting
         );
         setIsPrinting(false);
       }
