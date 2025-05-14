@@ -304,16 +304,19 @@ export const getBasePrinterStyles = () => `
   }
 `;
 
-// Generic print function
-export const printContent = async (
+// Generic print function for browser preview
+export const previewContent = async (
   content: string,
   title: string,
-  additionalStyles: string = '',
-  openDrawer: boolean = false // New parameter to control drawer opening
+  additionalStyles: string = ''
 ): Promise<void> => {
   try {
-    // Format the content with styles
-    const formattedContent = `
+    const printWindow = window.open('', '_blank', 'width=800,height=600');
+    if (!printWindow) {
+      throw new Error('Could not open print window');
+    }
+
+    printWindow.document.write(`
       <!DOCTYPE html>
       <html>
         <head>
@@ -325,33 +328,52 @@ export const printContent = async (
         </head>
         <body>${content}</body>
       </html>
-    `;
+    `);
 
-    // Get printer proxy URL
-    const proxyUrl = await detectPrinterProxy();
-    if (!proxyUrl.connected || !proxyUrl.url) {
-      throw new Error('Printer proxy not available');
-    }
+    printWindow.document.close();
+    printWindow.focus();
 
-    // Send print request to proxy
-    const endpoint = openDrawer ? '/print-and-open' : '/print';
-    const response = await fetch(`${proxyUrl.url}${endpoint}`, {
+    // Wait for content to load
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    printWindow.print();
+
+    // Close window after printing
+    setTimeout(() => {
+      printWindow.close();
+    }, 1000);
+  } catch (error) {
+    console.error('Error printing:', error);
+    throw error;
+  }
+};
+
+// Print directly to printer via proxy
+export const printContent = async (
+  content: string,
+  title: string,
+  additionalStyles: string = '',
+  openDrawer: boolean = false
+): Promise<void> => {
+  try {
+    const proxyUrl = process.env.NEXT_PUBLIC_PRINTER_PROXY_URL || 'http://localhost:3005';
+    const endpoint = '/print';
+
+    const response = await fetch(`${proxyUrl}${endpoint}`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        content: formattedContent,
-      }),
+        content: content,
+        styles: `${getBasePrinterStyles()}\n${additionalStyles}`,
+        skipConnectivityCheck: true
+      })
     });
 
-    if (!response.ok) {
-      throw new Error(`Failed to print: ${response.statusText}`);
-    }
-
-    const result = await response.json();
-    if (!result.success) {
-      throw new Error(result.error || 'Failed to print');
+    const data = await response.json();
+    if (!data.success) {
+      throw new Error(data.error || 'Print operation failed');
     }
   } catch (error) {
     console.error('Error printing:', error);

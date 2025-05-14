@@ -7,6 +7,7 @@ import {
   formatLineItem,
   formatCurrency,
   printContent,
+  previewContent,
   withErrorHandling
 } from '@/services/printer';
 import { Order, OrderItem } from '@/types/order';
@@ -282,6 +283,20 @@ interface OrderReceiptProps {
 const OrderReceipt: React.FC<OrderReceiptProps> = ({ order, onClose }) => {
   const [isPrinting, setIsPrinting] = useState(false);
 
+  const handlePreview = () => {
+    setIsPrinting(true);
+    withErrorHandling(
+      async () => {
+        await previewContent(
+          generateReceiptContent(order),
+          `Order Receipt #${order.orderNumber}`,
+          receiptStyles
+        );
+        setIsPrinting(false);
+      }
+    );
+  };
+
   const handlePrint = () => {
     setIsPrinting(true);
     withErrorHandling(
@@ -290,18 +305,18 @@ const OrderReceipt: React.FC<OrderReceiptProps> = ({ order, onClose }) => {
           generateReceiptContent(order),
           `Order Receipt #${order.orderNumber}`,
           receiptStyles,
-          false // Don't open cash drawer for order receipts
+          false // Don't open cash drawer
         );
         setIsPrinting(false);
       }
     );
   };
 
-  // Auto-print on component mount
+  // Auto-preview on component mount
   useEffect(() => {
     if (order) {
       console.log('Order data for receipt:', order);
-      handlePrint();
+      handlePreview();
     }
   }, []);
 
