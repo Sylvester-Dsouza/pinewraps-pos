@@ -367,6 +367,16 @@ export const printContent = async (
 
     console.log('Printing order receipt:', order.orderNumber);
 
+    // First fetch the default printer configuration
+    const defaultPrinterResponse = await fetch(`${proxyUrl}/config/default-printer`);
+    const defaultPrinterData = await defaultPrinterResponse.json();
+    
+    if (!defaultPrinterData.success || !defaultPrinterData.printer) {
+      console.error('No default printer found, using environment variables');
+    }
+    
+    const printerConfig = defaultPrinterData.success ? defaultPrinterData.printer : null;
+    
     // Using fetch API as per requirements for printer operations
     const response = await fetch(`${proxyUrl}${endpoint}`, {
       method: 'POST',
@@ -377,10 +387,13 @@ export const printContent = async (
         type: 'order',
         data: {
           order: order,
-          printer: {
-            // Let the proxy use the default printer
-          }
+          printer: printerConfig ? {
+            ipAddress: printerConfig.ipAddress,
+            port: printerConfig.port || 9100
+          } : undefined
         },
+        printerIp: printerConfig ? printerConfig.ipAddress : undefined,
+        printerPort: printerConfig ? (printerConfig.port || 9100) : undefined,
         skipConnectivityCheck: true,
         openDrawer: false // Never open drawer for order receipts
       })
