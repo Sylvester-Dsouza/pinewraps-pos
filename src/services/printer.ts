@@ -308,15 +308,12 @@ export const getBasePrinterStyles = () => `
 export const printContent = async (
   content: string,
   title: string,
-  additionalStyles: string = ''
+  additionalStyles: string = '',
+  openDrawer: boolean = false // New parameter to control drawer opening
 ): Promise<void> => {
   try {
-    const printWindow = window.open('', '_blank', 'width=800,height=600');
-    if (!printWindow) {
-      throw new Error('Could not open print window');
-    }
-
-    printWindow.document.write(`
+    // Format the content with styles
+    const formattedContent = `
       <!DOCTYPE html>
       <html>
         <head>
@@ -328,20 +325,34 @@ export const printContent = async (
         </head>
         <body>${content}</body>
       </html>
-    `);
+    `;
 
-    printWindow.document.close();
-    printWindow.focus();
+    // Get printer proxy URL
+    const proxyUrl = await detectPrinterProxy();
+    if (!proxyUrl.connected || !proxyUrl.url) {
+      throw new Error('Printer proxy not available');
+    }
 
-    // Wait for content to load
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    // Send print request to proxy
+    const endpoint = openDrawer ? '/print-and-open' : '/print';
+    const response = await fetch(`${proxyUrl.url}${endpoint}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        content: formattedContent,
+      }),
+    });
 
-    printWindow.print();
+    if (!response.ok) {
+      throw new Error(`Failed to print: ${response.statusText}`);
+    }
 
-    // Close window after printing
-    setTimeout(() => {
-      printWindow.close();
-    }, 1000);
+    const result = await response.json();
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to print');
+    }
   } catch (error) {
     console.error('Error printing:', error);
     throw error;
