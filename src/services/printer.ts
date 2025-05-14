@@ -357,7 +357,14 @@ export const printContent = async (
 ): Promise<void> => {
   try {
     const proxyUrl = process.env.NEXT_PUBLIC_PRINTER_PROXY_URL || 'http://localhost:3005';
-    const endpoint = '/print';
+    const endpoint = '/print-order';
+
+    // Format lines for the printer
+    const lines = content
+      .replace(/<[^>]*>/g, '') // Remove HTML tags
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line.length > 0);
 
     const response = await fetch(`${proxyUrl}${endpoint}`, {
       method: 'POST',
@@ -365,8 +372,14 @@ export const printContent = async (
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        content: content,
-        styles: `${getBasePrinterStyles()}\n${additionalStyles}`,
+        type: 'order',
+        data: {
+          lines: lines,
+          printer: {
+            ipAddress: '', // Let proxy use default printer
+            port: 9100
+          }
+        },
         skipConnectivityCheck: true
       })
     });
