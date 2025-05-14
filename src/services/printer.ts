@@ -376,6 +376,14 @@ export const printContent = async (
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
+        type: 'order',
+        data: {
+          order: order || {
+            orderNumber: 'Receipt',
+            createdAt: new Date().toISOString(),
+            items: []
+          }
+        },
         lines: formattedLines,
         skipConnectivityCheck: true,
         openDrawer: openDrawer
