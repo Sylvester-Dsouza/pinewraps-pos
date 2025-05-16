@@ -235,12 +235,14 @@ export default function RemainingPaymentModal({
       if (isSplitPayment) {
         const amount1 = parseFloat(splitAmount1) || 0;
         const amount2 = parseFloat(splitAmount2) || 0;
+        const totalAmount = amount1 + amount2;
         
+        // Create a single payment record for the split payment with the correct amounts
         payment = {
           id: nanoid(),
-          amount: remainingAmount,
+          amount: totalAmount,
           method: POSPaymentMethod.SPLIT,
-          reference: splitMethod2 === POSPaymentMethod.CARD ? splitReference2 : null,
+          reference: null,
           status: POSPaymentStatus.FULLY_PAID,
           isSplitPayment: true,
           splitFirstMethod: splitMethod1,

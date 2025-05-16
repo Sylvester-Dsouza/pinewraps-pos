@@ -495,7 +495,8 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
           // Only cash sales affect the drawer balance
           if (tx.paymentMethod === 'CASH') {
             cashSales += amount;
-            payIns += amount; // Add cash sales to the expected drawer amount
+            // We don't add cash sales to payIns to avoid double counting
+            // Cash sales are tracked separately in cashSales
           }
         } else if (tx.type === 'REFUND' && tx.paymentMethod === 'CASH') {
           // Cash refunds reduce the drawer balance

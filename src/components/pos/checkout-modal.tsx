@@ -370,7 +370,7 @@ export default function CheckoutModal({
       } else if (currentPaymentMethodState === POSPaymentMethod.CARD) {
         defaultPayment.reference = currentPaymentReferenceState || null;
       } else if (currentPaymentMethodState === POSPaymentMethod.SPLIT) {
-        // Calculate split payment amounts
+        // Calculate split payment amounts - use the exact amounts entered by the user
         const amount1 = Number(splitAmount1) || 0;
         const amount2 = Number(splitAmount2) || 0;
         const splitTotal = Number((amount1 + amount2).toFixed(2));
@@ -380,6 +380,7 @@ export default function CheckoutModal({
           throw new Error(`Split payment total (${splitTotal.toFixed(2)}) doesn't match order total (${roundedTotal.toFixed(2)}). Please check the amounts.`);
         }
         
+        // Use the exact amounts entered by the user, not calculated values
         defaultPayment.splitFirstAmount = amount1;
         defaultPayment.splitSecondAmount = amount2;
 
@@ -1067,6 +1068,41 @@ export default function CheckoutModal({
 
       // Prepare order data with processed cart
       const orderData = preparePOSOrderData(processedCart);
+      
+      // Special handling for split payments - ensure we use the correct split payment amounts
+      if (currentPaymentMethodState === POSPaymentMethod.SPLIT) {
+        console.log('Split payment detected - creating a single payment record with correct split amounts');
+        console.log('Split amounts:', {
+          firstAmount: Number(splitAmount1) || 0,
+          secondAmount: Number(splitAmount2) || 0,
+          firstMethod: splitMethod1,
+          secondMethod: splitMethod2
+        });
+        
+        // Get the exact amounts entered by the user
+        const amount1 = Number(splitAmount1) || 0;
+        const amount2 = Number(splitAmount2) || 0;
+        const totalAmount = amount1 + amount2;
+        
+        // Create a single payment record for the split payment with the correct amounts
+        const splitPayment = {
+          id: nanoid(),
+          amount: totalAmount,
+          method: POSPaymentMethod.SPLIT,
+          reference: null,
+          status: POSPaymentStatus.FULLY_PAID,
+          isSplitPayment: true,
+          splitFirstMethod: splitMethod1,
+          splitFirstAmount: amount1,
+          splitFirstReference: splitReference1 || null,
+          splitSecondMethod: splitMethod2,
+          splitSecondAmount: amount2,
+          splitSecondReference: splitReference2 || null
+        };
+        
+        // Replace the payments in the order data with our single split payment
+        orderData.payments = [splitPayment];
+      }
 
       console.log('Sending order data with processed images:', orderData);
 
@@ -2284,12 +2320,12 @@ export default function CheckoutModal({
   function handleSplitPayment(event: React.MouseEvent<HTMLButtonElement>): void {
     event.preventDefault();
 
-    // Parse the cash and card amounts
-    const cashAmount = parseFloat(splitCashAmount) || 0;
-    const cardAmount = parseFloat(splitCardAmount) || 0;
+    // Parse the amounts from the split payment form
+    const amount1 = parseFloat(splitAmount1) || 0;
+    const amount2 = parseFloat(splitAmount2) || 0;
 
     // Validate that the total matches the cart total
-    const totalSplitAmount = cashAmount + cardAmount;
+    const totalSplitAmount = amount1 + amount2;
     const expectedTotal = deliveryMethodState === DeliveryMethod.DELIVERY
       ? cartTotal + (deliveryDetailsState?.charge || 0)
       : cartTotal;
@@ -2300,7 +2336,7 @@ export default function CheckoutModal({
       return;
     }
 
-    // Create a split payment
+    // Create a split payment with the exact amounts and methods entered by the user
     const payment: Payment = {
       id: nanoid(),
       amount: expectedTotal,
@@ -2308,15 +2344,31 @@ export default function CheckoutModal({
       reference: null,
       status: POSPaymentStatus.FULLY_PAID,
       isSplitPayment: true,
-      cashPortion: cashAmount,
-      cardPortion: cardAmount,
-      cardReference: splitCardReference || null
+      // Set the split payment details with the exact amounts and methods selected
+      splitFirstMethod: splitMethod1,
+      splitFirstAmount: amount1,
+      splitFirstReference: splitReference1 || null,
+      splitSecondMethod: splitMethod2,
+      splitSecondAmount: amount2,
+      splitSecondReference: splitReference2 || null,
+      // Keep these for backward compatibility
+      cashPortion: splitMethod1 === POSPaymentMethod.CASH ? amount1 : 
+                  (splitMethod2 === POSPaymentMethod.CASH ? amount2 : 0),
+      cardPortion: splitMethod1 === POSPaymentMethod.CARD ? amount1 : 
+                  (splitMethod2 === POSPaymentMethod.CARD ? amount2 : 0),
+      cardReference: splitMethod1 === POSPaymentMethod.CARD ? splitReference1 : 
+                    (splitMethod2 === POSPaymentMethod.CARD ? splitReference2 : null)
     };
 
     // Add the payment to the state
     handleAddPayment(payment);
 
     // Reset the split payment form
+    setSplitAmount1('');
+    setSplitAmount2('');
+    setSplitReference1('');
+    setSplitReference2('');
+    // Also reset legacy variables
     setSplitCashAmount('');
     setSplitCardAmount('');
     setSplitCardReference('');

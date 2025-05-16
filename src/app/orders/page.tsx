@@ -1683,13 +1683,23 @@ const OrdersPage = () => {
                                   </span>
                                 )}
                                 
-                                {/* For Split payments, show both payment methods used */}
-                                {(payment.method === POSPaymentMethod.SPLIT || payment.isSplitPayment) && (
+                                {/* For Split payments, show both payment methods and amounts */}
+                                {payment.method === POSPaymentMethod.SPLIT && payment.isSplitPayment && (
                                   <div className="text-gray-600 mt-1 ml-2">
-                                    <div>{payment.splitFirstMethod}: AED {Number(payment.splitFirstAmount).toFixed(2)}</div>
-                                    <div>{payment.splitSecondMethod}: AED {Number(payment.splitSecondAmount).toFixed(2)}</div>
-                                    {(payment.splitFirstMethod === POSPaymentMethod.CARD ? payment.splitFirstReference : payment.splitSecondReference) && (
-                                      <div>Card Ref: {payment.splitFirstMethod === POSPaymentMethod.CARD ? payment.splitFirstReference : payment.splitSecondReference}</div>
+                                    {payment.splitFirstMethod && payment.splitFirstAmount && (
+                                      <div>{getPaymentMethodString(payment.splitFirstMethod)}: AED {Number(payment.splitFirstAmount).toFixed(2)}</div>
+                                    )}
+                                    {payment.splitSecondMethod && payment.splitSecondAmount && (
+                                      <div>{getPaymentMethodString(payment.splitSecondMethod)}: AED {Number(payment.splitSecondAmount).toFixed(2)}</div>
+                                    )}
+                                    {payment.splitFirstReference && payment.splitFirstMethod === POSPaymentMethod.CARD && (
+                                      <div>Card Ref: {payment.splitFirstReference}</div>
+                                    )}
+                                    {payment.splitSecondReference && payment.splitSecondMethod === POSPaymentMethod.CARD && (
+                                      <div>Card Ref: {payment.splitSecondReference}</div>
+                                    )}
+                                    {payment.splitSecondReference && payment.splitSecondMethod === POSPaymentMethod.BANK_TRANSFER && (
+                                      <div>Bank Transfer Ref: {payment.splitSecondReference}</div>
                                     )}
                                   </div>
                                 )}
