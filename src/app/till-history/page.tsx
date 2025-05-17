@@ -166,6 +166,12 @@ export default function TillHistoryPage() {
                               {session.discrepancy ? formatCurrency(Number(session.discrepancy)) : 'N/A'}
                             </td>
                           </tr>
+                          <tr className="border-t mt-2">
+                            <td className="py-1 text-gray-500 font-medium">Completed Orders:</td>
+                            <td className="py-1 text-right font-medium">
+                              {session.completedOrders || 0}
+                            </td>
+                          </tr>
                         </tbody>
                       </table>
                     </div>
