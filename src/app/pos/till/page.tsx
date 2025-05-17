@@ -206,8 +206,8 @@ export default function TillPage() {
                                 <Badge variant="outline">{transaction.type}</Badge>
                               )}
                             </TableCell>
-                            <TableCell className={transaction.type === 'ADD' || transaction.type === 'ADD_CASH' || transaction.type === 'SALE' ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
-                              {transaction.type === 'ADD' || transaction.type === 'ADD_CASH' || transaction.type === 'SALE' ? '+' : '-'}{formatCurrency(transaction.amount)}
+                            <TableCell className={transaction.type === 'ADD' || transaction.type === 'ADD_CASH' || transaction.type === 'SALE' || transaction.type === 'OPENING_BALANCE' ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
+                              {transaction.type === 'ADD' || transaction.type === 'ADD_CASH' || transaction.type === 'SALE' || transaction.type === 'OPENING_BALANCE' ? '+' : '-'}{formatCurrency(transaction.amount)}
                             </TableCell>
                             <TableCell className="max-w-xs truncate">{transaction.notes || '-'}</TableCell>
                           </TableRow>

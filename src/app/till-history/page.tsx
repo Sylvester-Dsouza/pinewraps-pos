@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { drawerService, DrawerSession, DrawerOperation } from '@/services/drawer.service';
+import { drawerService, DrawerSession, DrawerOperation, OrderDetail } from '@/services/drawer.service';
 import { format } from 'date-fns';
 import { Loader2 } from 'lucide-react';
 import Link from 'next/link';
@@ -15,6 +15,7 @@ interface ExtendedDrawerSession extends DrawerSession {
   expectedAmount?: string;
   discrepancy?: string;
   completedOrders?: number;
+  orderDetails?: OrderDetail[];
 }
 
 export default function TillHistoryPage() {
@@ -174,26 +175,95 @@ export default function TillHistoryPage() {
                       <table className="w-full text-sm">
                         <tbody>
                           <tr>
-                            <td className="py-1 text-gray-500">Cash Sales:</td>
-                            <td className="py-1 text-right">
+                            <td className="py-1 text-gray-500 font-medium">Cash Sales:</td>
+                            <td className="py-1 text-right font-medium">
+                              {session.paymentTotals?.TOTAL_CASH ? formatCurrency(Number(session.paymentTotals.TOTAL_CASH)) : formatCurrency(0)}
+                            </td>
+                          </tr>
+                          <tr className="text-xs text-gray-400">
+                            <td className="py-0 pl-4">- Direct Cash:</td>
+                            <td className="py-0 text-right">
                               {session.paymentTotals?.CASH ? formatCurrency(Number(session.paymentTotals.CASH)) : formatCurrency(0)}
                             </td>
                           </tr>
-                          <tr>
-                            <td className="py-1 text-gray-500">Card Sales:</td>
-                            <td className="py-1 text-right">
+                          <tr className="text-xs text-gray-400">
+                            <td className="py-0 pl-4">- Split Cash:</td>
+                            <td className="py-0 text-right">
+                              {session.paymentTotals?.SPLIT_CASH ? formatCurrency(Number(session.paymentTotals.SPLIT_CASH)) : formatCurrency(0)}
+                            </td>
+                          </tr>
+                          <tr className="text-xs text-gray-400">
+                            <td className="py-0 pl-4">- Partial Cash:</td>
+                            <td className="py-0 text-right">
+                              {session.paymentTotals?.PARTIAL_CASH ? formatCurrency(Number(session.paymentTotals.PARTIAL_CASH)) : formatCurrency(0)}
+                            </td>
+                          </tr>
+                          <tr className="text-xs text-gray-400">
+                            <td className="py-0 pl-4">- Remaining Cash:</td>
+                            <td className="py-0 text-right">
+                              {session.paymentTotals?.REMAINING_CASH ? formatCurrency(Number(session.paymentTotals.REMAINING_CASH)) : formatCurrency(0)}
+                            </td>
+                          </tr>
+                          <tr className="text-xs text-gray-400 mb-2">
+                            <td className="py-0 pl-4">- Pay Later (Cash):</td>
+                            <td className="py-0 text-right">
+                              {session.paymentTotals?.PL_CASH ? formatCurrency(Number(session.paymentTotals.PL_CASH)) : formatCurrency(0)}
+                            </td>
+                          </tr>
+                          
+                          <tr className="mt-2">
+                            <td className="py-1 text-gray-500 font-medium">Card Sales:</td>
+                            <td className="py-1 text-right font-medium">
+                              {session.paymentTotals?.TOTAL_CARD ? formatCurrency(Number(session.paymentTotals.TOTAL_CARD)) : formatCurrency(0)}
+                            </td>
+                          </tr>
+                          <tr className="text-xs text-gray-400">
+                            <td className="py-0 pl-4">- Direct Card:</td>
+                            <td className="py-0 text-right">
                               {session.paymentTotals?.CARD ? formatCurrency(Number(session.paymentTotals.CARD)) : formatCurrency(0)}
                             </td>
                           </tr>
-                          <tr>
-                            <td className="py-1 text-gray-500">Bank Transfer:</td>
-                            <td className="py-1 text-right">
+                          <tr className="text-xs text-gray-400">
+                            <td className="py-0 pl-4">- Split Card:</td>
+                            <td className="py-0 text-right">
+                              {session.paymentTotals?.SPLIT_CARD ? formatCurrency(Number(session.paymentTotals.SPLIT_CARD)) : formatCurrency(0)}
+                            </td>
+                          </tr>
+                          <tr className="text-xs text-gray-400">
+                            <td className="py-0 pl-4">- Partial Card:</td>
+                            <td className="py-0 text-right">
+                              {session.paymentTotals?.PARTIAL_CARD ? formatCurrency(Number(session.paymentTotals.PARTIAL_CARD)) : formatCurrency(0)}
+                            </td>
+                          </tr>
+                          <tr className="text-xs text-gray-400 mb-2">
+                            <td className="py-0 pl-4">- Pay Later (Card):</td>
+                            <td className="py-0 text-right">
+                              {session.paymentTotals?.PL_CARD ? formatCurrency(Number(session.paymentTotals.PL_CARD)) : formatCurrency(0)}
+                            </td>
+                          </tr>
+                          
+                          <tr className="mt-2">
+                            <td className="py-1 text-gray-500 font-medium">Bank Transfer:</td>
+                            <td className="py-1 text-right font-medium">
+                              {session.paymentTotals?.TOTAL_BANK_TRANSFER ? formatCurrency(Number(session.paymentTotals.TOTAL_BANK_TRANSFER)) : formatCurrency(0)}
+                            </td>
+                          </tr>
+                          <tr className="text-xs text-gray-400">
+                            <td className="py-0 pl-4">- Direct Bank Transfer:</td>
+                            <td className="py-0 text-right">
                               {session.paymentTotals?.BANK_TRANSFER ? formatCurrency(Number(session.paymentTotals.BANK_TRANSFER)) : formatCurrency(0)}
                             </td>
                           </tr>
-                          <tr>
-                            <td className="py-1 text-gray-500">Pay by Link:</td>
-                            <td className="py-1 text-right">
+                          
+                          <tr className="mt-2">
+                            <td className="py-1 text-gray-500 font-medium">Pay by Link:</td>
+                            <td className="py-1 text-right font-medium">
+                              {session.paymentTotals?.TOTAL_PBL ? formatCurrency(Number(session.paymentTotals.TOTAL_PBL)) : formatCurrency(0)}
+                            </td>
+                          </tr>
+                          <tr className="text-xs text-gray-400">
+                            <td className="py-0 pl-4">- Direct Pay by Link:</td>
+                            <td className="py-0 text-right">
                               {session.paymentTotals?.PBL ? formatCurrency(Number(session.paymentTotals.PBL)) : formatCurrency(0)}
                             </td>
                           </tr>
@@ -209,119 +279,8 @@ export default function TillHistoryPage() {
                               {session.paymentTotals?.COD ? formatCurrency(Number(session.paymentTotals.COD)) : formatCurrency(0)}
                             </td>
                           </tr>
-                          <tr>
-                            <td className="py-1 text-gray-500">Pay Later:</td>
-                            <td className="py-1 text-right">
-                              {session.paymentTotals?.PAY_LATER ? formatCurrency(Number(session.paymentTotals.PAY_LATER)) : formatCurrency(0)}
-                            </td>
-                          </tr>
-                          {/* Split Payments Section */}
-                          {(session.paymentTotals?.SPLIT_CASH > 0 || 
-                            session.paymentTotals?.SPLIT_CARD > 0 || 
-                            session.paymentTotals?.SPLIT_BANK_TRANSFER > 0 || 
-                            session.paymentTotals?.SPLIT_PBL > 0 || 
-                            session.paymentTotals?.SPLIT_TALABAT > 0 || 
-                            session.paymentTotals?.SPLIT_COD > 0) && (
-                            <>
-                              <tr className="bg-gray-100 border-t border-b border-gray-200">
-                                <td className="py-2 text-gray-800 font-medium" colSpan={2}>
-                                  <div className="flex items-center">
-                                    <span className="mr-2">💰</span>
-                                    <span>Split Payments Breakdown</span>
-                                  </div>
-                                </td>
-                              </tr>
-                              
-                              {/* Total Split Payments */}
-                              <tr className="bg-gray-50">
-                                <td className="py-1 text-gray-700 font-medium">Total Split Payments:</td>
-                                <td className="py-1 text-right font-medium">
-                                  {formatCurrency(
-                                    (session.paymentTotals?.SPLIT_CASH || 0) +
-                                    (session.paymentTotals?.SPLIT_CARD || 0) +
-                                    (session.paymentTotals?.SPLIT_BANK_TRANSFER || 0) +
-                                    (session.paymentTotals?.SPLIT_PBL || 0) +
-                                    (session.paymentTotals?.SPLIT_TALABAT || 0) +
-                                    (session.paymentTotals?.SPLIT_COD || 0)
-                                  )}
-                                </td>
-                              </tr>
-                            </>
-                          )}
-                          
-                          {/* Individual Split Payment Methods */}
-                          {session.paymentTotals?.SPLIT_CASH > 0 && (
-                            <tr>
-                              <td className="py-1 text-gray-500 pl-4">- Cash (Split):</td>
-                              <td className="py-1 text-right">
-                                {formatCurrency(Number(session.paymentTotals.SPLIT_CASH))}
-                              </td>
-                            </tr>
-                          )}
-                          {session.paymentTotals?.SPLIT_CARD > 0 && (
-                            <tr>
-                              <td className="py-1 text-gray-500 pl-4">- Card (Split):</td>
-                              <td className="py-1 text-right">
-                                {formatCurrency(Number(session.paymentTotals.SPLIT_CARD))}
-                              </td>
-                            </tr>
-                          )}
-                          {session.paymentTotals?.SPLIT_BANK_TRANSFER > 0 && (
-                            <tr>
-                              <td className="py-1 text-gray-500 pl-4">- Bank Transfer (Split):</td>
-                              <td className="py-1 text-right">
-                                {formatCurrency(Number(session.paymentTotals.SPLIT_BANK_TRANSFER))}
-                              </td>
-                            </tr>
-                          )}
-                          {session.paymentTotals?.SPLIT_PBL > 0 && (
-                            <tr>
-                              <td className="py-1 text-gray-500 pl-4">- Pay by Link (Split):</td>
-                              <td className="py-1 text-right">
-                                {formatCurrency(Number(session.paymentTotals.SPLIT_PBL))}
-                              </td>
-                            </tr>
-                          )}
-                          {session.paymentTotals?.SPLIT_TALABAT > 0 && (
-                            <tr>
-                              <td className="py-1 text-gray-500 pl-4">- Talabat (Split):</td>
-                              <td className="py-1 text-right">
-                                {formatCurrency(Number(session.paymentTotals.SPLIT_TALABAT))}
-                              </td>
-                            </tr>
-                          )}
-                          {session.paymentTotals?.SPLIT_COD > 0 && (
-                            <tr>
-                              <td className="py-1 text-gray-500 pl-4">- COD (Split):</td>
-                              <td className="py-1 text-right">
-                                {formatCurrency(Number(session.paymentTotals.SPLIT_COD))}
-                              </td>
-                            </tr>
-                          )}
-                          {session.paymentTotals?.SPLIT_PBL > 0 && (
-                            <tr>
-                              <td className="py-1 text-gray-500 pl-4">- Pay by Link (Split):</td>
-                              <td className="py-1 text-right">
-                                {formatCurrency(Number(session.paymentTotals.SPLIT_PBL))}
-                              </td>
-                            </tr>
-                          )}
-                          {session.paymentTotals?.SPLIT_TALABAT > 0 && (
-                            <tr>
-                              <td className="py-1 text-gray-500 pl-4">- Talabat (Split):</td>
-                              <td className="py-1 text-right">
-                                {formatCurrency(Number(session.paymentTotals.SPLIT_TALABAT))}
-                              </td>
-                            </tr>
-                          )}
-                          {session.paymentTotals?.SPLIT_COD > 0 && (
-                            <tr>
-                              <td className="py-1 text-gray-500 pl-4">- COD (Split):</td>
-                              <td className="py-1 text-right">
-                                {formatCurrency(Number(session.paymentTotals.SPLIT_COD))}
-                              </td>
-                            </tr>
-                          )}
+                          {/* Pay Later removed as it's a payment mode, not a payment method */}
+                          {/* Split Payments are now included in the individual payment method totals */}
                           
                           {/* Partial Payments Section */}
                           {(session.paymentTotals?.PARTIAL_CASH > 0 || 
@@ -447,6 +406,77 @@ export default function TillHistoryPage() {
                     </pre>
                   </div>
 
+                  {/* Order Details Section */}
+                  {session.orderDetails && session.orderDetails.length > 0 && (
+                    <div className="mt-6">
+                      <h3 className="font-medium mb-2">Order Details ({session.orderDetails.length} orders)</h3>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="bg-gray-50">
+                              <th className="py-2 px-3 text-left">Order #</th>
+                              <th className="py-2 px-3 text-left">Time</th>
+                              <th className="py-2 px-3 text-left">Payment Method</th>
+                              <th className="py-2 px-3 text-left">Amount</th>
+                              <th className="py-2 px-3 text-left">Status</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {session.orderDetails.map((order) => (
+                              <tr key={order.id} className="border-t hover:bg-gray-50">
+                                <td className="py-2 px-3 font-medium">{order.orderNumber}</td>
+                                <td className="py-2 px-3">
+                                  {order.createdAt && format(new Date(order.createdAt), 'h:mm a')}
+                                </td>
+                                <td className="py-2 px-3">
+                                  {order.payments.map((payment, idx) => (
+                                    <div key={payment.id} className={idx > 0 ? 'mt-1' : ''}>
+                                      {payment.isSplitPayment ? (
+                                        <div>
+                                          <span className="px-2 py-1 rounded-full text-xs bg-purple-100 text-purple-800">Split</span>
+                                          <div className="text-xs mt-1 ml-2">
+                                            {payment.splitFirstMethod && (
+                                              <div>{payment.splitFirstMethod}: {formatCurrency(payment.splitFirstAmount || 0)}</div>
+                                            )}
+                                            {payment.splitSecondMethod && (
+                                              <div>{payment.splitSecondMethod}: {formatCurrency(payment.splitSecondAmount || 0)}</div>
+                                            )}
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <span className={`px-2 py-1 rounded-full text-xs ${
+                                          payment.method === 'CASH' ? 'bg-green-100 text-green-800' : 
+                                          payment.method === 'CARD' ? 'bg-blue-100 text-blue-800' : 
+                                          payment.method === 'PBL' ? 'bg-indigo-100 text-indigo-800' : 
+                                          payment.method === 'BANK_TRANSFER' ? 'bg-yellow-100 text-yellow-800' : 
+                                          payment.method === 'PAY_LATER' ? 'bg-orange-100 text-orange-800' : 
+                                          'bg-gray-100 text-gray-800'
+                                        }`}>
+                                          {payment.method}
+                                        </span>
+                                      )}
+                                    </div>
+                                  ))}
+                                </td>
+                                <td className="py-2 px-3 text-right">{formatCurrency(order.total)}</td>
+                                <td className="py-2 px-3">
+                                  <span className={`px-2 py-1 rounded-full text-xs ${
+                                    order.paymentStatus === 'FULLY_PAID' ? 'bg-green-100 text-green-800' : 
+                                    order.paymentStatus === 'PARTIALLY_PAID' ? 'bg-orange-100 text-orange-800' : 
+                                    order.paymentStatus === 'PENDING' ? 'bg-red-100 text-red-800' : 
+                                    'bg-gray-100 text-gray-800'
+                                  }`}>
+                                    {order.paymentStatus}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                  
                   {/* Operations Section */}
                   {session.operations && session.operations.length > 0 && (
                     <div className="mt-6">
@@ -466,9 +496,13 @@ export default function TillHistoryPage() {
                               <tr key={op.id} className="border-t">
                                 <td className="py-2 px-3">
                                   <span className={`px-2 py-1 rounded-full text-xs ${
+                                    op.notes?.toLowerCase().includes('opening balance') ? 'bg-blue-100 text-blue-800' :
+                                    op.notes?.toLowerCase().includes('closing balance') ? 'bg-purple-100 text-purple-800' :
                                     op.type === 'TAKE_CASH' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
                                   }`}>
-                                    {op.type === 'TAKE_CASH' ? 'Pay In' : 'Pay Out'}
+                                    {op.notes?.toLowerCase().includes('opening balance') ? 'Opening Balance' :
+                                     op.notes?.toLowerCase().includes('closing balance') ? 'Closing Balance' :
+                                     op.type === 'TAKE_CASH' ? 'Pay In' : 'Pay Out'}
                                   </span>
                                 </td>
                                 <td className="py-2 px-3">{formatCurrency(Number(op.amount))}</td>

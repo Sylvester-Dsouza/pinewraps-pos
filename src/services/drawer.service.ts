@@ -14,6 +14,31 @@ export interface DrawerOperation {
   updatedAt: string;
 }
 
+// Order payment interface for till history
+export interface OrderPayment {
+  id: string;
+  method: string;
+  amount: number;
+  status: string;
+  isSplitPayment: boolean;
+  splitFirstMethod?: string;
+  splitFirstAmount?: number;
+  splitSecondMethod?: string;
+  splitSecondAmount?: number;
+  createdAt: string;
+}
+
+// Order details interface for till history
+export interface OrderDetail {
+  id: string;
+  orderNumber: string;
+  total: number;
+  createdAt: string;
+  status: string;
+  paymentStatus: string;
+  payments: OrderPayment[];
+}
+
 export interface DrawerSession {
   id: string;
   userId: string;
@@ -32,6 +57,8 @@ export interface DrawerSession {
   paymentTotals?: Record<string, number>;
   // Added for till closing report
   completedOrders?: number;
+  // Order details for till history
+  orderDetails?: OrderDetail[];
 }
 
 export interface DrawerLog {
