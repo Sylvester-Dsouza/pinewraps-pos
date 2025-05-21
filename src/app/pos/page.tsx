@@ -965,7 +965,7 @@ export default function POSPage() {
         </div>
       </div>
 
-      {/* Modals */}
+      {/* Modals. */}
       {selectedProduct && (
         <ProductDetailsModal
           product={selectedProduct}
