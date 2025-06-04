@@ -667,6 +667,13 @@ export default function CheckoutModal({
       throw new Error('Payment method is required');
     }
 
+    // Validate payment reference for card and bank transfer payments
+    if ((currentPaymentMethodState === POSPaymentMethod.CARD ||
+         currentPaymentMethodState === POSPaymentMethod.BANK_TRANSFER) &&
+        !currentPaymentReferenceState?.trim()) {
+      throw new Error(`${currentPaymentMethodState === POSPaymentMethod.CARD ? 'Card' : 'Bank transfer'} reference is required`);
+    }
+
     return true;
   }, [cart, customerDetailsState, deliveryMethodState, deliveryDetailsState, pickupDetailsState, giftDetailsState, currentPaymentMethodState]);
 
@@ -1810,13 +1817,11 @@ export default function CheckoutModal({
       return;
     }
 
-    // For card payments and other payment methods that require references, ensure reference is provided
+    // For card and bank transfer payments, payment reference is mandatory
     if ((currentPaymentMethodState === POSPaymentMethod.CARD ||
-         currentPaymentMethodState === POSPaymentMethod.BANK_TRANSFER ||
-         currentPaymentMethodState === POSPaymentMethod.PBL ||
-         currentPaymentMethodState === POSPaymentMethod.TALABAT) &&
+         currentPaymentMethodState === POSPaymentMethod.BANK_TRANSFER) &&
         !currentPaymentReferenceState.trim()) {
-      toast.error('Please enter a payment reference');
+      toast.error(`Please enter a ${currentPaymentMethodState === POSPaymentMethod.CARD ? 'card' : 'bank transfer'} reference`);
       return;
     }
 
@@ -3240,22 +3245,46 @@ export default function CheckoutModal({
                                 </button>
                               </div>
 
-                              {/* Card Payment Reference Field */}
+                              {/* Payment Reference Field */}
                               {(currentPaymentMethodState === POSPaymentMethod.CARD ||
                                 currentPaymentMethodState === POSPaymentMethod.BANK_TRANSFER ||
                                 currentPaymentMethodState === POSPaymentMethod.PBL ||
                                 currentPaymentMethodState === POSPaymentMethod.TALABAT) && (
                                 <div className="mt-6">
                                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    {currentPaymentMethodState === POSPaymentMethod.CARD ? 'Card Reference' : 'Payment Reference'}
+                                    {currentPaymentMethodState === POSPaymentMethod.CARD ? 'Card Reference' :
+                                     currentPaymentMethodState === POSPaymentMethod.BANK_TRANSFER ? 'Bank Transfer Reference' :
+                                     'Payment Reference'}
+                                    {(currentPaymentMethodState === POSPaymentMethod.CARD ||
+                                      currentPaymentMethodState === POSPaymentMethod.BANK_TRANSFER) && (
+                                      <span className="text-red-500 ml-1">*</span>
+                                    )}
                                   </label>
                                   <input
                                     type="text"
                                     value={currentPaymentReferenceState}
                                     onChange={(e) => setCurrentPaymentReferenceState(e.target.value)}
-                                    className="block w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4"
-                                    placeholder="Enter card reference"
+                                    className={`block w-full rounded-xl border-2 shadow-sm focus:ring-black text-lg p-4 ${
+                                      (currentPaymentMethodState === POSPaymentMethod.CARD ||
+                                       currentPaymentMethodState === POSPaymentMethod.BANK_TRANSFER) && !currentPaymentReferenceState.trim()
+                                        ? 'border-red-300 focus:border-red-500'
+                                        : 'border-gray-200 focus:border-black'
+                                    }`}
+                                    placeholder={
+                                      currentPaymentMethodState === POSPaymentMethod.CARD ? 'Enter card reference (required)' :
+                                      currentPaymentMethodState === POSPaymentMethod.BANK_TRANSFER ? 'Enter bank transfer reference (required)' :
+                                      'Enter payment reference (optional)'
+                                    }
+                                    required={currentPaymentMethodState === POSPaymentMethod.CARD ||
+                                             currentPaymentMethodState === POSPaymentMethod.BANK_TRANSFER}
                                   />
+                                  {(currentPaymentMethodState === POSPaymentMethod.CARD ||
+                                    currentPaymentMethodState === POSPaymentMethod.BANK_TRANSFER) &&
+                                   !currentPaymentReferenceState.trim() && (
+                                    <p className="text-red-500 text-sm mt-1">
+                                      {currentPaymentMethodState === POSPaymentMethod.CARD ? 'Card' : 'Bank transfer'} reference is required
+                                    </p>
+                                  )}
                                 </div>
                               )}
 

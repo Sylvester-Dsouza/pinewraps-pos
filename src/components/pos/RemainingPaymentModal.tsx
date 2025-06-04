@@ -180,16 +180,14 @@ export default function RemainingPaymentModal({
 
   const handlePayment = async () => {
     try {
-      // Validate payment method and reference
+      // Validate payment method and reference - only mandatory for CARD and BANK_TRANSFER
       const requiresReference = !isSplitPayment && (
-        paymentMethod === POSPaymentMethod.CARD || 
-        paymentMethod === POSPaymentMethod.BANK_TRANSFER || 
-        paymentMethod === POSPaymentMethod.PBL || 
-        paymentMethod === POSPaymentMethod.TALABAT
+        paymentMethod === POSPaymentMethod.CARD ||
+        paymentMethod === POSPaymentMethod.BANK_TRANSFER
       );
-      
+
       if (requiresReference && !paymentReference.trim()) {
-        toast.error(`Please enter a ${paymentMethod.toLowerCase()} reference`);
+        toast.error(`Please enter a ${paymentMethod === POSPaymentMethod.CARD ? 'card' : 'bank transfer'} reference`);
         return;
       }
       
@@ -208,20 +206,20 @@ export default function RemainingPaymentModal({
           return;
         }
         
-        // Validate references for payment methods that require them
-        const requiresReference1 = splitMethod1 === POSPaymentMethod.CARD || 
-                                splitMethod1 === POSPaymentMethod.BANK_TRANSFER || 
-                                splitMethod1 === POSPaymentMethod.PBL || 
-                                splitMethod1 === POSPaymentMethod.TALABAT;
-                                
-        const requiresReference2 = splitMethod2 === POSPaymentMethod.CARD || 
-                                splitMethod2 === POSPaymentMethod.BANK_TRANSFER || 
-                                splitMethod2 === POSPaymentMethod.PBL || 
-                                splitMethod2 === POSPaymentMethod.TALABAT;
-        
-        if ((requiresReference1 && !splitReference1.trim()) ||
-            (requiresReference2 && !splitReference2.trim())) {
-          toast.error("Please enter a reference for payment methods that require it");
+        // Validate references for payment methods that require them - only CARD and BANK_TRANSFER
+        const requiresReference1 = splitMethod1 === POSPaymentMethod.CARD ||
+                                splitMethod1 === POSPaymentMethod.BANK_TRANSFER;
+
+        const requiresReference2 = splitMethod2 === POSPaymentMethod.CARD ||
+                                splitMethod2 === POSPaymentMethod.BANK_TRANSFER;
+
+        if (requiresReference1 && !splitReference1.trim()) {
+          toast.error(`Please enter a ${splitMethod1 === POSPaymentMethod.CARD ? 'card' : 'bank transfer'} reference for the first payment`);
+          return;
+        }
+
+        if (requiresReference2 && !splitReference2.trim()) {
+          toast.error(`Please enter a ${splitMethod2 === POSPaymentMethod.CARD ? 'card' : 'bank transfer'} reference for the second payment`);
           return;
         }
       }
@@ -500,9 +498,9 @@ export default function RemainingPaymentModal({
                     </div>
 
                     {/* Reference input for payment methods that require it */}
-                    {!isSplitPayment && (paymentMethod === POSPaymentMethod.CARD || 
-                      paymentMethod === POSPaymentMethod.BANK_TRANSFER || 
-                      paymentMethod === POSPaymentMethod.PBL || 
+                    {!isSplitPayment && (paymentMethod === POSPaymentMethod.CARD ||
+                      paymentMethod === POSPaymentMethod.BANK_TRANSFER ||
+                      paymentMethod === POSPaymentMethod.PBL ||
                       paymentMethod === POSPaymentMethod.TALABAT) && (
                       <div className="mb-4">
                         <label
@@ -513,15 +511,37 @@ export default function RemainingPaymentModal({
                            paymentMethod === POSPaymentMethod.BANK_TRANSFER ? 'Bank Transfer Reference' :
                            paymentMethod === POSPaymentMethod.TALABAT ? 'Talabat Reference' :
                            'PBL Reference'}
+                          {(paymentMethod === POSPaymentMethod.CARD ||
+                            paymentMethod === POSPaymentMethod.BANK_TRANSFER) && (
+                            <span className="text-red-500 ml-1">*</span>
+                          )}
                         </label>
                         <input
                           type="text"
                           id="paymentReference"
                           value={paymentReference}
                           onChange={(e) => setPaymentReference(e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-black"
-                          placeholder={`Enter ${paymentMethod.toLowerCase()} reference`}
+                          className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-1 focus:ring-black ${
+                            (paymentMethod === POSPaymentMethod.CARD ||
+                             paymentMethod === POSPaymentMethod.BANK_TRANSFER) && !paymentReference.trim()
+                              ? 'border-red-300'
+                              : 'border-gray-300'
+                          }`}
+                          placeholder={
+                            paymentMethod === POSPaymentMethod.CARD ? 'Enter card reference (required)' :
+                            paymentMethod === POSPaymentMethod.BANK_TRANSFER ? 'Enter bank transfer reference (required)' :
+                            `Enter ${paymentMethod.toLowerCase()} reference (optional)`
+                          }
+                          required={paymentMethod === POSPaymentMethod.CARD ||
+                                   paymentMethod === POSPaymentMethod.BANK_TRANSFER}
                         />
+                        {(paymentMethod === POSPaymentMethod.CARD ||
+                          paymentMethod === POSPaymentMethod.BANK_TRANSFER) &&
+                         !paymentReference.trim() && (
+                          <p className="text-red-500 text-sm mt-1">
+                            {paymentMethod === POSPaymentMethod.CARD ? 'Card' : 'Bank transfer'} reference is required
+                          </p>
+                        )}
                       </div>
                     )}
                     
@@ -632,8 +652,19 @@ export default function RemainingPaymentModal({
                                 type="text"
                                 value={splitReference1}
                                 onChange={(e) => setSplitReference1(e.target.value)}
-                                placeholder="Card Reference"
-                                className="w-full px-3 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-black"
+                                placeholder={
+                                  splitMethod1 === POSPaymentMethod.CARD ? 'Card reference (required)' :
+                                  splitMethod1 === POSPaymentMethod.BANK_TRANSFER ? 'Bank transfer reference (required)' :
+                                  'Payment reference (optional)'
+                                }
+                                className={`w-full px-3 py-1 border rounded-md focus:outline-none focus:ring-1 focus:ring-black ${
+                                  (splitMethod1 === POSPaymentMethod.CARD ||
+                                   splitMethod1 === POSPaymentMethod.BANK_TRANSFER) && !splitReference1.trim()
+                                    ? 'border-red-300'
+                                    : 'border-gray-300'
+                                }`}
+                                required={splitMethod1 === POSPaymentMethod.CARD ||
+                                         splitMethod1 === POSPaymentMethod.BANK_TRANSFER}
                               />
                             </div>
                           )}
@@ -748,8 +779,19 @@ export default function RemainingPaymentModal({
                                 type="text"
                                 value={splitReference2}
                                 onChange={(e) => setSplitReference2(e.target.value)}
-                                placeholder="Card Reference"
-                                className="w-full px-3 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-black"
+                                placeholder={
+                                  splitMethod2 === POSPaymentMethod.CARD ? 'Card reference (required)' :
+                                  splitMethod2 === POSPaymentMethod.BANK_TRANSFER ? 'Bank transfer reference (required)' :
+                                  'Payment reference (optional)'
+                                }
+                                className={`w-full px-3 py-1 border rounded-md focus:outline-none focus:ring-1 focus:ring-black ${
+                                  (splitMethod2 === POSPaymentMethod.CARD ||
+                                   splitMethod2 === POSPaymentMethod.BANK_TRANSFER) && !splitReference2.trim()
+                                    ? 'border-red-300'
+                                    : 'border-gray-300'
+                                }`}
+                                required={splitMethod2 === POSPaymentMethod.CARD ||
+                                         splitMethod2 === POSPaymentMethod.BANK_TRANSFER}
                               />
                             </div>
                           )}

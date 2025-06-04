@@ -4,7 +4,7 @@ import React from 'react';
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Header from '@/components/header/header';
-import { Search, RefreshCcw, Clock, CheckCircle, XCircle, RotateCcw, Truck, Store, Download, Loader2, Gift, Calendar, ChevronDown, X } from 'lucide-react';
+import { Search, RefreshCcw, Clock, CheckCircle, XCircle, RotateCcw, Truck, Store, Download, Loader2, Gift, Calendar, ChevronDown, X, ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { format, isAfter, isBefore, startOfDay, endOfDay, parseISO, isValid, parse } from 'date-fns';
 import { DayPicker } from 'react-day-picker';
 import 'react-day-picker/dist/style.css';
@@ -125,6 +125,15 @@ const OrdersPage = () => {
   const [showRefundModal, setShowRefundModal] = useState<string | null>(null);
   const { isSuperAdmin } = useUserRole();
 
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalOrders, setTotalOrders] = useState(0);
+  const ordersPerPage = 20;
+
+  // Sorting state
+  const [sortBy, setSortBy] = useState<'createdAt' | 'pickupTime' | 'deliveryTime'>('createdAt');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+
   // Check authentication status
   useEffect(() => {
     const auth = getAuth();
@@ -158,12 +167,53 @@ const OrdersPage = () => {
     return () => unsubscribe();
   }, []);
 
-  // Fetch orders when status changes
+  // Fetch orders when status changes or page changes
   useEffect(() => {
     if (isAuthenticated) {
       fetchOrders();
     }
-  }, [isAuthenticated, selectedOrderStatus, selectedPaymentStatus]);
+  }, [isAuthenticated, selectedOrderStatus, selectedPaymentStatus, currentPage, sortBy, sortOrder]);
+
+  // Reset to first page when filters change
+  useEffect(() => {
+    if (currentPage !== 1) {
+      setCurrentPage(1);
+    }
+  }, [selectedOrderStatus, selectedPaymentStatus, startDate, endDate, pickupDate, deliveryDate]);
+
+  // Helper function to parse time slot and get start time for sorting
+  const parseTimeSlot = (timeSlot: string): number => {
+    if (!timeSlot) return 0;
+
+    // Extract start time from time slot (e.g., "11:00 AM - 1:00 PM" -> "11:00 AM")
+    const startTime = timeSlot.split(' - ')[0];
+    if (!startTime) return 0;
+
+    // Convert to 24-hour format for comparison
+    const [time, period] = startTime.split(' ');
+    const [hours, minutes] = time.split(':').map(Number);
+
+    let hour24 = hours;
+    if (period === 'PM' && hours !== 12) {
+      hour24 += 12;
+    } else if (period === 'AM' && hours === 12) {
+      hour24 = 0;
+    }
+
+    return hour24 * 60 + (minutes || 0); // Convert to minutes for easy comparison
+  };
+
+  // Function to handle sorting
+  const handleSort = (newSortBy: 'createdAt' | 'pickupTime' | 'deliveryTime') => {
+    if (sortBy === newSortBy) {
+      // Toggle sort order if same field
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      // Set new sort field with default order
+      setSortBy(newSortBy);
+      setSortOrder(newSortBy === 'createdAt' ? 'desc' : 'asc'); // Default to desc for date, asc for time
+    }
+  };
   
   // Add click outside handler to close date filter popups
   useEffect(() => {
@@ -211,14 +261,19 @@ const OrdersPage = () => {
       });
       
       // Prepare API parameters
-      const params: { 
-        status?: string, 
-        paymentStatus?: string, 
-        startDate?: string, 
+      const params: {
+        status?: string,
+        paymentStatus?: string,
+        startDate?: string,
         endDate?: string,
         pickupDate?: string,
-        deliveryDate?: string
-      } = {};
+        deliveryDate?: string,
+        page?: number,
+        limit?: number
+      } = {
+        page: currentPage,
+        limit: ordersPerPage
+      };
       
       // Add order status filter if not 'all'
       if (selectedOrderStatus !== 'all') {
@@ -257,10 +312,15 @@ const OrdersPage = () => {
       console.log('Final API params:', params);
       
       const response = await apiMethods.pos.getOrders(params);
-      
+
       console.log('Orders API Response:', response);
-      
+
       if (response.success && Array.isArray(response.data)) {
+        // Update total count from pagination metadata
+        if (response.pagination) {
+          setTotalOrders(response.pagination.total);
+          console.log('Pagination info:', response.pagination);
+        }
         // Debug total values from API
         response.data.forEach((order: any) => {
           console.log(`Order ${order.id} values:`, {
@@ -423,11 +483,30 @@ const OrdersPage = () => {
         });
         
         console.log('Transformed orders:', transformedOrders);
-        
+
+        // Apply sorting based on current sort settings
         const sortedOrders = [...transformedOrders].sort((a: Order, b: Order) => {
-          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+          let comparison = 0;
+
+          switch (sortBy) {
+            case 'createdAt':
+              comparison = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+              break;
+            case 'pickupTime':
+              const aPickupTime = parseTimeSlot(a.pickupTimeSlot || '');
+              const bPickupTime = parseTimeSlot(b.pickupTimeSlot || '');
+              comparison = aPickupTime - bPickupTime;
+              break;
+            case 'deliveryTime':
+              const aDeliveryTime = parseTimeSlot(a.deliveryTimeSlot || '');
+              const bDeliveryTime = parseTimeSlot(b.deliveryTimeSlot || '');
+              comparison = aDeliveryTime - bDeliveryTime;
+              break;
+          }
+
+          return sortOrder === 'asc' ? comparison : -comparison;
         });
-        
+
         setOrders(sortedOrders);
       } else {
         throw new Error(response.message || 'Failed to fetch orders');
@@ -915,58 +994,119 @@ const OrdersPage = () => {
       
       <main className="container mx-auto px-4 py-8">
         <div className="mb-6">
-          <div className="flex justify-between items-center mb-4">
+          <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center mb-6 gap-4">
             <h1 className="text-2xl font-bold text-gray-900">Orders</h1>
-            
-            <div className="relative w-64">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
+
+            <div className="relative w-full lg:w-96">
+              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
               <input
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Search orders..."
-                className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Search by order number, customer name, phone, or email..."
+                className="w-full pl-12 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm shadow-sm transition-all duration-200"
               />
             </div>
           </div>
           
-          <div className="flex flex-wrap gap-2 items-center">
+          {/* Enhanced Filters Section */}
+          <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 mb-6">
+            <div className="flex flex-wrap gap-3 items-center">
+
+              {/* Order Status Filter */}
+              <div className="flex flex-col">
+                <label className="text-xs font-medium text-gray-600 mb-1">Order Status</label>
+                <select
+                  value={selectedOrderStatus}
+                  onChange={(e) => setSelectedOrderStatus(e.target.value)}
+                  className="w-full md:w-48 px-3 py-2 border-2 border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                >
+                  <option value="all">All Status</option>
+                  {Object.entries(orderStatusLabels).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label} ({orders.filter(order => order.status === value).length})
+                    </option>
+                  ))}
+                </select>
+              </div>
             
-            <select
-              value={selectedOrderStatus}
-              onChange={(e) => setSelectedOrderStatus(e.target.value)}
-              className="w-full md:w-48 px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="all">Order Status: All</option>
-              {Object.entries(orderStatusLabels).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label} ({orders.filter(order => order.status === value).length})
-                </option>
-              ))}
-            </select>
-            
-            <select
-              value={selectedPaymentStatus}
-              onChange={(e) => setSelectedPaymentStatus(e.target.value)}
-              className="w-full md:w-48 px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="all">Payment Status: All</option>
-              {Object.entries(paymentStatusLabels).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label} ({orders.filter(order => {
-                    // Check if any payment has this status
-                    if (value === 'FULLY_PAID') {
-                      return isFullyPaid(order);
-                    } else if (value === 'PARTIALLY_PAID') {
-                      return hasPartialPayment(order);
-                    } else if (value === 'PENDING') {
-                      return hasPendingPayment(order);
-                    }
-                    return false;
-                  }).length})
-                </option>
-              ))}
-            </select>
+              {/* Payment Status Filter */}
+              <div className="flex flex-col">
+                <label className="text-xs font-medium text-gray-600 mb-1">Payment Status</label>
+                <select
+                  value={selectedPaymentStatus}
+                  onChange={(e) => setSelectedPaymentStatus(e.target.value)}
+                  className="w-full md:w-48 px-3 py-2 border-2 border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                >
+                  <option value="all">All Payments</option>
+                  {Object.entries(paymentStatusLabels).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label} ({orders.filter(order => {
+                        // Check if any payment has this status
+                        if (value === 'FULLY_PAID') {
+                          return isFullyPaid(order);
+                        } else if (value === 'PARTIALLY_PAID') {
+                          return hasPartialPayment(order);
+                        } else if (value === 'PENDING') {
+                          return hasPendingPayment(order);
+                        }
+                        return false;
+                      }).length})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Sort By Controls */}
+              <div className="flex flex-col">
+                <label className="text-xs font-medium text-gray-600 mb-1">Sort By</label>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleSort('createdAt')}
+                    className={`px-3 py-2 text-sm font-medium rounded-lg border-2 transition-all duration-200 flex items-center gap-1 ${
+                      sortBy === 'createdAt'
+                        ? 'bg-blue-500 text-white border-blue-500'
+                        : 'bg-white text-gray-700 border-gray-200 hover:border-blue-300'
+                    }`}
+                  >
+                    <Clock className="h-4 w-4" />
+                    Created
+                    {sortBy === 'createdAt' && (
+                      sortOrder === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+                    )}
+                  </button>
+
+                  <button
+                    onClick={() => handleSort('pickupTime')}
+                    className={`px-3 py-2 text-sm font-medium rounded-lg border-2 transition-all duration-200 flex items-center gap-1 ${
+                      sortBy === 'pickupTime'
+                        ? 'bg-green-500 text-white border-green-500'
+                        : 'bg-white text-gray-700 border-gray-200 hover:border-green-300'
+                    }`}
+                  >
+                    <Store className="h-4 w-4" />
+                    Pickup
+                    {sortBy === 'pickupTime' && (
+                      sortOrder === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+                    )}
+                  </button>
+
+                  <button
+                    onClick={() => handleSort('deliveryTime')}
+                    className={`px-3 py-2 text-sm font-medium rounded-lg border-2 transition-all duration-200 flex items-center gap-1 ${
+                      sortBy === 'deliveryTime'
+                        ? 'bg-orange-500 text-white border-orange-500'
+                        : 'bg-white text-gray-700 border-gray-200 hover:border-orange-300'
+                    }`}
+                  >
+                    <Truck className="h-4 w-4" />
+                    Delivery
+                    {sortBy === 'deliveryTime' && (
+                      sortOrder === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+                    )}
+                  </button>
+                </div>
+              </div>
             
             {/* Order Date Filter */}
             <div className="relative">
@@ -1311,6 +1451,7 @@ const OrdersPage = () => {
               </button>
             </div>
           </div>
+        </div>
         </div>
 
         {loading ? (
@@ -1845,12 +1986,21 @@ const OrdersPage = () => {
                       View Receipt
                     </button>
                     {!['COMPLETED', 'CANCELLED', 'REFUNDED', 'PARTIALLY_REFUNDED'].includes(order.status) && (
-                      <button
-                        onClick={() => isSuperAdmin ? setShowCancelConfirm(order.id) : handleCancelAttempt()}
-                        className={`px-3 py-2 text-sm font-medium ${isSuperAdmin ? 'text-red-700 bg-red-100 hover:bg-red-200' : 'text-gray-500 bg-gray-100 hover:bg-gray-200'} rounded-md min-w-fit`}
-                      >
-                        Cancel Order
-                      </button>
+                      <>
+                        <button
+                          onClick={() => setSelectedOrderForPickupUpdate(order)}
+                          className="px-3 py-2 text-sm font-medium text-blue-700 bg-blue-100 rounded-md hover:bg-blue-200 min-w-fit flex items-center gap-1"
+                        >
+                          {order.deliveryMethod === 'PICKUP' ? <Store className="h-4 w-4" /> : <Truck className="h-4 w-4" />}
+                          Update Details
+                        </button>
+                        <button
+                          onClick={() => isSuperAdmin ? setShowCancelConfirm(order.id) : handleCancelAttempt()}
+                          className={`px-3 py-2 text-sm font-medium ${isSuperAdmin ? 'text-red-700 bg-red-100 hover:bg-red-200' : 'text-gray-500 bg-gray-100 hover:bg-gray-200'} rounded-md min-w-fit`}
+                        >
+                          Cancel Order
+                        </button>
+                      </>
                     )}
                     <button
                       onClick={() => handleReorder(order)}
@@ -1917,6 +2067,77 @@ const OrdersPage = () => {
                 </div>
               </div>
             ))}
+          </div>
+        )}
+
+        {/* Pagination Controls */}
+        {!loading && orders.length > 0 && totalOrders > ordersPerPage && (
+          <div className="mt-8 flex items-center justify-between bg-white p-4 rounded-lg shadow-sm">
+            <div className="text-sm text-gray-700">
+              Showing {((currentPage - 1) * ordersPerPage) + 1} to {Math.min(currentPage * ordersPerPage, totalOrders)} of {totalOrders} orders
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  if (currentPage > 1) {
+                    setCurrentPage(currentPage - 1);
+                  }
+                }}
+                disabled={currentPage === 1}
+                className="flex items-center gap-1 px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <ChevronLeft className="h-4 w-4" />
+                Previous
+              </button>
+
+              <div className="flex items-center gap-1">
+                {(() => {
+                  const totalPages = Math.ceil(totalOrders / ordersPerPage);
+                  const pages = [];
+                  const maxVisiblePages = 5;
+
+                  let startPage = Math.max(1, currentPage - Math.floor(maxVisiblePages / 2));
+                  let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
+
+                  if (endPage - startPage + 1 < maxVisiblePages) {
+                    startPage = Math.max(1, endPage - maxVisiblePages + 1);
+                  }
+
+                  for (let i = startPage; i <= endPage; i++) {
+                    pages.push(
+                      <button
+                        key={i}
+                        onClick={() => setCurrentPage(i)}
+                        className={`px-3 py-2 text-sm font-medium rounded-md ${
+                          i === currentPage
+                            ? 'bg-blue-600 text-white'
+                            : 'text-gray-700 bg-gray-100 hover:bg-gray-200'
+                        }`}
+                      >
+                        {i}
+                      </button>
+                    );
+                  }
+
+                  return pages;
+                })()}
+              </div>
+
+              <button
+                onClick={() => {
+                  const totalPages = Math.ceil(totalOrders / ordersPerPage);
+                  if (currentPage < totalPages) {
+                    setCurrentPage(currentPage + 1);
+                  }
+                }}
+                disabled={currentPage >= Math.ceil(totalOrders / ordersPerPage)}
+                className="flex items-center gap-1 px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Next
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
           </div>
         )}
       </main>

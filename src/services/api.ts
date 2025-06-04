@@ -931,7 +931,7 @@ export const apiMethods = {
       }
     },
 
-    getOrders: async (params?: { status?: string, startDate?: string, endDate?: string, paymentStatus?: string, pickupDate?: string, deliveryDate?: string }) => {
+    getOrders: async (params?: { status?: string, startDate?: string, endDate?: string, paymentStatus?: string, pickupDate?: string, deliveryDate?: string, page?: number, limit?: number }) => {
       try {
         console.log('Fetching orders with params:', params);
         // Add includeStatusHistory parameter to get refund notes
@@ -946,16 +946,16 @@ export const apiMethods = {
             'Pragma': 'no-cache'
           }
         };
-        
+
         const response = await api.get(url, config);
         console.log('Orders API raw response:', response);
-        
+
         // Extract the data from the response
         if (response.data && typeof response.data === 'object') {
-          const { success, data, message } = response.data;
-          return { success, data, message };
+          const { success, data, message, pagination } = response.data;
+          return { success, data, message, pagination };
         }
-        
+
         // If response format is unexpected
         console.error('Unexpected API response format:', response);
         return {
@@ -1146,12 +1146,13 @@ export const apiMethods = {
       }
     },
     
-    updateOrderDetails: async (orderId: string, orderDetails: { 
-      deliveryMethod: 'PICKUP' | 'DELIVERY', 
-      pickupDate?: string, 
-      pickupTimeSlot?: string, 
-      deliveryDate?: string, 
+    updateOrderDetails: async (orderId: string, orderDetails: {
+      deliveryMethod: 'PICKUP' | 'DELIVERY',
+      pickupDate?: string,
+      pickupTimeSlot?: string,
+      deliveryDate?: string,
       deliveryTimeSlot?: string,
+      deliveryCharge?: number,
       isGift?: boolean,
       giftRecipientName?: string,
       giftRecipientPhone?: string,

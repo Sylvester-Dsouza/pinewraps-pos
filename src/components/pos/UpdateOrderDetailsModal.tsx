@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import { Fragment } from 'react';
-import { XCircle, Calendar, Clock, Truck, Store, Gift } from 'lucide-react';
+import { XCircle, Calendar, Clock, Truck, Store, Gift, DollarSign } from 'lucide-react';
 import { apiMethods } from '@/services/api';
 import { toast } from 'react-hot-toast';
 import { Order } from '@/types/order';
@@ -55,7 +55,10 @@ const UpdateOrderDetailsModal: React.FC<UpdateOrderDetailsModalProps> = ({
   const [deliveryTimeSlot, setDeliveryTimeSlot] = useState<string>(
     order.deliveryTimeSlot || timeSlots[0]
   );
-  
+  const [deliveryCharge, setDeliveryCharge] = useState<string>(
+    String(order.deliveryCharge || 0)
+  );
+
   // Gift details
   const [isGift, setIsGift] = useState<boolean>(order.isGift || false);
   const [giftRecipientName, setGiftRecipientName] = useState<string>(order.giftRecipientName || '');
@@ -65,8 +68,16 @@ const UpdateOrderDetailsModal: React.FC<UpdateOrderDetailsModalProps> = ({
     order.giftCashAmount ? order.giftCashAmount.toString() : '0'
   );
   const [includeCash, setIncludeCash] = useState<boolean>(order.giftCashAmount > 0);
-  
+
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Calculate totals
+  const currentSubtotal = order.subtotal || (order.totalAmount - (order.deliveryCharge || 0));
+  const currentDeliveryCharge = parseFloat(deliveryCharge) || 0;
+  const newTotal = deliveryMethod === 'DELIVERY'
+    ? currentSubtotal + currentDeliveryCharge
+    : currentSubtotal;
+  const totalDifference = newTotal - order.totalAmount;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -90,6 +101,7 @@ const UpdateOrderDetailsModal: React.FC<UpdateOrderDetailsModalProps> = ({
         pickupTimeSlot: deliveryMethod === 'PICKUP' ? pickupTimeSlot : undefined,
         deliveryDate: deliveryMethod === 'DELIVERY' ? deliveryDate : undefined,
         deliveryTimeSlot: deliveryMethod === 'DELIVERY' ? deliveryTimeSlot : undefined,
+        deliveryCharge: deliveryMethod === 'DELIVERY' ? parseFloat(deliveryCharge) || 0 : 0,
         isGift,
         giftRecipientName: isGift ? giftRecipientName : undefined,
         giftRecipientPhone: isGift ? giftRecipientPhone : undefined,
@@ -242,7 +254,7 @@ const UpdateOrderDetailsModal: React.FC<UpdateOrderDetailsModalProps> = ({
                               required={deliveryMethod === 'DELIVERY'}
                             />
                           </div>
-                          
+
                           <div>
                             <label className="text-sm font-medium text-gray-700 mb-1 flex items-center">
                               <Clock className="h-4 w-4 mr-1" />
@@ -261,9 +273,50 @@ const UpdateOrderDetailsModal: React.FC<UpdateOrderDetailsModalProps> = ({
                               ))}
                             </select>
                           </div>
+
+                          <div>
+                            <label className="text-sm font-medium text-gray-700 mb-1 flex items-center">
+                              <DollarSign className="h-4 w-4 mr-1" />
+                              Delivery Charge (AED)
+                            </label>
+                            <input
+                              type="number"
+                              value={deliveryCharge}
+                              onChange={(e) => setDeliveryCharge(e.target.value)}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                              min="0"
+                              step="0.01"
+                              placeholder="Enter delivery charge"
+                            />
+                          </div>
                         </>
                       )}
-                      
+
+                      {/* Order Total Summary */}
+                      <div className="mt-6 p-4 bg-gray-50 rounded-lg border">
+                        <h4 className="text-sm font-medium text-gray-700 mb-3">Order Total Summary</h4>
+                        <div className="space-y-2 text-sm">
+                          <div className="flex justify-between">
+                            <span>Subtotal:</span>
+                            <span>AED {currentSubtotal.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Delivery Charge:</span>
+                            <span>AED {(deliveryMethod === 'DELIVERY' ? currentDeliveryCharge : 0).toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between font-medium border-t pt-2">
+                            <span>New Total:</span>
+                            <span>AED {newTotal.toFixed(2)}</span>
+                          </div>
+                          {totalDifference !== 0 && (
+                            <div className={`flex justify-between text-sm ${totalDifference > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                              <span>Change from current:</span>
+                              <span>{totalDifference > 0 ? '+' : ''}AED {totalDifference.toFixed(2)}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
                       {/* Gift Information Section */}
                       <div className="mt-6 border-t pt-4">
                         <div className="flex items-center mb-4">
