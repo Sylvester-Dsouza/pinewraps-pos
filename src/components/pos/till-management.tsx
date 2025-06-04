@@ -309,16 +309,13 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
             closedAt: response.closedAt || new Date().toISOString(),
             operations: response.operations || [],
             user: response.user || { firstName: 'Unknown', lastName: 'User' },
-            // Include payment totals from the response (customer payments only)
+            // Include payment totals from the response
             paymentTotals: response.paymentTotals || {},
-            // Include drawer operations totals (cash added/removed/refunds)
-            drawerOperations: response.drawerOperations || {},
             // Include completed orders count
             completedOrders: response.completedOrders || 0
           };
           
           console.log('Payment totals for till closing report:', response.paymentTotals);
-          console.log('Drawer operations for till closing report:', response.drawerOperations);
           console.log('Completed orders count for till closing report:', response.completedOrders);
           
           console.log('Sending print request to printer proxy with data:', JSON.stringify(closingData, null, 2));
