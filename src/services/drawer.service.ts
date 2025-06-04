@@ -55,6 +55,13 @@ export interface DrawerSession {
     lastName: string;
   };
   paymentTotals?: Record<string, number>;
+  // Added for till closing report - drawer operations separate from payments
+  drawerOperations?: {
+    cashAdded: number;
+    cashRemoved: number;
+    cashRefunds: number;
+    cashSales: number;
+  };
   // Added for till closing report
   completedOrders?: number;
   // Order details for till history
