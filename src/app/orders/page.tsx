@@ -172,14 +172,14 @@ const OrdersPage = () => {
     if (isAuthenticated) {
       fetchOrders();
     }
-  }, [isAuthenticated, selectedOrderStatus, selectedPaymentStatus, currentPage, sortBy, sortOrder]);
+  }, [isAuthenticated, selectedOrderStatus, selectedPaymentStatus, currentPage, sortBy, sortOrder, searchTerm]);
 
   // Reset to first page when filters change
   useEffect(() => {
     if (currentPage !== 1) {
       setCurrentPage(1);
     }
-  }, [selectedOrderStatus, selectedPaymentStatus, startDate, endDate, pickupDate, deliveryDate]);
+  }, [selectedOrderStatus, selectedPaymentStatus, startDate, endDate, pickupDate, deliveryDate, searchTerm]);
 
   // Helper function to parse time slot and get start time for sorting
   const parseTimeSlot = (timeSlot: string): number => {
@@ -269,7 +269,8 @@ const OrdersPage = () => {
         pickupDate?: string,
         deliveryDate?: string,
         page?: number,
-        limit?: number
+        limit?: number,
+        search?: string
       } = {
         page: currentPage,
         limit: ordersPerPage
@@ -308,7 +309,13 @@ const OrdersPage = () => {
         params.deliveryDate = deliveryDate;
         console.log('Fetching orders with delivery date:', deliveryDate);
       }
-      
+
+      // Add search term if provided
+      if (searchTerm && searchTerm.trim()) {
+        params.search = searchTerm.trim();
+        console.log('Fetching orders with search term:', searchTerm);
+      }
+
       console.log('Final API params:', params);
       
       const response = await apiMethods.pos.getOrders(params);
@@ -1466,20 +1473,8 @@ const OrdersPage = () => {
           <div className="flex flex-wrap -mx-3 content-start">
             {orders
               .filter(order => {
-                // Apply search term filtering
-                if (searchTerm) {
-                  const searchLower = searchTerm.toLowerCase();
-                  if (!(
-                    order.orderNumber?.toString().includes(searchLower) ||
-                    order.customerName?.toLowerCase().includes(searchLower) ||
-                    order.customerPhone?.toLowerCase().includes(searchLower) ||
-                    order.customerEmail?.toLowerCase().includes(searchLower) ||
-                    order.id?.toLowerCase().includes(searchLower)
-                  )) {
-                    return false;
-                  }
-                }
-                
+                // Note: Search term filtering is now handled by the API
+
                 // Apply date filtering on the client side as well for extra safety
                 if (startDate) {
                   try {
