@@ -87,6 +87,7 @@ const deliveryMethodColors = {
 const OrdersPage = () => {
   const router = useRouter();
   const [orders, setOrders] = useState<Order[]>([]);
+  const [allOrdersForCounts, setAllOrdersForCounts] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -153,6 +154,7 @@ const OrdersPage = () => {
           
           setIsAuthenticated(true);
           fetchOrders();
+          fetchAllOrdersForCounts();
         } catch (error) {
           console.error('Error getting token:', error);
           toast.error('Authentication error. Please try logging in again.');
@@ -186,21 +188,29 @@ const OrdersPage = () => {
     if (!timeSlot) return 0;
 
     // Extract start time from time slot (e.g., "11:00 AM - 1:00 PM" -> "11:00 AM")
-    const startTime = timeSlot.split(' - ')[0];
+    const startTime = timeSlot.split(' - ')[0]?.trim();
     if (!startTime) return 0;
 
     // Convert to 24-hour format for comparison
     const [time, period] = startTime.split(' ');
+    if (!time || !period) return 0;
+
     const [hours, minutes] = time.split(':').map(Number);
+    if (isNaN(hours)) return 0;
 
     let hour24 = hours;
-    if (period === 'PM' && hours !== 12) {
+    if (period.toUpperCase() === 'PM' && hours !== 12) {
       hour24 += 12;
-    } else if (period === 'AM' && hours === 12) {
+    } else if (period.toUpperCase() === 'AM' && hours === 12) {
       hour24 = 0;
     }
 
-    return hour24 * 60 + (minutes || 0); // Convert to minutes for easy comparison
+    const totalMinutes = hour24 * 60 + (minutes || 0);
+
+    // Debug logging for time parsing
+    console.log(`Parsing time slot: "${timeSlot}" -> "${startTime}" -> ${hour24}:${minutes || 0} -> ${totalMinutes} minutes`);
+
+    return totalMinutes; // Convert to minutes for easy comparison
   };
 
   // Function to handle sorting
@@ -213,6 +223,11 @@ const OrdersPage = () => {
       setSortBy(newSortBy);
       setSortOrder(newSortBy === 'createdAt' ? 'desc' : 'asc'); // Default to desc for date, asc for time
     }
+
+    // Refetch orders to apply the new sorting/filtering
+    setTimeout(() => {
+      fetchOrders();
+    }, 100); // Small delay to ensure state is updated
   };
   
   // Add click outside handler to close date filter popups
@@ -240,26 +255,121 @@ const OrdersPage = () => {
     };
   }, []);
 
-  const fetchOrders = async () => {
-    setLoading(true);
-    setError(null);
+  // Fetch all orders for filter counts (without pagination)
+  const fetchAllOrdersForCounts = async () => {
     try {
-      console.log('Fetching orders...');
-      
-      // Get fresh token before fetching orders
       const auth = getAuth();
       const user = auth.currentUser;
-      if (!user) {
-        throw new Error('No authenticated user');
-      }
-      
+      if (!user) return;
+
       const token = await user.getIdToken(true);
       Cookies.set('firebase-token', token, {
         expires: 7,
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'strict'
       });
-      
+
+      // Fetch all orders without pagination for counting
+      const response = await apiMethods.pos.getOrders({
+        limit: 10000 // Large number to get all orders
+      });
+
+      if (response.success && Array.isArray(response.data)) {
+        // Transform the data similar to main fetchOrders
+        const transformedOrders = response.data.map((order: any) => {
+          const transformedPayments = order.payments?.map((payment: any) => {
+            if (payment.method === 'SPLIT' || payment.isSplitPayment) {
+              return {
+                ...payment,
+                cashPortion: payment.cashPortion || payment.metadata?.cashPortion || payment.metadata?.cashAmount || 0,
+                cardPortion: payment.cardPortion || payment.metadata?.cardPortion || payment.metadata?.cardAmount ||
+                  (parseFloat(payment.amount) - parseFloat(payment.cashPortion || payment.metadata?.cashPortion || payment.metadata?.cashAmount || 0))
+              };
+            }
+
+            if (payment.status === 'PARTIALLY_PAID' || payment.isPartialPayment) {
+              return {
+                ...payment,
+                status: POSPaymentStatus.PARTIALLY_PAID,
+                isPartialPayment: true,
+                remainingAmount: payment.remainingAmount || payment.metadata?.remainingAmount || 0,
+                futurePaymentMethod: payment.futurePaymentMethod || payment.metadata?.futurePaymentMethod
+              };
+            }
+
+            return payment;
+          }) || [];
+
+          const calculatedTotal = order.items.reduce((sum: number, item: any) => {
+            return sum + Number(item.totalPrice || item.total || (item.quantity * item.unitPrice)) || 0;
+          }, 0);
+
+          const discountedTotal = order.couponDiscount ? calculatedTotal - Number(order.couponDiscount) : calculatedTotal;
+          const finalTotal = discountedTotal + Number(order.deliveryCharge || 0);
+
+          return {
+            ...order,
+            items: order.items.map((item: any) => ({
+              ...item,
+              name: item.productName || item.name,
+              variations: ((item.selectedVariations || item.variations) || []).map((v: any) => {
+                if (typeof v === 'object' && v !== null) {
+                  return {
+                    id: v.id || nanoid(),
+                    type: (v.type || v.name || v.variationType || '').toString(),
+                    value: (v.value || v.variationValue || '').toString(),
+                    price: Number(v.price) || 0,
+                    priceAdjustment: Number(v.priceAdjustment) || 0
+                  };
+                }
+                return {
+                  id: nanoid(),
+                  type: 'Option',
+                  value: String(v || ''),
+                  price: 0,
+                  priceAdjustment: 0
+                };
+              }),
+              totalPrice: Number(item.totalPrice || item.total || (item.quantity * item.unitPrice)) || 0
+            })),
+            totalAmount: finalTotal,
+            total: finalTotal,
+            subtotal: calculatedTotal,
+            paidAmount: Number(order.paidAmount) || 0,
+            changeAmount: Number(order.changeAmount) || 0,
+            deliveryCharge: Number(order.deliveryCharge || 0),
+            paymentMethod: order.paymentMethod || 'CASH',
+            payments: transformedPayments
+          };
+        });
+
+        setAllOrdersForCounts(transformedOrders);
+      }
+    } catch (error) {
+      console.error('Error fetching all orders for counts:', error);
+    }
+  };
+
+  const fetchOrders = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      console.log('Fetching orders...');
+
+      // Get fresh token before fetching orders
+      const auth = getAuth();
+      const user = auth.currentUser;
+      if (!user) {
+        throw new Error('No authenticated user');
+      }
+
+      const token = await user.getIdToken(true);
+      Cookies.set('firebase-token', token, {
+        expires: 7,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict'
+      });
+
       // Prepare API parameters
       const params: {
         status?: string,
@@ -289,9 +399,15 @@ const OrdersPage = () => {
       // Add date range parameters if dates are set
       if (startDate) {
         params.startDate = startDate;
-        // If end date is not provided, use current date
-        params.endDate = endDate || format(new Date(), 'yyyy-MM-dd');
-        console.log('Fetching orders with date range:', { startDate, endDate: params.endDate });
+        // Only add end date if it's explicitly set
+        if (endDate) {
+          params.endDate = endDate;
+          console.log('Fetching orders with date range:', { startDate, endDate });
+        } else {
+          // If no end date, filter for exact date only
+          params.endDate = startDate;
+          console.log('Fetching orders for exact date:', { startDate });
+        }
       } else {
         // Make sure we're not sending empty strings as parameters
         delete params.startDate;
@@ -491,8 +607,18 @@ const OrdersPage = () => {
         
         console.log('Transformed orders:', transformedOrders);
 
-        // Apply sorting based on current sort settings
-        const sortedOrders = [...transformedOrders].sort((a: Order, b: Order) => {
+        // Apply filtering and sorting based on current sort settings
+        let filteredAndSortedOrders = [...transformedOrders];
+
+        // Filter by delivery method if sorting by pickup or delivery time
+        if (sortBy === 'pickupTime') {
+          filteredAndSortedOrders = filteredAndSortedOrders.filter(order => order.deliveryMethod === 'PICKUP');
+        } else if (sortBy === 'deliveryTime') {
+          filteredAndSortedOrders = filteredAndSortedOrders.filter(order => order.deliveryMethod === 'DELIVERY');
+        }
+
+        // Apply sorting
+        filteredAndSortedOrders.sort((a: Order, b: Order) => {
           let comparison = 0;
 
           switch (sortBy) {
@@ -500,21 +626,36 @@ const OrdersPage = () => {
               comparison = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
               break;
             case 'pickupTime':
+              // Only pickup orders should reach here due to filtering above
               const aPickupTime = parseTimeSlot(a.pickupTimeSlot || '');
               const bPickupTime = parseTimeSlot(b.pickupTimeSlot || '');
               comparison = aPickupTime - bPickupTime;
+              console.log(`Sorting pickup: Order ${a.orderNumber} (${a.pickupTimeSlot}) = ${aPickupTime} vs Order ${b.orderNumber} (${b.pickupTimeSlot}) = ${bPickupTime}, comparison: ${comparison}`);
               break;
             case 'deliveryTime':
+              // Only delivery orders should reach here due to filtering above
               const aDeliveryTime = parseTimeSlot(a.deliveryTimeSlot || '');
               const bDeliveryTime = parseTimeSlot(b.deliveryTimeSlot || '');
               comparison = aDeliveryTime - bDeliveryTime;
+              console.log(`Sorting delivery: Order ${a.orderNumber} (${a.deliveryTimeSlot}) = ${aDeliveryTime} vs Order ${b.orderNumber} (${b.deliveryTimeSlot}) = ${bDeliveryTime}, comparison: ${comparison}`);
               break;
           }
 
-          return sortOrder === 'asc' ? comparison : -comparison;
+          const result = sortOrder === 'asc' ? comparison : -comparison;
+          return result;
         });
 
-        setOrders(sortedOrders);
+        // Debug: Log the final sorted order
+        if (sortBy === 'pickupTime' || sortBy === 'deliveryTime') {
+          console.log(`Final sorted order (${sortBy}, ${sortOrder}):`);
+          filteredAndSortedOrders.forEach((order, index) => {
+            const timeSlot = sortBy === 'pickupTime' ? order.pickupTimeSlot : order.deliveryTimeSlot;
+            const timeValue = parseTimeSlot(timeSlot || '');
+            console.log(`${index + 1}. Order ${order.orderNumber}: ${timeSlot} (${timeValue} minutes)`);
+          });
+        }
+
+        setOrders(filteredAndSortedOrders);
       } else {
         throw new Error(response.message || 'Failed to fetch orders');
       }
@@ -681,6 +822,7 @@ const OrdersPage = () => {
 
   const handleRefresh = async () => {
     await fetchOrders();
+    await fetchAllOrdersForCounts();
     toast.success('Orders refreshed');
   };
 
@@ -1004,125 +1146,208 @@ const OrdersPage = () => {
           <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center mb-6 gap-4">
             <h1 className="text-2xl font-bold text-gray-900">Orders</h1>
 
-            <div className="relative w-full lg:w-96">
+            <div className="relative w-full lg:w-[500px]">
               <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
               <input
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder="Search by order number, customer name, phone, or email..."
-                className="w-full pl-12 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm shadow-sm transition-all duration-200"
+                className="w-full pl-12 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm shadow-sm transition-all duration-200 bg-white"
               />
+              {searchTerm && (
+                <button
+                  onClick={() => setSearchTerm('')}
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
             </div>
           </div>
           
           {/* Enhanced Filters Section */}
-          <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 mb-6">
-            <div className="flex flex-wrap gap-3 items-center">
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 mb-6">
+            {/* Quick Filter Presets */}
+            <div className="mb-4 pb-4 border-b border-gray-100">
+              <label className="text-sm font-medium text-gray-700 mb-2 block">Quick Filters</label>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => {
+                    setStartDate(format(new Date(), 'yyyy-MM-dd'));
+                    setEndDate('');
+                    setSelectedOrderStatus('all');
+                    setSelectedPaymentStatus('all');
+                    setPickupDate('');
+                    setDeliveryDate('');
+                  }}
+                  className="px-3 py-1.5 text-xs font-medium bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors"
+                >
+                  Today's Orders
+                </button>
+                <button
+                  onClick={() => {
+                    const yesterday = new Date();
+                    yesterday.setDate(yesterday.getDate() - 1);
+                    setStartDate(format(yesterday, 'yyyy-MM-dd'));
+                    setEndDate(format(yesterday, 'yyyy-MM-dd'));
+                    setSelectedOrderStatus('all');
+                    setSelectedPaymentStatus('all');
+                    setPickupDate('');
+                    setDeliveryDate('');
+                  }}
+                  className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 rounded-lg hover:bg-green-100 transition-colors"
+                >
+                  Yesterday
+                </button>
+                <button
+                  onClick={() => {
+                    const weekAgo = new Date();
+                    weekAgo.setDate(weekAgo.getDate() - 7);
+                    setStartDate(format(weekAgo, 'yyyy-MM-dd'));
+                    setEndDate(format(new Date(), 'yyyy-MM-dd'));
+                    setSelectedOrderStatus('all');
+                    setSelectedPaymentStatus('all');
+                    setPickupDate('');
+                    setDeliveryDate('');
+                  }}
+                  className="px-3 py-1.5 text-xs font-medium bg-purple-50 text-purple-700 rounded-lg hover:bg-purple-100 transition-colors"
+                >
+                  Last 7 Days
+                </button>
+                <button
+                  onClick={() => {
+                    setSelectedOrderStatus('all');
+                    setSelectedPaymentStatus('PENDING');
+                    setStartDate('');
+                    setEndDate('');
+                    setPickupDate('');
+                    setDeliveryDate('');
+                  }}
+                  className="px-3 py-1.5 text-xs font-medium bg-orange-50 text-orange-700 rounded-lg hover:bg-orange-100 transition-colors"
+                >
+                  Pending Payments
+                </button>
+                <button
+                  onClick={() => {
+                    setSelectedOrderStatus('COMPLETED');
+                    setSelectedPaymentStatus('all');
+                    setStartDate('');
+                    setEndDate('');
+                    setPickupDate('');
+                    setDeliveryDate('');
+                  }}
+                  className="px-3 py-1.5 text-xs font-medium bg-emerald-50 text-emerald-700 rounded-lg hover:bg-emerald-100 transition-colors"
+                >
+                  Completed Orders
+                </button>
+              </div>
+            </div>
+
+            {/* First Row: Main Filters */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 items-end">
 
               {/* Order Status Filter */}
               <div className="flex flex-col">
-                <label className="text-xs font-medium text-gray-600 mb-1">Order Status</label>
-                <select
-                  value={selectedOrderStatus}
-                  onChange={(e) => setSelectedOrderStatus(e.target.value)}
-                  className="w-full md:w-48 px-3 py-2 border-2 border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                >
-                  <option value="all">All Status</option>
-                  {Object.entries(orderStatusLabels).map(([value, label]) => (
-                    <option key={value} value={value}>
-                      {label} ({orders.filter(order => order.status === value).length})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            
-              {/* Payment Status Filter */}
-              <div className="flex flex-col">
-                <label className="text-xs font-medium text-gray-600 mb-1">Payment Status</label>
-                <select
-                  value={selectedPaymentStatus}
-                  onChange={(e) => setSelectedPaymentStatus(e.target.value)}
-                  className="w-full md:w-48 px-3 py-2 border-2 border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                >
-                  <option value="all">All Payments</option>
-                  {Object.entries(paymentStatusLabels).map(([value, label]) => (
-                    <option key={value} value={value}>
-                      {label} ({orders.filter(order => {
-                        // Check if any payment has this status
-                        if (value === 'FULLY_PAID') {
-                          return isFullyPaid(order);
-                        } else if (value === 'PARTIALLY_PAID') {
-                          return hasPartialPayment(order);
-                        } else if (value === 'PENDING') {
-                          return hasPendingPayment(order);
-                        }
-                        return false;
-                      }).length})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Sort By Controls */}
-              <div className="flex flex-col">
-                <label className="text-xs font-medium text-gray-600 mb-1">Sort By</label>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => handleSort('createdAt')}
-                    className={`px-3 py-2 text-sm font-medium rounded-lg border-2 transition-all duration-200 flex items-center gap-1 ${
-                      sortBy === 'createdAt'
-                        ? 'bg-blue-500 text-white border-blue-500'
-                        : 'bg-white text-gray-700 border-gray-200 hover:border-blue-300'
+                <label className="text-sm font-medium text-gray-700 mb-2">Order Status</label>
+                <div className="relative">
+                  <select
+                    value={selectedOrderStatus}
+                    onChange={(e) => setSelectedOrderStatus(e.target.value)}
+                    className={`w-full px-4 py-2.5 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white transition-all duration-200 ${
+                      selectedOrderStatus !== 'all'
+                        ? 'border-blue-300 bg-blue-50'
+                        : 'border-gray-200 hover:border-gray-300'
                     }`}
                   >
-                    <Clock className="h-4 w-4" />
-                    Created
-                    {sortBy === 'createdAt' && (
-                      sortOrder === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
-                    )}
-                  </button>
-
-                  <button
-                    onClick={() => handleSort('pickupTime')}
-                    className={`px-3 py-2 text-sm font-medium rounded-lg border-2 transition-all duration-200 flex items-center gap-1 ${
-                      sortBy === 'pickupTime'
-                        ? 'bg-green-500 text-white border-green-500'
-                        : 'bg-white text-gray-700 border-gray-200 hover:border-green-300'
-                    }`}
-                  >
-                    <Store className="h-4 w-4" />
-                    Pickup
-                    {sortBy === 'pickupTime' && (
-                      sortOrder === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
-                    )}
-                  </button>
-
-                  <button
-                    onClick={() => handleSort('deliveryTime')}
-                    className={`px-3 py-2 text-sm font-medium rounded-lg border-2 transition-all duration-200 flex items-center gap-1 ${
-                      sortBy === 'deliveryTime'
-                        ? 'bg-orange-500 text-white border-orange-500'
-                        : 'bg-white text-gray-700 border-gray-200 hover:border-orange-300'
-                    }`}
-                  >
-                    <Truck className="h-4 w-4" />
-                    Delivery
-                    {sortBy === 'deliveryTime' && (
-                      sortOrder === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
-                    )}
-                  </button>
+                    <option value="all">All Status ({allOrdersForCounts.length})</option>
+                    {Object.entries(orderStatusLabels).map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label} ({allOrdersForCounts.filter(order => order.status === value).length})
+                      </option>
+                    ))}
+                  </select>
+                  {selectedOrderStatus !== 'all' && (
+                    <button
+                      onClick={() => setSelectedOrderStatus('all')}
+                      className="absolute right-8 top-1/2 transform -translate-y-1/2 text-blue-500 hover:text-blue-700"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
                 </div>
               </div>
-            
+
+              {/* Payment Status Filter */}
+              <div className="flex flex-col">
+                <label className="text-sm font-medium text-gray-700 mb-2">Payment Status</label>
+                <div className="relative">
+                  <select
+                    value={selectedPaymentStatus}
+                    onChange={(e) => setSelectedPaymentStatus(e.target.value)}
+                    className={`w-full px-4 py-2.5 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white transition-all duration-200 ${
+                      selectedPaymentStatus !== 'all'
+                        ? 'border-green-300 bg-green-50'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    <option value="all">All Payments ({allOrdersForCounts.length})</option>
+                    {Object.entries(paymentStatusLabels).map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label} ({allOrdersForCounts.filter(order => {
+                          // Check if any payment has this status
+                          if (value === 'FULLY_PAID') {
+                            return isFullyPaid(order);
+                          } else if (value === 'PARTIALLY_PAID') {
+                            return hasPartialPayment(order);
+                          } else if (value === 'PENDING') {
+                            return hasPendingPayment(order);
+                          }
+                          return false;
+                        }).length})
+                      </option>
+                    ))}
+                  </select>
+                  {selectedPaymentStatus !== 'all' && (
+                    <button
+                      onClick={() => setSelectedPaymentStatus('all')}
+                      className="absolute right-8 top-1/2 transform -translate-y-1/2 text-green-500 hover:text-green-700"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
             {/* Order Date Filter */}
             <div className="relative">
+              <label className="text-sm font-medium text-gray-700 mb-2 block">Order Date</label>
               <button
                 onClick={() => setShowDateFilter(!showDateFilter)}
-                className="w-full md:w-48 px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-700 flex items-center justify-between"
+                className={`w-full px-4 py-2.5 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm flex items-center justify-between transition-all duration-200 ${
+                  startDate || endDate
+                    ? 'border-purple-300 bg-purple-50 text-purple-700'
+                    : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+                }`}
               >
-                <span>{startDate ? `${format(parse(startDate, 'yyyy-MM-dd', new Date()), 'PP')}${endDate ? ` - ${format(parse(endDate, 'yyyy-MM-dd', new Date()), 'PP')}` : ''}` : 'Order Date'}</span>
-                <Calendar className="h-4 w-4 text-gray-400 ml-2" />
+                <span className="truncate">
+                  {startDate ? `${format(parse(startDate, 'yyyy-MM-dd', new Date()), 'PP')}${endDate ? ` - ${format(parse(endDate, 'yyyy-MM-dd', new Date()), 'PP')}` : ''}` : 'Select Date Range'}
+                </span>
+                <div className="flex items-center gap-1">
+                  {(startDate || endDate) && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setStartDate('');
+                        setEndDate('');
+                      }}
+                      className="text-purple-500 hover:text-purple-700"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                  <Calendar className="h-4 w-4 text-gray-400" />
+                </div>
               </button>
               
               {/* Custom date range picker */}
@@ -1253,12 +1478,32 @@ const OrdersPage = () => {
             
             {/* Pickup Date Filter */}
             <div className="relative">
+              <label className="text-sm font-medium text-gray-700 mb-2 block">Pickup Date</label>
               <button
                 onClick={() => setShowPickupDateFilter(!showPickupDateFilter)}
-                className="w-full md:w-48 px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-700 flex items-center justify-between"
+                className={`w-full px-4 py-2.5 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm flex items-center justify-between transition-all duration-200 ${
+                  pickupDate
+                    ? 'border-green-300 bg-green-50 text-green-700'
+                    : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+                }`}
               >
-                <span>{pickupDate ? format(parse(pickupDate, 'yyyy-MM-dd', new Date()), 'PP') : 'Pickup Date'}</span>
-                <Store className="h-4 w-4 text-gray-400 ml-2" />
+                <span className="truncate">
+                  {pickupDate ? format(parse(pickupDate, 'yyyy-MM-dd', new Date()), 'PP') : 'Select Pickup Date'}
+                </span>
+                <div className="flex items-center gap-1">
+                  {pickupDate && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setPickupDate('');
+                      }}
+                      className="text-green-500 hover:text-green-700"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                  <Store className="h-4 w-4 text-gray-400" />
+                </div>
               </button>
               
               {/* Pickup date picker */}
@@ -1337,12 +1582,32 @@ const OrdersPage = () => {
             
             {/* Delivery Date Filter */}
             <div className="relative">
+              <label className="text-sm font-medium text-gray-700 mb-2 block">Delivery Date</label>
               <button
                 onClick={() => setShowDeliveryDateFilter(!showDeliveryDateFilter)}
-                className="w-full md:w-48 px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-700 flex items-center justify-between"
+                className={`w-full px-4 py-2.5 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm flex items-center justify-between transition-all duration-200 ${
+                  deliveryDate
+                    ? 'border-orange-300 bg-orange-50 text-orange-700'
+                    : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+                }`}
               >
-                <span>{deliveryDate ? format(parse(deliveryDate, 'yyyy-MM-dd', new Date()), 'PP') : 'Delivery Date'}</span>
-                <Truck className="h-4 w-4 text-gray-400 ml-2" />
+                <span className="truncate">
+                  {deliveryDate ? format(parse(deliveryDate, 'yyyy-MM-dd', new Date()), 'PP') : 'Select Delivery Date'}
+                </span>
+                <div className="flex items-center gap-1">
+                  {deliveryDate && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeliveryDate('');
+                      }}
+                      className="text-orange-500 hover:text-orange-700"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                  <Truck className="h-4 w-4 text-gray-400" />
+                </div>
               </button>
               
               {/* Delivery date picker */}
@@ -1418,47 +1683,171 @@ const OrdersPage = () => {
                 </div>
               )}
             </div>
-            
-            <div className="flex space-x-2">
-              <button
-                onClick={() => {
-                  // Reset all filters
-                  setSearchTerm('');
-                  setSelectedOrderStatus('all');
-                  setSelectedPaymentStatus('all');
-                  setStartDate('');
-                  setEndDate('');
-                  setPickupDate('');
-                  setDeliveryDate('');
-                  setShowDateFilter(false);
-                  setShowPickupDateFilter(false);
-                  setShowDeliveryDateFilter(false);
-                  
-                  // Fetch orders without any filters
-                  fetchOrders();
-                  
-                  // Log for debugging
-                  console.log('Reset all filters');
-                  
-                  // Show success message
-                  toast.success('All filters have been reset');
-                }}
-                className="px-2 py-1 text-xs font-medium text-blue-700 bg-blue-100 rounded-md hover:bg-blue-200 flex items-center justify-center gap-1"
-              >
-                <X className="h-3 w-3" />
-                Reset
-              </button>
-              
-              <button
-                onClick={handleRefresh}
-                className="w-full md:w-auto px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 flex items-center justify-center gap-2"
-              >
-                <RotateCcw className="h-4 w-4" />
-                Refresh
-              </button>
             </div>
+
+            {/* Second Row: Sort By and Actions */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end mt-4">
+
+            {/* Sort By Controls */}
+            <div className="flex flex-col">
+              <label className="text-sm font-medium text-gray-700 mb-2">Sort By</label>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => handleSort('createdAt')}
+                  className={`px-3 py-2 text-sm font-medium rounded-lg border-2 transition-all duration-200 flex items-center gap-1 ${
+                    sortBy === 'createdAt'
+                      ? 'bg-blue-500 text-white border-blue-500 shadow-md'
+                      : 'bg-white text-gray-700 border-gray-200 hover:border-blue-300 hover:bg-blue-50'
+                  }`}
+                >
+                  <Clock className="h-4 w-4" />
+                  Created
+                  {sortBy === 'createdAt' && (
+                    sortOrder === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+                  )}
+                </button>
+
+                <button
+                  onClick={() => handleSort('pickupTime')}
+                  className={`px-3 py-2 text-sm font-medium rounded-lg border-2 transition-all duration-200 flex items-center gap-1 ${
+                    sortBy === 'pickupTime'
+                      ? 'bg-green-500 text-white border-green-500 shadow-md'
+                      : 'bg-white text-gray-700 border-gray-200 hover:border-green-300 hover:bg-green-50'
+                  }`}
+                  title="Show only pickup orders sorted by pickup time"
+                >
+                  <Store className="h-4 w-4" />
+                  Pickup Orders
+                  {sortBy === 'pickupTime' && (
+                    sortOrder === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+                  )}
+                </button>
+
+                <button
+                  onClick={() => handleSort('deliveryTime')}
+                  className={`px-3 py-2 text-sm font-medium rounded-lg border-2 transition-all duration-200 flex items-center gap-1 ${
+                    sortBy === 'deliveryTime'
+                      ? 'bg-orange-500 text-white border-orange-500 shadow-md'
+                      : 'bg-white text-gray-700 border-gray-200 hover:border-orange-300 hover:bg-orange-50'
+                  }`}
+                  title="Show only delivery orders sorted by delivery time"
+                >
+                  <Truck className="h-4 w-4" />
+                  Delivery Orders
+                  {sortBy === 'deliveryTime' && (
+                    sortOrder === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex flex-col">
+              <label className="text-sm font-medium text-gray-700 mb-2">Actions</label>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => {
+                    // Reset all filters
+                    setSearchTerm('');
+                    setSelectedOrderStatus('all');
+                    setSelectedPaymentStatus('all');
+                    setStartDate('');
+                    setEndDate('');
+                    setPickupDate('');
+                    setDeliveryDate('');
+                    setShowDateFilter(false);
+                    setShowPickupDateFilter(false);
+                    setShowDeliveryDateFilter(false);
+
+                    // Fetch orders without any filters
+                    fetchOrders();
+
+                    // Log for debugging
+                    console.log('Reset all filters');
+
+                    // Show success message
+                    toast.success('All filters have been reset');
+                  }}
+                  className="px-4 py-2.5 text-sm font-medium text-red-700 bg-red-50 border-2 border-red-200 rounded-lg hover:bg-red-100 hover:border-red-300 flex items-center gap-2 transition-all duration-200"
+                >
+                  <X className="h-4 w-4" />
+                  Reset All
+                </button>
+
+                <button
+                  onClick={handleRefresh}
+                  className="px-4 py-2.5 text-sm font-medium text-gray-700 bg-gray-50 border-2 border-gray-200 rounded-lg hover:bg-gray-100 hover:border-gray-300 flex items-center gap-2 transition-all duration-200"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                  Refresh
+                </button>
+              </div>
+            </div>
+            </div>
+
+            {/* Active Filters Summary */}
+            {(searchTerm || selectedOrderStatus !== 'all' || selectedPaymentStatus !== 'all' || startDate || endDate || pickupDate || deliveryDate) && (
+              <div className="mt-4 pt-4 border-t border-gray-100">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-medium text-gray-600">Active Filters:</span>
+
+                  {searchTerm && (
+                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">
+                      Search: "{searchTerm}"
+                      <button onClick={() => setSearchTerm('')} className="text-blue-600 hover:text-blue-800">
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  )}
+
+                  {selectedOrderStatus !== 'all' && (
+                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 text-purple-800 text-xs rounded-full">
+                      Status: {orderStatusLabels[selectedOrderStatus as keyof typeof orderStatusLabels]}
+                      <button onClick={() => setSelectedOrderStatus('all')} className="text-purple-600 hover:text-purple-800">
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  )}
+
+                  {selectedPaymentStatus !== 'all' && (
+                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full">
+                      Payment: {paymentStatusLabels[selectedPaymentStatus as keyof typeof paymentStatusLabels]}
+                      <button onClick={() => setSelectedPaymentStatus('all')} className="text-green-600 hover:text-green-800">
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  )}
+
+                  {(startDate || endDate) && (
+                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-indigo-100 text-indigo-800 text-xs rounded-full">
+                      Date: {startDate ? format(parse(startDate, 'yyyy-MM-dd', new Date()), 'PP') : ''}{endDate && startDate ? ` - ${format(parse(endDate, 'yyyy-MM-dd', new Date()), 'PP')}` : ''}
+                      <button onClick={() => { setStartDate(''); setEndDate(''); }} className="text-indigo-600 hover:text-indigo-800">
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  )}
+
+                  {pickupDate && (
+                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-emerald-100 text-emerald-800 text-xs rounded-full">
+                      Pickup: {format(parse(pickupDate, 'yyyy-MM-dd', new Date()), 'PP')}
+                      <button onClick={() => setPickupDate('')} className="text-emerald-600 hover:text-emerald-800">
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  )}
+
+                  {deliveryDate && (
+                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-orange-100 text-orange-800 text-xs rounded-full">
+                      Delivery: {format(parse(deliveryDate, 'yyyy-MM-dd', new Date()), 'PP')}
+                      <button onClick={() => setDeliveryDate('')} className="text-orange-600 hover:text-orange-800">
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
-        </div>
         </div>
 
         {loading ? (
@@ -1481,18 +1870,22 @@ const OrdersPage = () => {
                     const orderDate = new Date(order.createdAt);
                     const filterStartDate = parse(startDate, 'yyyy-MM-dd', new Date());
                     const filterStartDay = startOfDay(filterStartDate);
-                    
+
                     if (endDate) {
+                      // Date range filtering
                       const filterEndDate = parse(endDate, 'yyyy-MM-dd', new Date());
                       const filterEndDay = endOfDay(filterEndDate);
-                      
-                      // If order date is before start date, filter it out
+
+                      // If order date is outside the range, filter it out
                       if (isBefore(orderDate, filterStartDay) || isAfter(orderDate, filterEndDay)) {
                         return false;
                       }
                     } else {
-                      // If only start date is provided, check if order date is on or after start date
-                      if (isBefore(orderDate, filterStartDay)) {
+                      // Single date filtering - only show orders from the exact date
+                      const filterEndDay = endOfDay(filterStartDate);
+
+                      // If order date is not within the single day, filter it out
+                      if (isBefore(orderDate, filterStartDay) || isAfter(orderDate, filterEndDay)) {
                         return false;
                       }
                     }
