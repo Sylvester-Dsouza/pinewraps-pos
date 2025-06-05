@@ -350,7 +350,8 @@ export default function FinalCheckDisplay({ staffRoles, router: externalRouter }
   const fetchOrders = async () => {
     try {
       setLoading(true);
-      const response = await apiMethods.pos.getOrders();
+      // Request all orders for KDS (no pagination)
+      const response = await apiMethods.pos.getOrders({ limit: 'all' });
       if (response.success) {
         // Filter for final check relevant orders only
         const finalCheckOrders = response.data.filter((order: any) => {

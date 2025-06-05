@@ -323,7 +323,8 @@ export default function KitchenDisplay({ staffRoles, router: externalRouter }: K
   const fetchOrders = async () => {
     try {
       setLoading(true);
-      const response = await apiMethods.pos.getOrders();
+      // Request all orders for KDS (no pagination)
+      const response = await apiMethods.pos.getOrders({ limit: 'all' });
       if (response.success) {
         // Log orders for debugging
         console.log('Current user ID:', user?.id);
@@ -1187,27 +1188,38 @@ export default function KitchenDisplay({ staffRoles, router: externalRouter }: K
                   <div className="mt-3">
                     <h5 className="text-sm font-medium text-gray-700 mb-2">Custom Images:</h5>
                     <div className="grid grid-cols-3 gap-2">
-                      {item.customImages.map((image, index) => (
+                      {item.customImages
+                        .filter(image => image && image.url && image.url.trim() !== '')
+                        .map((image, index) => (
                         <div 
                           key={`custom-${index}`} 
                           className="relative aspect-square rounded-lg overflow-hidden border border-gray-200 group cursor-pointer shadow-sm hover:shadow-md transition-all"
-                          onClick={() => handleImageClick(item.customImages || [], index)}
+                          onClick={() => {
+                            const validImages = item.customImages?.filter(img => img && img.url && img.url.trim() !== '') || [];
+                            handleImageClick(validImages, index);
+                          }}
                         >
-                          <Image
-                            src={image.url}
-                            alt={`Custom ${index + 1}`}
-                            fill
-                            className="object-cover group-hover:opacity-90 transition-opacity"
-                            onError={(e) => {
-                              // Handle image loading errors
-                              console.error('Error loading custom image:', e);
-                              // Hide the parent div on error
-                              const target = e.target as HTMLImageElement;
-                              if (target.parentElement) {
-                                target.parentElement.style.display = 'none';
-                              }
-                            }}
-                          />
+                          {image.url && image.url.trim() !== '' ? (
+                            <Image
+                              src={image.url}
+                              alt={`Custom ${index + 1}`}
+                              fill
+                              className="object-cover group-hover:opacity-90 transition-opacity"
+                              onError={(e) => {
+                                // Handle image loading errors
+                                console.error('Error loading custom image:', { imageUrl: image.url, image });
+                                // Hide the parent div on error
+                                const target = e.target as HTMLImageElement;
+                                if (target.parentElement) {
+                                  target.parentElement.style.display = 'none';
+                                }
+                              }}
+                            />
+                          ) : (
+                            <div className="w-full h-full bg-gray-200 flex items-center justify-center">
+                              <span className="text-gray-500 text-xs">No Image</span>
+                            </div>
+                          )}
                           <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-all flex items-center justify-center">
                             <Maximize2 className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
                           </div>
@@ -1230,23 +1242,33 @@ export default function KitchenDisplay({ staffRoles, router: externalRouter }: K
                       <div 
                         key="product-primary" 
                         className="relative aspect-square rounded-lg overflow-hidden border border-gray-200 group cursor-pointer shadow-sm hover:shadow-md transition-all"
-                        onClick={() => handleImageClick([item.images[0]], 0)}
+                        onClick={() => {
+                          if (item.images[0]?.url && item.images[0].url.trim() !== '') {
+                            handleImageClick([item.images[0]], 0);
+                          }
+                        }}
                       >
-                        <Image
-                          src={item.images[0].url}
-                          alt="Product Image"
-                          fill
-                          className="object-cover group-hover:opacity-90 transition-opacity"
-                          onError={(e) => {
-                            // Handle image loading errors
-                            console.error('Error loading product image:', e);
-                            // Hide the parent div on error
-                            const target = e.target as HTMLImageElement;
-                            if (target.parentElement) {
-                              target.parentElement.style.display = 'none';
-                            }
-                          }}
-                        />
+                        {item.images[0].url && item.images[0].url.trim() !== '' ? (
+                          <Image
+                            src={item.images[0].url}
+                            alt="Product Image"
+                            fill
+                            className="object-cover group-hover:opacity-90 transition-opacity"
+                            onError={(e) => {
+                              // Handle image loading errors
+                              console.error('Error loading product image:', { imageUrl: item.images[0].url, image: item.images[0] });
+                              // Hide the parent div on error
+                              const target = e.target as HTMLImageElement;
+                              if (target.parentElement) {
+                                target.parentElement.style.display = 'none';
+                              }
+                            }}
+                          />
+                        ) : (
+                          <div className="w-full h-full bg-gray-200 flex items-center justify-center">
+                            <span className="text-gray-500 text-xs">No Image</span>
+                          </div>
+                        )}
                         <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-all flex items-center justify-center">
                           <Maximize2 className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
                         </div>

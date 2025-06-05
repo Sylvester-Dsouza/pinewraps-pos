@@ -931,7 +931,7 @@ export const apiMethods = {
       }
     },
 
-    getOrders: async (params?: { status?: string, startDate?: string, endDate?: string, paymentStatus?: string, pickupDate?: string, deliveryDate?: string, page?: number, limit?: number, search?: string }) => {
+    getOrders: async (params?: { status?: string, startDate?: string, endDate?: string, paymentStatus?: string, pickupDate?: string, deliveryDate?: string, page?: number, limit?: number | string, search?: string }) => {
       try {
         console.log('Fetching orders with params:', params);
         // Add includeStatusHistory parameter to get refund notes

@@ -356,7 +356,8 @@ export default function DesignDisplay({ staffRoles, router: externalRouter }: De
   const fetchOrders = async () => {
     try {
       setLoading(true);
-      const response = await apiMethods.pos.getOrders();
+      // Request all orders for KDS (no pagination)
+      const response = await apiMethods.pos.getOrders({ limit: 'all' });
       if (response.success) {
         // Filter for design-relevant orders only
         const designOrders = response.data.filter((order: any) => {
@@ -1034,35 +1035,45 @@ export default function DesignDisplay({ staffRoles, router: externalRouter }: De
                     <div className="mt-3">
                       <h5 className="text-sm font-medium text-gray-700 mb-2">Custom Images:</h5>
                       <div className="grid grid-cols-3 gap-2">
-                        {item.designImages.map((image, index) => (
+                        {item.designImages
+                          .filter(image => image && (image.url || image.imageUrl) && (image.url || image.imageUrl).trim() !== '')
+                          .map((image, index) => (
                           <div 
                             key={`design-${index}`} 
                             className="relative aspect-square rounded-lg overflow-hidden border border-gray-200 group cursor-pointer shadow-sm hover:shadow-md transition-all"
                             onClick={() => {
-                              const slides = item.designImages?.map(img => ({
-                                src: img.url || img.imageUrl || null,
-                                comment: img.comment
-                              })) || [];
+                              const slides = item.designImages
+                                ?.filter(img => img && (img.url || img.imageUrl) && (img.url || img.imageUrl).trim() !== '')
+                                ?.map(img => ({
+                                  src: img.url || img.imageUrl,
+                                  comment: img.comment || ''
+                                })) || [];
                               setCurrentImages(slides);
                               setLightboxIndex(index);
                               setLightboxOpen(true);
                             }}
                           >
-                            <Image
-                              src={image.url || image.imageUrl || null}
-                              alt={`Design ${index + 1}`}
-                              fill
-                              className="object-cover group-hover:opacity-90 transition-opacity"
-                              onError={(e) => {
-                                // Handle image loading errors
-                                console.error('Error loading design image:', e);
-                                // Hide the parent div on error
-                                const target = e.target as HTMLImageElement;
-                                if (target.parentElement) {
-                                  target.parentElement.style.display = 'none';
-                                }
-                              }}
-                            />
+                            {(image.url || image.imageUrl) && (image.url || image.imageUrl).trim() !== '' ? (
+                              <Image
+                                src={image.url || image.imageUrl}
+                                alt={`Design ${index + 1}`}
+                                fill
+                                className="object-cover group-hover:opacity-90 transition-opacity"
+                                onError={(e) => {
+                                  // Handle image loading errors
+                                  console.error('Error loading design image:', { imageUrl: image.url || image.imageUrl, image });
+                                  // Hide the parent div on error
+                                  const target = e.target as HTMLImageElement;
+                                  if (target.parentElement) {
+                                    target.parentElement.style.display = 'none';
+                                  }
+                                }}
+                              />
+                            ) : (
+                              <div className="w-full h-full bg-gray-200 flex items-center justify-center">
+                                <span className="text-gray-500 text-xs">No Image</span>
+                              </div>
+                            )}
                             <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-all flex items-center justify-center">
                               <Maximize2 className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
                             </div>
@@ -1086,30 +1097,38 @@ export default function DesignDisplay({ staffRoles, router: externalRouter }: De
                           key="product-primary" 
                           className="relative aspect-square rounded-lg overflow-hidden border border-gray-200 group cursor-pointer shadow-sm hover:shadow-md transition-all"
                           onClick={() => {
-                            const slides = [{
-                              src: item.images[0].url,
-                              comment: ''
-                            }];
-                            setCurrentImages(slides);
-                            setLightboxIndex(0);
-                            setLightboxOpen(true);
+                            if (item.images[0]?.url && item.images[0].url.trim() !== '') {
+                              const slides = [{
+                                src: item.images[0].url,
+                                comment: ''
+                              }];
+                              setCurrentImages(slides);
+                              setLightboxIndex(0);
+                              setLightboxOpen(true);
+                            }
                           }}
                         >
-                          <Image
-                            src={item.images[0].url}
-                            alt="Product Image"
-                            fill
-                            className="object-cover group-hover:opacity-90 transition-opacity"
-                            onError={(e) => {
-                              // Handle image loading errors
-                              console.error('Error loading product image:', e);
-                              // Hide the parent div on error
-                              const target = e.target as HTMLImageElement;
-                              if (target.parentElement) {
-                                target.parentElement.style.display = 'none';
-                              }
-                            }}
-                          />
+                          {item.images[0].url && item.images[0].url.trim() !== '' ? (
+                            <Image
+                              src={item.images[0].url}
+                              alt="Product Image"
+                              fill
+                              className="object-cover group-hover:opacity-90 transition-opacity"
+                              onError={(e) => {
+                                // Handle image loading errors
+                                console.error('Error loading product image:', { imageUrl: item.images[0].url, image: item.images[0] });
+                                // Hide the parent div on error
+                                const target = e.target as HTMLImageElement;
+                                if (target.parentElement) {
+                                  target.parentElement.style.display = 'none';
+                                }
+                              }}
+                            />
+                          ) : (
+                            <div className="w-full h-full bg-gray-200 flex items-center justify-center">
+                              <span className="text-gray-500 text-xs">No Image</span>
+                            </div>
+                          )}
                           <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-all flex items-center justify-center">
                             <Maximize2 className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
                           </div>
