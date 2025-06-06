@@ -91,6 +91,7 @@ const OrdersPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [searchType, setSearchType] = useState<'all' | 'orderNumber' | 'customerPhone' | 'customerName'>('orderNumber');
   const [selectedOrderStatus, setSelectedOrderStatus] = useState<string>('all');
   const [selectedPaymentStatus, setSelectedPaymentStatus] = useState<string>('all');
   const [startDate, setStartDate] = useState('');
@@ -174,14 +175,14 @@ const OrdersPage = () => {
     if (isAuthenticated) {
       fetchOrders();
     }
-  }, [isAuthenticated, selectedOrderStatus, selectedPaymentStatus, currentPage, sortBy, sortOrder, searchTerm]);
+  }, [isAuthenticated, selectedOrderStatus, selectedPaymentStatus, currentPage, sortBy, sortOrder, searchTerm, searchType]);
 
   // Reset to first page when filters change
   useEffect(() => {
     if (currentPage !== 1) {
       setCurrentPage(1);
     }
-  }, [selectedOrderStatus, selectedPaymentStatus, startDate, endDate, pickupDate, deliveryDate, searchTerm]);
+  }, [selectedOrderStatus, selectedPaymentStatus, startDate, endDate, pickupDate, deliveryDate, searchTerm, searchType]);
 
   // Helper function to parse time slot and get start time for sorting
   const parseTimeSlot = (timeSlot: string): number => {
@@ -380,7 +381,8 @@ const OrdersPage = () => {
         deliveryDate?: string,
         page?: number,
         limit?: number,
-        search?: string
+        search?: string,
+        searchType?: string
       } = {
         page: currentPage,
         limit: ordersPerPage
@@ -429,7 +431,8 @@ const OrdersPage = () => {
       // Add search term if provided
       if (searchTerm && searchTerm.trim()) {
         params.search = searchTerm.trim();
-        console.log('Fetching orders with search term:', searchTerm);
+        params.searchType = searchType; // Add search type parameter
+        console.log('Fetching orders with search term:', searchTerm, 'type:', searchType);
       }
 
       console.log('Final API params:', params);
@@ -1146,23 +1149,45 @@ const OrdersPage = () => {
           <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center mb-6 gap-4">
             <h1 className="text-2xl font-bold text-gray-900">Orders</h1>
 
-            <div className="relative w-full lg:w-[500px]">
-              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
-              <input
-                type="text"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Search by order number, customer name, phone, or email..."
-                className="w-full pl-12 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm shadow-sm transition-all duration-200 bg-white"
-              />
-              {searchTerm && (
-                <button
-                  onClick={() => setSearchTerm('')}
-                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+            <div className="flex flex-col lg:flex-row gap-3 w-full lg:w-auto">
+              {/* Search Type Selector */}
+              <div className="w-full lg:w-[200px]">
+                <select
+                  value={searchType}
+                  onChange={(e) => setSearchType(e.target.value as 'all' | 'orderNumber' | 'customerPhone' | 'customerName')}
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm shadow-sm transition-all duration-200 bg-white"
                 >
-                  <X className="h-4 w-4" />
-                </button>
-              )}
+                  <option value="orderNumber">Order Number</option>
+                  <option value="customerPhone">Customer Phone</option>
+                  <option value="customerName">Customer Name</option>
+                  <option value="all">All Fields</option>
+                </select>
+              </div>
+
+              {/* Search Input */}
+              <div className="relative w-full lg:w-[400px]">
+                <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder={
+                    searchType === 'orderNumber' ? 'Search by order number...' :
+                    searchType === 'customerPhone' ? 'Search by customer phone...' :
+                    searchType === 'customerName' ? 'Search by customer name...' :
+                    'Search by order number, customer name, phone, or email...'
+                  }
+                  className="w-full pl-12 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm shadow-sm transition-all duration-200 bg-white"
+                />
+                {searchTerm && (
+                  <button
+                    onClick={() => setSearchTerm('')}
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
             </div>
           </div>
           
