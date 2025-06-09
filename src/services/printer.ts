@@ -121,8 +121,8 @@ export const generateReceiptLines = (order: DBOrder): { text: string; alignment?
       lines.push({ text: formatLineItem(payment.method, formatCurrency(payment.amount)) });
       if (payment.status) lines.push({ text: `Status: ${payment.status}` });
       if (payment.reference) lines.push({ text: `Reference: ${payment.reference}` });
-      if (payment.metadata?.cashAmount) lines.push({ text: formatLineItem('Cash Amount:', formatCurrency(payment.metadata.cashAmount)) });
-      if (payment.metadata?.changeAmount) lines.push({ text: formatLineItem('Change:', formatCurrency(payment.metadata.changeAmount)) });
+      if (payment.metadata?.cashAmount) lines.push({ text: formatLineItem('Cash Amount:', formatCurrency(typeof payment.metadata.cashAmount === 'string' ? parseFloat(payment.metadata.cashAmount) : payment.metadata.cashAmount)) });
+      if (payment.metadata?.changeAmount) lines.push({ text: formatLineItem('Change:', formatCurrency(typeof payment.metadata.changeAmount === 'string' ? parseFloat(payment.metadata.changeAmount) : payment.metadata.changeAmount)) });
     });
   } else {
     lines.push({ text: `Payment Method: ${order.paymentMethod || 'Not specified'}` });
@@ -391,6 +391,43 @@ export const printContent = async (
     }
   } catch (error) {
     console.error('Error printing:', error);
+    throw error;
+  }
+};
+
+// Print gift receipt directly to printer via proxy
+export const printGiftReceipt = async (order: DBOrder): Promise<void> => {
+  try {
+    const proxyUrl = process.env.NEXT_PUBLIC_PRINTER_PROXY_URL || 'http://localhost:3005';
+    // Use print-only endpoint for gift receipts
+    const endpoint = '/print-only';
+
+    console.log('Printing gift receipt for order:', order.orderNumber);
+
+    // Using fetch API as per requirements for printer operations
+    const response = await fetch(`${proxyUrl}${endpoint}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        // Set isGift flag to true to indicate this is a gift receipt
+        order: {
+          ...order,
+          isGift: true,
+          isGiftReceipt: true // Additional flag to ensure proper formatting
+        },
+        skipConnectivityCheck: true,
+        receiptType: 'gift' // Specify that this is a gift receipt
+      })
+    });
+
+    const data = await response.json();
+    if (!data.success) {
+      throw new Error(data.error || 'Gift receipt print operation failed');
+    }
+  } catch (error) {
+    console.error('Error printing gift receipt:', error);
     throw error;
   }
 };

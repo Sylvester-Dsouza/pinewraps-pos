@@ -4,7 +4,7 @@ import React from 'react';
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Header from '@/components/header/header';
-import { Search, RefreshCcw, Clock, CheckCircle, XCircle, RotateCcw, Truck, Store, Download, Loader2, Gift, Calendar, ChevronDown, X, ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { Search, RefreshCcw, Clock, CheckCircle, XCircle, RotateCcw, Truck, Store, Download, Loader2, Gift, Calendar, ChevronDown, X, ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown, Printer } from 'lucide-react';
 import { format, isAfter, isBefore, startOfDay, endOfDay, parseISO, isValid, parse } from 'date-fns';
 import { DayPicker } from 'react-day-picker';
 import 'react-day-picker/dist/style.css';
@@ -29,11 +29,12 @@ function processImageUrl(url: string): string {
 }
 import { getAuth, onAuthStateChanged } from 'firebase/auth';
 import OrderReceipt from '@/components/receipt/OrderReceipt';
+import GiftReceipt from '@/components/receipt/GiftReceipt';
 import Cookies from 'js-cookie';
 import { nanoid } from 'nanoid';
 import { invoiceService } from '@/services/invoice.service';
-import { Order, OrderItem, OrderPayment, POSPaymentMethod, POSPaymentStatus } from '@/types/order';
-import { getPaymentMethodDisplay, getPaymentMethodString } from '@/utils/payment-utils';
+import { Order, POSPaymentMethod, POSPaymentStatus } from '@/types/order';
+import { getPaymentMethodString } from '@/utils/payment-utils';
 import RemainingPaymentModal from '@/components/pos/RemainingPaymentModal';
 import UpdateOrderDetailsModal from '@/components/pos/UpdateOrderDetailsModal';
 import { useUserRole } from '@/hooks/use-user-role';
@@ -113,9 +114,8 @@ const OrdersPage = () => {
   const deliveryDateFilterRef = useRef<HTMLDivElement>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
-  // Gift receipt is now handled directly via download
+  const [selectedGiftOrder, setSelectedGiftOrder] = useState<Order | null>(null);
   const [downloadingInvoices, setDownloadingInvoices] = useState<Record<string, boolean>>({});
-  const [downloadingGiftInvoices, setDownloadingGiftInvoices] = useState<Record<string, boolean>>({});
   const [showCancelConfirm, setShowCancelConfirm] = useState<string | null>(null);
   const [selectedOrderForPayment, setSelectedOrderForPayment] = useState<Order | null>(null);
   const [selectedOrderForPickupUpdate, setSelectedOrderForPickupUpdate] = useState<Order | null>(null);
@@ -1012,20 +1012,9 @@ const OrdersPage = () => {
     }
   };
 
-  const handleViewGiftReceipt = async (order: Order) => {
-    try {
-      // Set downloading state for gift invoices specifically
-      setDownloadingGiftInvoices(prev => ({ ...prev, [order.id]: true }));
-      
-      // Download the gift invoice
-      await invoiceService.downloadGiftInvoice(order.id);
-      toast.success('Gift receipt downloaded successfully');
-    } catch (error) {
-      console.error('Error downloading gift invoice:', error);
-      toast.error('Failed to download gift receipt. Please try again.');
-    } finally {
-      setDownloadingGiftInvoices(prev => ({ ...prev, [order.id]: false }));
-    }
+  const handlePrintGiftReceipt = (order: Order) => {
+    console.log('Opening gift receipt for printing:', order); // Debug log
+    setSelectedGiftOrder(order);
   };
 
   const calculateRemainingAmount = (order: Order) => {
@@ -2446,16 +2435,11 @@ const OrdersPage = () => {
                       </button>
                       {order.isGift && (
                         <button
-                          onClick={() => handleViewGiftReceipt(order)}
-                          disabled={downloadingGiftInvoices[order.id]}
-                          className="px-3 py-2 text-sm font-medium text-pink-700 bg-pink-100 rounded-md hover:bg-pink-200 flex items-center gap-2 min-w-fit whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+                          onClick={() => handlePrintGiftReceipt(order)}
+                          className="px-3 py-2 text-sm font-medium text-pink-700 bg-pink-100 rounded-md hover:bg-pink-200 flex items-center gap-2 min-w-fit whitespace-nowrap"
                         >
-                          {downloadingGiftInvoices[order.id] ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <Download className="h-4 w-4" />
-                          )}
-                          {downloadingGiftInvoices[order.id] ? 'Downloading...' : 'Gift Receipt'}
+                          <Printer className="h-4 w-4" />
+                          Print Gift Receipt
                         </button>
                       )}
                     {(hasPartialPayment(order) || hasPendingPayment(order)) && !isFullyPaid(order) && !['REFUNDED', 'PARTIALLY_REFUNDED'].includes(order.status) && (
@@ -2607,7 +2591,13 @@ const OrdersPage = () => {
         />
       )}
 
-      {/* Gift Receipt Modal - Removed as we're downloading directly */}
+      {/* Gift Receipt Modal */}
+      {selectedGiftOrder && (
+        <GiftReceipt
+          order={selectedGiftOrder}
+          onClose={() => setSelectedGiftOrder(null)}
+        />
+      )}
 
       {/* Payment Modal */}
       {selectedOrderForPayment && (

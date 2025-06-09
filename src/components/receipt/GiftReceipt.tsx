@@ -1,11 +1,13 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { format } from 'date-fns';
+import { Printer, X } from 'lucide-react';
 import {
   PRINTER_CONFIG,
   centerText,
   formatLineItem,
   formatCurrency,
   printContent,
+  previewContent,
   withErrorHandling
 } from '@/services/printer';
 import { Order, OrderItem } from '@/types/order';
@@ -158,24 +160,73 @@ interface GiftReceiptProps {
 }
 
 const GiftReceipt: React.FC<GiftReceiptProps> = ({ order, onClose }) => {
-  useEffect(() => {
-    if (order) {
-      console.log('Order data for gift receipt:', order);
-      setTimeout(() => {
-        withErrorHandling(
-          async () => {
-            await printContent(
-              generateGiftReceiptContent(order),
-              `Gift Receipt #${order.orderNumber}`,
-              receiptStyles
-            );
-          }
-        );
-      }, 500);
-    }
-  }, [order]);
+  const [isPrinting, setIsPrinting] = useState(false);
 
-  return null; // Component doesn't need to render anything
+  const handlePreview = () => {
+    setIsPrinting(true);
+    withErrorHandling(
+      async () => {
+        await previewContent(
+          generateGiftReceiptContent(order),
+          `Gift Receipt #${order.orderNumber}`,
+          receiptStyles
+        );
+        setIsPrinting(false);
+      }
+    );
+  };
+
+  const handlePrint = () => {
+    setIsPrinting(true);
+    withErrorHandling(
+      async () => {
+        await printContent(
+          generateGiftReceiptContent(order),
+          `Gift Receipt #${order.orderNumber}`,
+          receiptStyles,
+          false, // Don't open cash drawer
+          order // Pass the order object for proper formatting
+        );
+        setIsPrinting(false);
+      }
+    );
+  };
+
+  // Auto-preview on component mount
+  useEffect(() => {
+    handlePreview();
+  }, []);
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+        <div className="flex justify-between items-center p-4 border-b">
+          <h2 className="text-lg font-semibold">Gift Receipt Preview</h2>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="p-4">
+          <div dangerouslySetInnerHTML={{ __html: generateGiftReceiptContent(order) }} />
+        </div>
+
+        <div className="flex justify-end p-4 border-t">
+          <button
+            onClick={handlePrint}
+            disabled={isPrinting}
+            className="px-4 py-2 bg-pink-600 text-white rounded-md hover:bg-pink-700 focus:outline-none focus:ring-2 focus:ring-pink-500 disabled:opacity-50 flex items-center gap-2"
+          >
+            <Printer className="w-4 h-4" />
+            {isPrinting ? 'Printing...' : 'Print Gift Receipt'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 };
 
 export default GiftReceipt;
