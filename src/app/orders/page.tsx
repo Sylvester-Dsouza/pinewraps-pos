@@ -29,7 +29,6 @@ function processImageUrl(url: string): string {
 }
 import { getAuth, onAuthStateChanged } from 'firebase/auth';
 import OrderReceipt from '@/components/receipt/OrderReceipt';
-import GiftReceipt from '@/components/receipt/GiftReceipt';
 import Cookies from 'js-cookie';
 import { nanoid } from 'nanoid';
 import { invoiceService } from '@/services/invoice.service';
@@ -114,7 +113,7 @@ const OrdersPage = () => {
   const deliveryDateFilterRef = useRef<HTMLDivElement>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
-  const [selectedOrderForGiftReceipt, setSelectedOrderForGiftReceipt] = useState<Order | null>(null);
+  // Gift receipt is now handled directly via download
   const [downloadingInvoices, setDownloadingInvoices] = useState<Record<string, boolean>>({});
   const [downloadingGiftInvoices, setDownloadingGiftInvoices] = useState<Record<string, boolean>>({});
   const [showCancelConfirm, setShowCancelConfirm] = useState<string | null>(null);
@@ -1013,8 +1012,20 @@ const OrdersPage = () => {
     }
   };
 
-  const handleViewGiftReceipt = (order: Order) => {
-    setSelectedOrderForGiftReceipt(order);
+  const handleViewGiftReceipt = async (order: Order) => {
+    try {
+      // Set downloading state for gift invoices specifically
+      setDownloadingGiftInvoices(prev => ({ ...prev, [order.id]: true }));
+      
+      // Download the gift invoice
+      await invoiceService.downloadGiftInvoice(order.id);
+      toast.success('Gift receipt downloaded successfully');
+    } catch (error) {
+      console.error('Error downloading gift invoice:', error);
+      toast.error('Failed to download gift receipt. Please try again.');
+    } finally {
+      setDownloadingGiftInvoices(prev => ({ ...prev, [order.id]: false }));
+    }
   };
 
   const calculateRemainingAmount = (order: Order) => {
@@ -2436,10 +2447,15 @@ const OrdersPage = () => {
                       {order.isGift && (
                         <button
                           onClick={() => handleViewGiftReceipt(order)}
-                          className="px-3 py-2 text-sm font-medium text-pink-700 bg-pink-100 rounded-md hover:bg-pink-200 flex items-center gap-2 min-w-fit whitespace-nowrap"
+                          disabled={downloadingGiftInvoices[order.id]}
+                          className="px-3 py-2 text-sm font-medium text-pink-700 bg-pink-100 rounded-md hover:bg-pink-200 flex items-center gap-2 min-w-fit whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                          <Download className="h-4 w-4" />
-                          Gift Receipt
+                          {downloadingGiftInvoices[order.id] ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Download className="h-4 w-4" />
+                          )}
+                          {downloadingGiftInvoices[order.id] ? 'Downloading...' : 'Gift Receipt'}
                         </button>
                       )}
                     {(hasPartialPayment(order) || hasPendingPayment(order)) && !isFullyPaid(order) && !['REFUNDED', 'PARTIALLY_REFUNDED'].includes(order.status) && (
@@ -2591,13 +2607,7 @@ const OrdersPage = () => {
         />
       )}
 
-      {/* Gift Receipt Modal */}
-      {selectedOrderForGiftReceipt && (
-        <GiftReceipt
-          order={selectedOrderForGiftReceipt}
-          onClose={() => setSelectedOrderForGiftReceipt(null)}
-        />
-      )}
+      {/* Gift Receipt Modal - Removed as we're downloading directly */}
 
       {/* Payment Modal */}
       {selectedOrderForPayment && (

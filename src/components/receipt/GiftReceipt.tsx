@@ -112,22 +112,6 @@ export const generateGiftReceiptContent = (order: Order): string => `
             <td>${item.productName}</td>
             <td style="text-align: center;">${item.quantity}</td>
           </tr>
-          ${Array.isArray(item.selectedVariations) ? item.selectedVariations.map(variation => {
-            // Ensure variation has the correct structure
-            const type = typeof variation === 'object' && variation !== null 
-              ? (variation.type || variation.id || '').toString()
-              : '';
-            const value = typeof variation === 'object' && variation !== null 
-              ? (variation.value || variation.id || '').toString()
-              : '';
-            
-            return type && value ? `
-              <tr>
-                <td class="variation">${type}: ${value}${variation.customText ? ` (${variation.customText})` : ''}</td>
-                <td></td>
-              </tr>
-            ` : '';
-          }).join('') : ''}
           ${item.notes ? `
             <tr>
               <td colspan="2" class="notes">Note: ${item.notes}</td>
