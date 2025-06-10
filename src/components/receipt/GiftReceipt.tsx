@@ -179,21 +179,32 @@ const GiftReceipt: React.FC<GiftReceiptProps> = ({ order, onClose }) => {
     setIsPrinting(true);
 
     try {
-      // Create a print window with the exact same content as the preview
-      const printWindow = window.open('', '_blank', 'width=400,height=600');
-      if (!printWindow) {
-        alert('Could not open print window. Please allow popups for this site.');
-        setIsPrinting(false);
-        return;
-      }
+      // Create a hidden iframe for printing
+      const iframe = document.createElement('iframe');
+      iframe.style.position = 'absolute';
+      iframe.style.top = '-1000px';
+      iframe.style.left = '-1000px';
+      iframe.style.width = '1px';
+      iframe.style.height = '1px';
+      iframe.style.border = 'none';
+
+      document.body.appendChild(iframe);
 
       const giftReceiptContent = generateGiftReceiptContent(order);
 
-      printWindow.document.write(`
+      // Write content to iframe
+      const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+      if (!iframeDoc) {
+        throw new Error('Could not access iframe document');
+      }
+
+      iframeDoc.open();
+      iframeDoc.write(`
         <!DOCTYPE html>
         <html>
           <head>
             <title>Gift Receipt #${order.orderNumber}</title>
+            <meta charset="UTF-8">
             <style>
               body {
                 font-family: 'Courier New', monospace;
@@ -226,21 +237,85 @@ const GiftReceipt: React.FC<GiftReceiptProps> = ({ order, onClose }) => {
           </body>
         </html>
       `);
+      iframeDoc.close();
 
-      printWindow.document.close();
-      printWindow.focus();
-
-      // Wait for content to load then print
+      // Wait for content to load, then print
       setTimeout(() => {
-        printWindow.print();
-        setTimeout(() => {
-          printWindow.close();
+        try {
+          iframe.contentWindow?.focus();
+          iframe.contentWindow?.print();
+
+          // Clean up after printing
+          setTimeout(() => {
+            document.body.removeChild(iframe);
+            setIsPrinting(false);
+          }, 1000);
+        } catch (printError) {
+          console.error('Error during iframe print:', printError);
+          document.body.removeChild(iframe);
           setIsPrinting(false);
-        }, 1000);
+
+          // Fallback to window.print on current page
+          handleDirectPrint();
+        }
       }, 500);
+
     } catch (error) {
-      console.error('Error printing gift receipt:', error);
+      console.error('Error with iframe printing:', error);
       setIsPrinting(false);
+
+      // Fallback to direct print
+      handleDirectPrint();
+    }
+  };
+
+  const handleDirectPrint = () => {
+    try {
+      // Create a temporary div with the content
+      const printDiv = document.createElement('div');
+      printDiv.innerHTML = generateGiftReceiptContent(order);
+      printDiv.style.display = 'none';
+
+      // Add styles
+      const styleElement = document.createElement('style');
+      styleElement.textContent = `
+        @media print {
+          body * { visibility: hidden; }
+          .print-content, .print-content * { visibility: visible; }
+          .print-content {
+            position: absolute;
+            left: 0;
+            top: 0;
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            line-height: 1.4;
+          }
+          ${receiptStyles}
+          @page {
+            size: 80mm auto;
+            margin: 0;
+          }
+        }
+      `;
+
+      printDiv.className = 'print-content';
+      document.head.appendChild(styleElement);
+      document.body.appendChild(printDiv);
+
+      // Print
+      window.print();
+
+      // Clean up
+      setTimeout(() => {
+        document.body.removeChild(printDiv);
+        document.head.removeChild(styleElement);
+        setIsPrinting(false);
+      }, 1000);
+
+    } catch (error) {
+      console.error('Error with direct print:', error);
+      setIsPrinting(false);
+      alert('Error printing gift receipt. Please try again.');
     }
   };
 
