@@ -6,6 +6,7 @@ import {
   centerText,
   formatLineItem,
   formatCurrency,
+  printGiftReceipt,
   previewContent,
   withErrorHandling
 } from '@/services/printer';
@@ -177,146 +178,13 @@ const GiftReceipt: React.FC<GiftReceiptProps> = ({ order, onClose }) => {
 
   const handlePrint = () => {
     setIsPrinting(true);
-
-    try {
-      // Create a hidden iframe for printing
-      const iframe = document.createElement('iframe');
-      iframe.style.position = 'absolute';
-      iframe.style.top = '-1000px';
-      iframe.style.left = '-1000px';
-      iframe.style.width = '1px';
-      iframe.style.height = '1px';
-      iframe.style.border = 'none';
-
-      document.body.appendChild(iframe);
-
-      const giftReceiptContent = generateGiftReceiptContent(order);
-
-      // Write content to iframe
-      const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
-      if (!iframeDoc) {
-        throw new Error('Could not access iframe document');
-      }
-
-      iframeDoc.open();
-      iframeDoc.write(`
-        <!DOCTYPE html>
-        <html>
-          <head>
-            <title>Gift Receipt #${order.orderNumber}</title>
-            <meta charset="UTF-8">
-            <style>
-              body {
-                font-family: 'Courier New', monospace;
-                font-size: 12px;
-                line-height: 1.4;
-                margin: 0;
-                padding: 10px;
-                background: white;
-                color: black;
-              }
-              ${receiptStyles}
-              @media print {
-                body {
-                  margin: 0;
-                  padding: 5px;
-                  font-size: 11px;
-                }
-                @page {
-                  size: 80mm auto;
-                  margin: 0;
-                }
-                .receipt {
-                  max-width: 80mm;
-                }
-              }
-            </style>
-          </head>
-          <body>
-            ${giftReceiptContent}
-          </body>
-        </html>
-      `);
-      iframeDoc.close();
-
-      // Wait for content to load, then print
-      setTimeout(() => {
-        try {
-          iframe.contentWindow?.focus();
-          iframe.contentWindow?.print();
-
-          // Clean up after printing
-          setTimeout(() => {
-            document.body.removeChild(iframe);
-            setIsPrinting(false);
-          }, 1000);
-        } catch (printError) {
-          console.error('Error during iframe print:', printError);
-          document.body.removeChild(iframe);
-          setIsPrinting(false);
-
-          // Fallback to window.print on current page
-          handleDirectPrint();
-        }
-      }, 500);
-
-    } catch (error) {
-      console.error('Error with iframe printing:', error);
-      setIsPrinting(false);
-
-      // Fallback to direct print
-      handleDirectPrint();
-    }
-  };
-
-  const handleDirectPrint = () => {
-    try {
-      // Create a temporary div with the content
-      const printDiv = document.createElement('div');
-      printDiv.innerHTML = generateGiftReceiptContent(order);
-      printDiv.style.display = 'none';
-
-      // Add styles
-      const styleElement = document.createElement('style');
-      styleElement.textContent = `
-        @media print {
-          body * { visibility: hidden; }
-          .print-content, .print-content * { visibility: visible; }
-          .print-content {
-            position: absolute;
-            left: 0;
-            top: 0;
-            font-family: 'Courier New', monospace;
-            font-size: 11px;
-            line-height: 1.4;
-          }
-          ${receiptStyles}
-          @page {
-            size: 80mm auto;
-            margin: 0;
-          }
-        }
-      `;
-
-      printDiv.className = 'print-content';
-      document.head.appendChild(styleElement);
-      document.body.appendChild(printDiv);
-
-      // Print
-      window.print();
-
-      // Clean up
-      setTimeout(() => {
-        document.body.removeChild(printDiv);
-        document.head.removeChild(styleElement);
+    withErrorHandling(
+      async () => {
+        // Use the same printing method as order receipt but for gift receipt
+        await printGiftReceipt(order);
         setIsPrinting(false);
-      }, 1000);
-
-    } catch (error) {
-      console.error('Error with direct print:', error);
-      setIsPrinting(false);
-      alert('Error printing gift receipt. Please try again.');
-    }
+      }
+    );
   };
 
   // Auto-preview on component mount
