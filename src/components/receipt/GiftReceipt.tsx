@@ -6,7 +6,7 @@ import {
   centerText,
   formatLineItem,
   formatCurrency,
-  printContent,
+  printGiftReceipt,
   previewContent,
   withErrorHandling
 } from '@/services/printer';
@@ -180,13 +180,7 @@ const GiftReceipt: React.FC<GiftReceiptProps> = ({ order, onClose }) => {
     setIsPrinting(true);
     withErrorHandling(
       async () => {
-        await printContent(
-          generateGiftReceiptContent(order),
-          `Gift Receipt #${order.orderNumber}`,
-          receiptStyles,
-          false, // Don't open cash drawer
-          order // Pass the order object for proper formatting
-        );
+        await printGiftReceipt(order);
         setIsPrinting(false);
       }
     );
