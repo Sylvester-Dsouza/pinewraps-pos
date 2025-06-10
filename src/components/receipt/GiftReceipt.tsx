@@ -6,7 +6,6 @@ import {
   centerText,
   formatLineItem,
   formatCurrency,
-  printGiftReceipt,
   previewContent,
   withErrorHandling
 } from '@/services/printer';
@@ -178,12 +177,71 @@ const GiftReceipt: React.FC<GiftReceiptProps> = ({ order, onClose }) => {
 
   const handlePrint = () => {
     setIsPrinting(true);
-    withErrorHandling(
-      async () => {
-        await printGiftReceipt(order);
+
+    try {
+      // Create a print window with the exact same content as the preview
+      const printWindow = window.open('', '_blank', 'width=400,height=600');
+      if (!printWindow) {
+        alert('Could not open print window. Please allow popups for this site.');
         setIsPrinting(false);
+        return;
       }
-    );
+
+      const giftReceiptContent = generateGiftReceiptContent(order);
+
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>Gift Receipt #${order.orderNumber}</title>
+            <style>
+              body {
+                font-family: 'Courier New', monospace;
+                font-size: 12px;
+                line-height: 1.4;
+                margin: 0;
+                padding: 10px;
+                background: white;
+                color: black;
+              }
+              ${receiptStyles}
+              @media print {
+                body {
+                  margin: 0;
+                  padding: 5px;
+                  font-size: 11px;
+                }
+                @page {
+                  size: 80mm auto;
+                  margin: 0;
+                }
+                .receipt {
+                  max-width: 80mm;
+                }
+              }
+            </style>
+          </head>
+          <body>
+            ${giftReceiptContent}
+          </body>
+        </html>
+      `);
+
+      printWindow.document.close();
+      printWindow.focus();
+
+      // Wait for content to load then print
+      setTimeout(() => {
+        printWindow.print();
+        setTimeout(() => {
+          printWindow.close();
+          setIsPrinting(false);
+        }, 1000);
+      }, 500);
+    } catch (error) {
+      console.error('Error printing gift receipt:', error);
+      setIsPrinting(false);
+    }
   };
 
   // Auto-preview on component mount

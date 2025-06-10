@@ -533,39 +533,14 @@ export const printGiftReceiptContent = async (
   }
 };
 
-// Print gift receipt using the same endpoint as regular receipts
+// Print gift receipt using the print-only endpoint with custom content
 export const printGiftReceipt = async (order: DBOrder): Promise<void> => {
   try {
     const proxyUrl = process.env.NEXT_PUBLIC_PRINTER_PROXY_URL || 'http://localhost:3005';
-    // Use the same print-order endpoint as regular receipts
-    const endpoint = '/print-order';
+    // Use print-only endpoint with custom gift receipt type
+    const endpoint = '/print-only';
 
     console.log('Printing gift receipt for order:', order.orderNumber);
-
-    // Create a modified order object that removes pricing but keeps structure
-    const giftOrder = {
-      ...order,
-      // Add gift flags
-      isGift: true,
-      isGiftReceipt: true,
-      // Keep items but remove pricing
-      items: order.items.map(item => ({
-        ...item,
-        unitPrice: 0,
-        totalPrice: 0,
-        price: 0
-      })),
-      // Zero out all monetary values
-      totalAmount: 0,
-      subtotal: 0,
-      paidAmount: 0,
-      changeAmount: 0,
-      deliveryCharge: 0,
-      couponDiscount: 0,
-      // Clear payment information
-      payments: [],
-      paymentMethod: 'GIFT'
-    };
 
     // Using fetch API as per requirements for printer operations
     const response = await fetch(`${proxyUrl}${endpoint}`, {
@@ -574,7 +549,12 @@ export const printGiftReceipt = async (order: DBOrder): Promise<void> => {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        order: giftOrder,
+        type: 'gift_receipt',
+        data: {
+          order: order,
+          orderId: order.id,
+          orderNumber: order.orderNumber
+        },
         skipConnectivityCheck: true
       })
     });
