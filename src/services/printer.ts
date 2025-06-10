@@ -495,17 +495,18 @@ export const generateGiftReceiptLines = (order: DBOrder): { text: string; alignm
   return lines;
 };
 
-// Print gift receipt directly to printer via proxy
-export const printGiftReceipt = async (order: DBOrder): Promise<void> => {
+// Print gift receipt using HTML content (same as preview)
+export const printGiftReceiptContent = async (
+  content: string,
+  title: string,
+  additionalStyles: string = ''
+): Promise<void> => {
   try {
     const proxyUrl = process.env.NEXT_PUBLIC_PRINTER_PROXY_URL || 'http://localhost:3005';
-    // Use print-lines endpoint to send custom gift receipt lines
-    const endpoint = '/print-lines';
+    // Use print-html endpoint to send HTML content directly
+    const endpoint = '/print-html';
 
-    console.log('Printing gift receipt for order:', order.orderNumber);
-
-    // Generate custom gift receipt lines
-    const giftReceiptLines = generateGiftReceiptLines(order);
+    console.log('Printing gift receipt HTML content');
 
     // Using fetch API as per requirements for printer operations
     const response = await fetch(`${proxyUrl}${endpoint}`, {
@@ -514,8 +515,60 @@ export const printGiftReceipt = async (order: DBOrder): Promise<void> => {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        lines: giftReceiptLines,
-        skipConnectivityCheck: true
+        html: content,
+        title: title,
+        styles: additionalStyles,
+        skipConnectivityCheck: true,
+        receiptType: 'gift'
+      })
+    });
+
+    const data = await response.json();
+    if (!data.success) {
+      throw new Error(data.error || 'Gift receipt print operation failed');
+    }
+  } catch (error) {
+    console.error('Error printing gift receipt HTML:', error);
+    throw error;
+  }
+};
+
+// Print gift receipt directly to printer via proxy using custom lines
+export const printGiftReceipt = async (order: DBOrder): Promise<void> => {
+  try {
+    const proxyUrl = process.env.NEXT_PUBLIC_PRINTER_PROXY_URL || 'http://localhost:3005';
+    // Use print-only endpoint with custom content
+    const endpoint = '/print-only';
+
+    console.log('Printing gift receipt for order:', order.orderNumber);
+
+    // Generate gift receipt lines
+    const giftReceiptLines = generateGiftReceiptLines(order);
+
+    // Convert lines to simple text format that the printer proxy can handle
+    const receiptText = giftReceiptLines.map(line => {
+      let text = line.text;
+      if (line.alignment === 'center') {
+        const padding = Math.max(0, Math.floor((PRINTER_CONFIG.characterWidth - text.length) / 2));
+        text = ' '.repeat(padding) + text;
+      } else if (line.alignment === 'right') {
+        const padding = Math.max(0, PRINTER_CONFIG.characterWidth - text.length);
+        text = ' '.repeat(padding) + text;
+      }
+      return text;
+    }).join('\n');
+
+    // Using fetch API as per requirements for printer operations
+    const response = await fetch(`${proxyUrl}${endpoint}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        // Send raw text content instead of order object
+        content: receiptText,
+        skipConnectivityCheck: true,
+        receiptType: 'gift'
       })
     });
 
