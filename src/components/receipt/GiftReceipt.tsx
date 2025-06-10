@@ -69,17 +69,19 @@ export const generateGiftReceiptContent = (order: Order): string => `
       <p style="margin: 2px 0;">${formatLineItem('Order #:', order.orderNumber)}</p>
       <p style="margin: 2px 0;">${formatLineItem('Date:', format(new Date(order.createdAt), 'dd/MM/yyyy HH:mm'))}</p>
       <p style="margin: 2px 0;">${formatLineItem('Status:', order.status)}</p>
-      
+
       <div class="divider"></div>
-      
-      <div style="margin: 10px 0;">
-        <p style="margin: 2px 0; font-weight: bold;">Gift Recipient:</p>
-        ${order.giftRecipientName ? `<p style="margin: 2px 0;">${formatLineItem('Name:', order.giftRecipientName)}</p>` : ''}
-        ${order.giftRecipientPhone ? `<p style="margin: 2px 0;">${formatLineItem('Phone:', order.giftRecipientPhone)}</p>` : ''}
-        ${order.giftMessage ? `<p style="margin: 2px 0;">${formatLineItem('Message:', order.giftMessage)}</p>` : ''}
-      </div>
-      
-      <div class="divider"></div>
+
+      ${(order.giftRecipientName || order.giftRecipientPhone || order.giftMessage) ? `
+        <div style="margin: 10px 0;">
+          <p style="margin: 2px 0; font-weight: bold;">Gift Recipient:</p>
+          ${order.giftRecipientName ? `<p style="margin: 2px 0;">${formatLineItem('Name:', order.giftRecipientName)}</p>` : ''}
+          ${order.giftRecipientPhone ? `<p style="margin: 2px 0;">${formatLineItem('Phone:', order.giftRecipientPhone)}</p>` : ''}
+          ${order.giftMessage ? `<p style="margin: 2px 0;">${formatLineItem('Message:', order.giftMessage)}</p>` : ''}
+        </div>
+
+        <div class="divider"></div>
+      ` : ''}
       
       <div style="margin: 10px 0;">
         <p style="margin: 2px 0; font-weight: bold;">${order.deliveryMethod === 'DELIVERY' ? 'Delivery Details' : 'Pickup Details'}</p>
@@ -124,17 +126,6 @@ export const generateGiftReceiptContent = (order: Order): string => `
     </table>
     
     <div class="divider"></div>
-    
-    ${order.isGift ? `
-      <div style="margin: 10px 0;">
-        <p style="margin: 2px 0; font-weight: bold;">Gift Information:</p>
-        ${order.giftRecipientName ? `<p style="margin: 2px 0;">${formatLineItem('Recipient:', order.giftRecipientName)}</p>` : ''}
-        ${order.giftRecipientPhone ? `<p style="margin: 2px 0;">${formatLineItem('Recipient Phone:', order.giftRecipientPhone)}</p>` : ''}
-        ${order.giftMessage ? `<p style="margin: 2px 0;">${formatLineItem('Message:', order.giftMessage)}</p>` : ''}
-      </div>
-      
-      <div class="divider"></div>
-    ` : ''}
     
     ${order.notes || order.kitchenNotes || order.designNotes ? `
       <div style="margin: 10px 0;" class="notes">
