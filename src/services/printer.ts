@@ -533,30 +533,39 @@ export const printGiftReceiptContent = async (
   }
 };
 
-// Print gift receipt directly to printer via proxy using custom lines
+// Print gift receipt using the same endpoint as regular receipts
 export const printGiftReceipt = async (order: DBOrder): Promise<void> => {
   try {
     const proxyUrl = process.env.NEXT_PUBLIC_PRINTER_PROXY_URL || 'http://localhost:3005';
-    // Use print-only endpoint with custom content
-    const endpoint = '/print-only';
+    // Use the same print-order endpoint as regular receipts
+    const endpoint = '/print-order';
 
     console.log('Printing gift receipt for order:', order.orderNumber);
 
-    // Generate gift receipt lines
-    const giftReceiptLines = generateGiftReceiptLines(order);
-
-    // Convert lines to simple text format that the printer proxy can handle
-    const receiptText = giftReceiptLines.map(line => {
-      let text = line.text;
-      if (line.alignment === 'center') {
-        const padding = Math.max(0, Math.floor((PRINTER_CONFIG.characterWidth - text.length) / 2));
-        text = ' '.repeat(padding) + text;
-      } else if (line.alignment === 'right') {
-        const padding = Math.max(0, PRINTER_CONFIG.characterWidth - text.length);
-        text = ' '.repeat(padding) + text;
-      }
-      return text;
-    }).join('\n');
+    // Create a modified order object that removes pricing but keeps structure
+    const giftOrder = {
+      ...order,
+      // Add gift flags
+      isGift: true,
+      isGiftReceipt: true,
+      // Keep items but remove pricing
+      items: order.items.map(item => ({
+        ...item,
+        unitPrice: 0,
+        totalPrice: 0,
+        price: 0
+      })),
+      // Zero out all monetary values
+      totalAmount: 0,
+      subtotal: 0,
+      paidAmount: 0,
+      changeAmount: 0,
+      deliveryCharge: 0,
+      couponDiscount: 0,
+      // Clear payment information
+      payments: [],
+      paymentMethod: 'GIFT'
+    };
 
     // Using fetch API as per requirements for printer operations
     const response = await fetch(`${proxyUrl}${endpoint}`, {
@@ -565,10 +574,8 @@ export const printGiftReceipt = async (order: DBOrder): Promise<void> => {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        // Send raw text content instead of order object
-        content: receiptText,
-        skipConnectivityCheck: true,
-        receiptType: 'gift'
+        order: giftOrder,
+        skipConnectivityCheck: true
       })
     });
 
