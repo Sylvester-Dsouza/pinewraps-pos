@@ -395,14 +395,117 @@ export const printContent = async (
   }
 };
 
+// Generate gift receipt lines (similar to generateReceiptLines but for gifts)
+export const generateGiftReceiptLines = (order: DBOrder): { text: string; alignment?: 'left' | 'center' | 'right'; bold?: boolean; size?: 'normal' | 'double' }[] => {
+  const lines: { text: string; alignment?: 'left' | 'center' | 'right'; bold?: boolean; size?: 'normal' | 'double' }[] = [];
+
+  // Header - GIFT RECEIPT instead of Tax Invoice
+  lines.push({ text: 'PINEWRAPS', alignment: 'center', bold: true, size: 'double' });
+  lines.push({ text: 'Gift Receipt', alignment: 'center' }); // ✅ GIFT RECEIPT instead of Tax Invoice
+  lines.push({ text: 'Dubai, UAE', alignment: 'center' });
+  lines.push({ text: 'Phone: +971 544044864', alignment: 'center' });
+  lines.push({ text: 'TRN: 100461426700003', alignment: 'center' });
+  lines.push({ text: '-'.repeat(PRINTER_CONFIG.characterWidth), alignment: 'center' });
+
+  // Order details
+  lines.push({ text: `Order #: ${order.orderNumber}`, alignment: 'left' });
+  lines.push({ text: `Date: ${new Date(order.createdAt).toLocaleDateString('en-GB')} ${new Date(order.createdAt).toLocaleTimeString('en-GB', { hour12: false })}`, alignment: 'left' });
+  lines.push({ text: `Status: ${order.status}`, alignment: 'left' });
+  lines.push({ text: '-'.repeat(PRINTER_CONFIG.characterWidth), alignment: 'center' });
+
+  // Gift recipient info
+  if (order.giftRecipientName || order.giftRecipientPhone || order.giftMessage) {
+    lines.push({ text: 'Gift Recipient:', alignment: 'left', bold: true });
+    if (order.giftRecipientName) {
+      lines.push({ text: `Name: ${order.giftRecipientName}`, alignment: 'left' });
+    }
+    if (order.giftRecipientPhone) {
+      lines.push({ text: `Phone: ${order.giftRecipientPhone}`, alignment: 'left' });
+    }
+    if (order.giftMessage) {
+      lines.push({ text: `Message: ${order.giftMessage}`, alignment: 'left' });
+    }
+    lines.push({ text: '-'.repeat(PRINTER_CONFIG.characterWidth), alignment: 'center' });
+  }
+
+  // Delivery/Pickup details
+  lines.push({ text: order.deliveryMethod === 'DELIVERY' ? 'Delivery Details:' : 'Pickup Details:', alignment: 'left', bold: true });
+  if (order.deliveryMethod === 'DELIVERY') {
+    if (order.deliveryDate) {
+      lines.push({ text: `Date: ${new Date(order.deliveryDate).toLocaleDateString('en-GB')}`, alignment: 'left' });
+    }
+    if (order.deliveryTimeSlot) {
+      lines.push({ text: `Time: ${order.deliveryTimeSlot}`, alignment: 'left' });
+    }
+    if (order.streetAddress) {
+      lines.push({ text: `Address: ${order.streetAddress}`, alignment: 'left' });
+    }
+    if (order.apartment) {
+      lines.push({ text: `Apartment: ${order.apartment}`, alignment: 'left' });
+    }
+    if (order.city) {
+      lines.push({ text: `City: ${order.city}`, alignment: 'left' });
+    }
+    if (order.emirate) {
+      lines.push({ text: `Emirate: ${order.emirate}`, alignment: 'left' });
+    }
+  } else {
+    if (order.pickupDate) {
+      lines.push({ text: `Date: ${new Date(order.pickupDate).toLocaleDateString('en-GB')}`, alignment: 'left' });
+    }
+    if (order.pickupTimeSlot) {
+      lines.push({ text: `Time: ${order.pickupTimeSlot}`, alignment: 'left' });
+    }
+    if (order.storeLocation) {
+      lines.push({ text: `Store: ${order.storeLocation}`, alignment: 'left' });
+    }
+  }
+  lines.push({ text: '-'.repeat(PRINTER_CONFIG.characterWidth), alignment: 'center' });
+
+  // Items (NO PRICES - only names and quantities)
+  lines.push({ text: 'Items:', alignment: 'left', bold: true });
+  order.items.forEach(item => {
+    lines.push({ text: `${item.productName} x${item.quantity}`, alignment: 'left' });
+    if (item.notes) {
+      lines.push({ text: `  Note: ${item.notes}`, alignment: 'left' });
+    }
+  });
+  lines.push({ text: '-'.repeat(PRINTER_CONFIG.characterWidth), alignment: 'center' });
+
+  // Order notes
+  if (order.notes || order.kitchenNotes || order.designNotes) {
+    lines.push({ text: 'Notes:', alignment: 'left', bold: true });
+    if (order.notes) {
+      lines.push({ text: `Order: ${order.notes}`, alignment: 'left' });
+    }
+    if (order.kitchenNotes) {
+      lines.push({ text: `Kitchen: ${order.kitchenNotes}`, alignment: 'left' });
+    }
+    if (order.designNotes) {
+      lines.push({ text: `Design: ${order.designNotes}`, alignment: 'left' });
+    }
+    lines.push({ text: '-'.repeat(PRINTER_CONFIG.characterWidth), alignment: 'center' });
+  }
+
+  // Footer
+  lines.push({ text: 'Thank you for choosing Pinewraps!', alignment: 'center' });
+  lines.push({ text: 'Visit us again soon', alignment: 'center' });
+  lines.push({ text: 'www.pinewraps.com', alignment: 'center' });
+
+  return lines;
+};
+
 // Print gift receipt directly to printer via proxy
 export const printGiftReceipt = async (order: DBOrder): Promise<void> => {
   try {
     const proxyUrl = process.env.NEXT_PUBLIC_PRINTER_PROXY_URL || 'http://localhost:3005';
-    // Use print-only endpoint for gift receipts
-    const endpoint = '/print-only';
+    // Use print-lines endpoint to send custom gift receipt lines
+    const endpoint = '/print-lines';
 
     console.log('Printing gift receipt for order:', order.orderNumber);
+
+    // Generate custom gift receipt lines
+    const giftReceiptLines = generateGiftReceiptLines(order);
 
     // Using fetch API as per requirements for printer operations
     const response = await fetch(`${proxyUrl}${endpoint}`, {
@@ -411,14 +514,8 @@ export const printGiftReceipt = async (order: DBOrder): Promise<void> => {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        // Set isGift flag to true to indicate this is a gift receipt
-        order: {
-          ...order,
-          isGift: true,
-          isGiftReceipt: true // Additional flag to ensure proper formatting
-        },
-        skipConnectivityCheck: true,
-        receiptType: 'gift' // Specify that this is a gift receipt
+        lines: giftReceiptLines,
+        skipConnectivityCheck: true
       })
     });
 
