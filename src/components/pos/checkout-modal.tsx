@@ -803,7 +803,7 @@ export default function CheckoutModal({
     return paymentsState.reduce((total, payment) => total + payment.amount, 0);
   }, [paymentsState]);
 
-  // Calculate final total including discounts and delivery with proper rounding
+  // Calculate final total including discounts, delivery, and gift amount with proper rounding
   const calculateFinalTotal = useCallback(() => {
     // Start with cart total without rounding yet
     let total = cartTotal;
@@ -818,11 +818,19 @@ export default function CheckoutModal({
       total = total + (deliveryDetailsState.charge || 0);
     }
 
+    // Add gift amount if applicable
+    if (giftDetailsState?.isGift && giftDetailsState?.includeCash && giftDetailsState?.cashAmount) {
+      const giftAmount = parseFloat(giftDetailsState.cashAmount);
+      if (!isNaN(giftAmount) && giftAmount > 0) {
+        total = total + giftAmount;
+      }
+    }
+
     // Round only at the end to minimize floating point errors
     total = Number(total.toFixed(2));
 
     return Math.max(0, total); // Ensure total is not negative
-  }, [cartTotal, appliedCoupon, deliveryMethodState, deliveryDetailsState]);
+  }, [cartTotal, appliedCoupon, deliveryMethodState, deliveryDetailsState, giftDetailsState]);
 
   const calculateRemainingAmount = useCallback(() => {
     const totalPaid = calculateTotalPaid();
@@ -3100,6 +3108,14 @@ export default function CheckoutModal({
                                     step="5"
                                   />
                                 </div>
+                              </div>
+                            )}
+
+                            {/* Show gift amount if it's a gift with cash */}
+                            {giftDetailsState?.isGift && giftDetailsState?.includeCash && giftDetailsState?.cashAmount && (
+                              <div className="flex justify-between items-center font-medium">
+                                <p className="text-xl">Gift Cash</p>
+                                <p className="text-xl">AED {parseFloat(giftDetailsState.cashAmount).toFixed(2)}</p>
                               </div>
                             )}
 
