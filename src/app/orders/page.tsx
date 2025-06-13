@@ -76,7 +76,9 @@ const orderStatusLabels = {
 const paymentStatusLabels = {
   FULLY_PAID: 'Fully Paid',
   PARTIALLY_PAID: 'Partially Paid',
-  PENDING: 'Pending'
+  PENDING: 'Pending',
+  REFUNDED: 'Refunded',
+  PARTIALLY_REFUNDED: 'Partially Refunded'
 } as const;
 
 const deliveryMethodColors = {
@@ -1327,6 +1329,10 @@ const OrdersPage = () => {
                             return hasPartialPayment(order);
                           } else if (value === 'PENDING') {
                             return hasPendingPayment(order);
+                          } else if (value === 'REFUNDED') {
+                            return order.payments?.some(p => p.status === POSPaymentStatus.REFUNDED);
+                          } else if (value === 'PARTIALLY_REFUNDED') {
+                            return order.payments?.some(p => p.status === POSPaymentStatus.PARTIALLY_REFUNDED);
                           }
                           return false;
                         }).length})
@@ -2218,16 +2224,30 @@ const OrdersPage = () => {
                               Status: Partially Paid
                             </div>
                           )}
+                          {order.payments?.some(p => p.status === POSPaymentStatus.REFUNDED) && (
+                            <div className="text-sm font-medium text-red-600 mb-2">
+                              Status: Payment Refunded
+                            </div>
+                          )}
+                          {order.payments?.some(p => p.status === POSPaymentStatus.PARTIALLY_REFUNDED) && (
+                            <div className="text-sm font-medium text-red-600 mb-2">
+                              Status: Payment Partially Refunded
+                            </div>
+                          )}
                           
                           {order.payments.map((payment, idx) => (
                             <div key={idx} className="flex justify-between text-sm">
                               <span className="flex-1">
                                 <span className="font-medium">
-                                  {payment.status === POSPaymentStatus.PARTIALLY_PAID 
-                                    ? 'Partial Payment' 
+                                  {payment.status === POSPaymentStatus.PARTIALLY_PAID
+                                    ? 'Partial Payment'
                                     : payment.status === POSPaymentStatus.PENDING
-                                      ? `${getPaymentMethodString(payment.method)} (Pending)` 
-                                      : getPaymentMethodString(payment.method)}
+                                      ? `${getPaymentMethodString(payment.method)} (Pending)`
+                                      : payment.status === POSPaymentStatus.REFUNDED
+                                        ? `${getPaymentMethodString(payment.method)} (Refunded)`
+                                        : payment.status === POSPaymentStatus.PARTIALLY_REFUNDED
+                                          ? `${getPaymentMethodString(payment.method)} (Partially Refunded)`
+                                          : getPaymentMethodString(payment.method)}
                                 </span>
                                 
                                 {/* Show payment reference if available */}
@@ -2277,6 +2297,22 @@ const OrdersPage = () => {
                                     {payment.reference && (
                                       <div>Reference: {payment.reference}</div>
                                     )}
+                                  </div>
+                                )}
+
+                                {/* For Refunded payments, show refund status */}
+                                {payment.status === POSPaymentStatus.REFUNDED && (
+                                  <div className="text-red-600 mt-1 ml-2">
+                                    <div>Status: Payment Refunded</div>
+                                    <div>Refunded Amount: AED {payment.amount.toFixed(2)}</div>
+                                  </div>
+                                )}
+
+                                {/* For Partially Refunded payments, show partial refund status */}
+                                {payment.status === POSPaymentStatus.PARTIALLY_REFUNDED && (
+                                  <div className="text-red-600 mt-1 ml-2">
+                                    <div>Status: Partially Refunded</div>
+                                    <div>Original Amount: AED {payment.amount.toFixed(2)}</div>
                                   </div>
                                 )}
                               </span>

@@ -42,7 +42,9 @@ export enum POSPaymentMethod {
 export enum POSPaymentStatus {
   FULLY_PAID = 'FULLY_PAID',
   PARTIALLY_PAID = 'PARTIALLY_PAID',
-  PENDING = 'PENDING'
+  PENDING = 'PENDING',
+  REFUNDED = 'REFUNDED',
+  PARTIALLY_REFUNDED = 'PARTIALLY_REFUNDED'
 }
 
 export enum POSOrderStatus {

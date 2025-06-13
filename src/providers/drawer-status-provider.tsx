@@ -27,11 +27,16 @@ export function DrawerStatusProvider({ children }: { children: React.ReactNode }
       setLoading(true);
       const response = await drawerService.getCurrentSession();
       console.log('Drawer session response:', response);
-      
-      // Check if there's an open session
-      const isOpen = response?.data?.status === 'OPEN';
+
+      // The backend returns the session object directly, and axios wraps it in response.data
+      // So the session is at response.data, and the status is at response.data.status
+      const session = response.data;
+      const isOpen = session?.status === 'OPEN';
+
+      console.log('Session object:', session);
+      console.log('Session status:', session?.status);
       console.log('Is drawer open:', isOpen);
-      
+
       setIsDrawerOpen(isOpen);
       return isOpen;
     } catch (error) {

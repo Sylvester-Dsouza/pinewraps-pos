@@ -1382,12 +1382,20 @@ export default function CheckoutModal({
 
                   // Record cash transaction in the till
                   try {
-                    // Calculate total cash amount from all payments
+                    // Calculate total cash amount from all payments using consistent logic with backend
                     const totalCashAmount = paymentData.reduce((total, payment) => {
                       if (payment.method === POSPaymentMethod.CASH) {
                         return total + parseFloat(payment.amount.toString());
-                      } else if (payment.isSplitPayment && payment.cashPortion) {
-                        return total + parseFloat(payment.cashPortion.toString());
+                      } else if (payment.isSplitPayment) {
+                        // Use splitFirstAmount/splitSecondAmount to match backend calculation
+                        let cashFromSplit = 0;
+                        if (payment.splitFirstMethod === POSPaymentMethod.CASH && payment.splitFirstAmount) {
+                          cashFromSplit += parseFloat(payment.splitFirstAmount.toString());
+                        }
+                        if (payment.splitSecondMethod === POSPaymentMethod.CASH && payment.splitSecondAmount) {
+                          cashFromSplit += parseFloat(payment.splitSecondAmount.toString());
+                        }
+                        return total + cashFromSplit;
                       }
                       return total;
                     }, 0);
