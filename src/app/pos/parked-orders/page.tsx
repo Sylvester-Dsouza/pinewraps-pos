@@ -61,6 +61,13 @@ export default function ParkedOrdersPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Filter states
+  const [searchType, setSearchType] = useState<'all' | 'orderNumber' | 'customerPhone' | 'customerName'>('orderNumber');
+  const [deliveryMethodFilter, setDeliveryMethodFilter] = useState<'all' | 'PICKUP' | 'DELIVERY'>('all');
+  const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'yesterday' | 'thisWeek' | 'lastWeek' | 'thisMonth' | 'custom'>('all');
+  const [customDateRange, setCustomDateRange] = useState<{ start: string; end: string }>({ start: '', end: '' });
+  const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'pickupTime' | 'deliveryTime'>('newest');
+
   // Fetch parked orders
   const { data: parkedOrdersData, refetch: refetchParkedOrders, isLoading: isFetching } = useQuery({
     queryKey: ['parkedOrders'],
@@ -91,34 +98,144 @@ export default function ParkedOrdersPage() {
     }
   }, [parkedOrdersData]);
 
-  // Filter orders based on search query
+  // Helper function to check if date is within range
+  const isDateInRange = (orderDate: string, filter: string, customRange?: { start: string; end: string }) => {
+    const date = new Date(orderDate);
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    switch (filter) {
+      case 'today':
+        return date.toDateString() === today.toDateString();
+      case 'yesterday':
+        return date.toDateString() === yesterday.toDateString();
+      case 'thisWeek':
+        const weekStart = new Date(today);
+        weekStart.setDate(today.getDate() - today.getDay());
+        return date >= weekStart;
+      case 'lastWeek':
+        const lastWeekStart = new Date(today);
+        lastWeekStart.setDate(today.getDate() - today.getDay() - 7);
+        const lastWeekEnd = new Date(lastWeekStart);
+        lastWeekEnd.setDate(lastWeekStart.getDate() + 6);
+        return date >= lastWeekStart && date <= lastWeekEnd;
+      case 'thisMonth':
+        return date.getMonth() === today.getMonth() && date.getFullYear() === today.getFullYear();
+      case 'custom':
+        if (!customRange?.start || !customRange?.end) return true;
+        const startDate = new Date(customRange.start);
+        const endDate = new Date(customRange.end);
+        endDate.setHours(23, 59, 59, 999); // Include the entire end date
+        return date >= startDate && date <= endDate;
+      default:
+        return true;
+    }
+  };
+
+  // Filter and sort orders
   const filteredOrders = useMemo(() => {
-    if (!searchQuery.trim()) return parkedOrders;
+    let filtered = [...parkedOrders];
 
-    const query = searchQuery.toLowerCase().trim();
-    return parkedOrders.filter(order => {
-      // Search in customer details
-      const customerMatch = 
-        (order.customerName?.toLowerCase().includes(query) ?? false) ||
-        (order.customerPhone?.toLowerCase().includes(query) ?? false) ||
-        (order.customerEmail?.toLowerCase().includes(query) ?? false);
+    // Apply search filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim();
+      filtered = filtered.filter(order => {
+        switch (searchType) {
+          case 'orderNumber':
+            return order.id.toLowerCase().includes(query);
+          case 'customerPhone':
+            // Remove spaces from both the search query and phone number for better matching
+            const cleanQuery = query.replace(/\s/g, '');
+            const cleanPhone = (order.customerPhone || '').replace(/\s/g, '');
+            return cleanPhone.toLowerCase().includes(cleanQuery);
+          case 'customerName':
+            return (order.customerName || '').toLowerCase().includes(query);
+          case 'all':
+          default:
+            const customerMatch =
+              (order.customerName?.toLowerCase().includes(query) ?? false) ||
+              (order.customerPhone?.replace(/\s/g, '').toLowerCase().includes(query.replace(/\s/g, '')) ?? false) ||
+              (order.customerEmail?.toLowerCase().includes(query) ?? false);
+            const idMatch = order.id.toLowerCase().includes(query);
+            const itemsMatch = order.items?.some((item: any) =>
+              item.productName?.toLowerCase().includes(query)
+            ) ?? false;
+            return customerMatch || idMatch || itemsMatch;
+        }
+      });
+    }
 
-      // Search in order ID
-      const idMatch = order.id.toLowerCase().includes(query);
+    // Apply delivery method filter
+    if (deliveryMethodFilter !== 'all') {
+      filtered = filtered.filter(order => order.deliveryMethod === deliveryMethodFilter);
+    }
 
-      // Search in order items
-      const itemsMatch = order.items?.some((item: any) => 
-        item.productName?.toLowerCase().includes(query)
-      ) ?? false;
+    // Apply date filter
+    if (dateFilter !== 'all') {
+      filtered = filtered.filter(order =>
+        isDateInRange(order.createdAt, dateFilter, customDateRange)
+      );
+    }
 
-      return customerMatch || idMatch || itemsMatch;
+    // Apply sorting
+    filtered.sort((a, b) => {
+      switch (sortBy) {
+        case 'oldest':
+          return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+        case 'newest':
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        case 'pickupTime':
+          // Filter to pickup orders only and sort by pickup time
+          if (a.deliveryMethod === 'PICKUP' && b.deliveryMethod === 'PICKUP') {
+            const aTime = a.pickupDate ? new Date(a.pickupDate).getTime() : 0;
+            const bTime = b.pickupDate ? new Date(b.pickupDate).getTime() : 0;
+            return aTime - bTime;
+          }
+          return a.deliveryMethod === 'PICKUP' ? -1 : 1;
+        case 'deliveryTime':
+          // Filter to delivery orders only and sort by delivery time
+          if (a.deliveryMethod === 'DELIVERY' && b.deliveryMethod === 'DELIVERY') {
+            const aTime = a.deliveryDate ? new Date(a.deliveryDate).getTime() : 0;
+            const bTime = b.deliveryDate ? new Date(b.deliveryDate).getTime() : 0;
+            return aTime - bTime;
+          }
+          return a.deliveryMethod === 'DELIVERY' ? -1 : 1;
+        default:
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      }
     });
-  }, [parkedOrders, searchQuery]);
+
+    return filtered;
+  }, [parkedOrders, searchQuery, searchType, deliveryMethodFilter, dateFilter, customDateRange, sortBy]);
 
   // Debounced search handler
   const handleSearch = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     setSearchQuery(event.target.value);
   }, []);
+
+  // Reset all filters to default state
+  const handleResetFilters = useCallback(() => {
+    setSearchQuery('');
+    setSearchType('orderNumber');
+    setDeliveryMethodFilter('all');
+    setDateFilter('all');
+    setCustomDateRange({ start: '', end: '' });
+    setSortBy('newest');
+  }, []);
+
+  // Check if any filters are active (not in default state)
+  const hasActiveFilters = useMemo(() => {
+    return (
+      searchQuery.trim() !== '' ||
+      searchType !== 'orderNumber' ||
+      deliveryMethodFilter !== 'all' ||
+      dateFilter !== 'all' ||
+      customDateRange.start !== '' ||
+      customDateRange.end !== '' ||
+      sortBy !== 'newest'
+    );
+  }, [searchQuery, searchType, deliveryMethodFilter, dateFilter, customDateRange, sortBy]);
 
   // Debug function to log the structure of a parked order
   const debugParkedOrder = (order: any) => {
@@ -378,9 +495,11 @@ export default function ParkedOrdersPage() {
       // Store cart items and checkout details in localStorage for the POS page to access
       localStorage.setItem('pos-cart', JSON.stringify(cartItems));
       localStorage.setItem('pos-checkout-details', JSON.stringify(checkoutDetails));
-      
+
       // Set a flag in localStorage to indicate we're loading a parked order
       localStorage.setItem('pos-loading-parked-order', 'true');
+      // Store the parked order ID so we can delete it after successful checkout
+      localStorage.setItem('pos-loaded-parked-order-id', order.id);
       
       // Navigate to POS page with minimal parameters
       // This prevents URL parameters from affecting subsequent orders
@@ -467,20 +586,149 @@ export default function ParkedOrdersPage() {
       <Header title="Parked Orders" />
       
       <main className="container mx-auto px-4 py-8">
-        {/* Search Bar */}
-        <div className="mb-6">
-          <div className="relative">
-            <input
-              type="text"
-              placeholder="Search by customer name, phone, email, or order ID..."
-              value={searchQuery}
-              onChange={handleSearch}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-            <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-              <Search className="h-5 w-5 text-gray-400" />
+        {/* Filters Section */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+          {/* Search Bar */}
+          <div className="mb-4">
+            <div className="flex flex-col sm:flex-row gap-4">
+              <div className="flex-1">
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder={
+                      searchType === 'orderNumber' ? 'Search by order number...' :
+                      searchType === 'customerPhone' ? 'Search by customer phone...' :
+                      searchType === 'customerName' ? 'Search by customer name...' :
+                      'Search by customer name, phone, email, or order ID...'
+                    }
+                    value={searchQuery}
+                    onChange={handleSearch}
+                    className="w-full px-4 py-2 pl-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                  <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                    <Search className="h-5 w-5 text-gray-400" />
+                  </div>
+                </div>
+              </div>
+              <div className="sm:w-48">
+                <select
+                  value={searchType}
+                  onChange={(e) => setSearchType(e.target.value as any)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="orderNumber">Order Number</option>
+                  <option value="customerPhone">Customer Phone</option>
+                  <option value="customerName">Customer Name</option>
+                  <option value="all">All Fields</option>
+                </select>
+              </div>
             </div>
           </div>
+
+          {/* Filter Controls */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Delivery Method Filter */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Delivery Method</label>
+              <select
+                value={deliveryMethodFilter}
+                onChange={(e) => setDeliveryMethodFilter(e.target.value as any)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="all">All Methods</option>
+                <option value="PICKUP">Pickup</option>
+                <option value="DELIVERY">Delivery</option>
+              </select>
+            </div>
+
+            {/* Date Filter */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Date Range</label>
+              <select
+                value={dateFilter}
+                onChange={(e) => setDateFilter(e.target.value as any)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="all">All Dates</option>
+                <option value="today">Today</option>
+                <option value="yesterday">Yesterday</option>
+                <option value="thisWeek">This Week</option>
+                <option value="lastWeek">Last Week</option>
+                <option value="thisMonth">This Month</option>
+                <option value="custom">Custom Range</option>
+              </select>
+            </div>
+
+            {/* Sort By */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Sort By</label>
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as any)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="newest">Newest First</option>
+                <option value="oldest">Oldest First</option>
+                <option value="pickupTime">Pickup Time</option>
+                <option value="deliveryTime">Delivery Time</option>
+              </select>
+            </div>
+
+            {/* Results Count and Reset Button */}
+            <div className="flex flex-col items-end gap-2">
+              <button
+                onClick={handleResetFilters}
+                disabled={!hasActiveFilters}
+                className={`px-3 py-1.5 text-sm border rounded-lg transition-colors flex items-center gap-1 ${
+                  hasActiveFilters
+                    ? 'text-blue-600 hover:text-blue-800 border-blue-300 hover:bg-blue-50 bg-blue-25'
+                    : 'text-gray-400 border-gray-200 cursor-not-allowed'
+                }`}
+                title={hasActiveFilters ? "Reset all filters" : "No active filters to reset"}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Reset Filters
+                {hasActiveFilters && (
+                  <span className="ml-1 px-1.5 py-0.5 text-xs bg-blue-100 text-blue-700 rounded-full">
+                    Active
+                  </span>
+                )}
+              </button>
+              <div className="text-sm text-gray-600">
+                <span className="font-medium">{filteredOrders.length}</span> of{' '}
+                <span className="font-medium">{parkedOrders.length}</span> orders
+                {hasActiveFilters && filteredOrders.length !== parkedOrders.length && (
+                  <span className="text-blue-600 ml-1">(filtered)</span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Custom Date Range */}
+          {dateFilter === 'custom' && (
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+                <input
+                  type="date"
+                  value={customDateRange.start}
+                  onChange={(e) => setCustomDateRange(prev => ({ ...prev, start: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+                <input
+                  type="date"
+                  value={customDateRange.end}
+                  onChange={(e) => setCustomDateRange(prev => ({ ...prev, end: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Orders List */}
@@ -492,9 +740,22 @@ export default function ParkedOrdersPage() {
             </div>
           ) : filteredOrders.length === 0 ? (
             <div className="text-center py-8">
-              <p className="text-gray-600">
-                {searchQuery ? 'No orders found matching your search.' : 'No parked orders available.'}
+              <p className="text-gray-600 mb-4">
+                {hasActiveFilters
+                  ? 'No orders found matching your current filters.'
+                  : 'No parked orders available.'}
               </p>
+              {hasActiveFilters && (
+                <button
+                  onClick={handleResetFilters}
+                  className="inline-flex items-center px-4 py-2 text-sm text-blue-600 hover:text-blue-800 border border-blue-300 rounded-lg hover:bg-blue-50 transition-colors"
+                >
+                  <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Clear all filters
+                </button>
+              )}
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

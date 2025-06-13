@@ -586,7 +586,7 @@ export default function POSPage() {
   }, [cart]);
 
   // Update cart state when checkout modal closes
-  const handleCheckoutComplete = () => {
+  const handleCheckoutComplete = async () => {
     // Clear custom images from memory
     cart.forEach(item => {
       if (item.customImages) {
@@ -597,8 +597,33 @@ export default function POSPage() {
         });
       }
     });
+
+    // Check if this was a parked order and delete it
+    const loadedParkedOrderId = localStorage.getItem('pos-loaded-parked-order-id');
+    if (loadedParkedOrderId) {
+      try {
+        console.log('Deleting parked order:', loadedParkedOrderId);
+        const response = await apiMethods.pos.deleteParkedOrder(loadedParkedOrderId);
+
+        if (response.success) {
+          console.log('Successfully deleted parked order');
+          toast.success('Parked order completed and removed');
+        } else {
+          console.error('Failed to delete parked order:', response.message);
+          toast.error('Order completed but failed to remove from parked orders');
+        }
+      } catch (error) {
+        console.error('Error deleting parked order:', error);
+        toast.error('Order completed but failed to remove from parked orders');
+      } finally {
+        // Clean up the localStorage regardless of success/failure
+        localStorage.removeItem('pos-loaded-parked-order-id');
+      }
+    }
+
     setCart([]);
     localStorage.removeItem('pos-cart');
+    localStorage.removeItem('pos-checkout-details');
   };
 
   // Handle URL parameters

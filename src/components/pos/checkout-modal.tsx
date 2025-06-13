@@ -3124,11 +3124,15 @@ export default function CheckoutModal({
                               <p className="text-xl">Includes VAT (5%)</p>
                               <p className="text-xl">
                                 {(() => {
-                                  // Calculate the discounted subtotal
-                                  const discountedTotal = appliedCoupon ? cartTotal - appliedCoupon.discount : cartTotal;
+                                  // Calculate the final total after discount (but before delivery and gift charges)
+                                  let discountedSubtotal = cartTotal;
+                                  if (appliedCoupon) {
+                                    discountedSubtotal = cartTotal - appliedCoupon.discount;
+                                  }
+
                                   // Calculate amount before VAT and VAT amount using improved rounding
-                                  const amountBeforeVAT = Math.round((discountedTotal / 1.05) * 100) / 100;
-                                  const vatAmount = Math.round((discountedTotal - amountBeforeVAT) * 100) / 100;
+                                  const amountBeforeVAT = Math.round((discountedSubtotal / 1.05) * 100) / 100;
+                                  const vatAmount = Math.round((discountedSubtotal - amountBeforeVAT) * 100) / 100;
                                   return `AED ${vatAmount.toFixed(2)}`;
                                 })()}
                               </p>
@@ -3372,10 +3376,9 @@ export default function CheckoutModal({
                                         onChange={(e) => setSplitMethod2(e.target.value as POSPaymentMethod)}
                                         className="block w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4"
                                       >
-                                        {/* Filter out the first payment method from options */}
+                                        {/* Allow all payment methods including the same as first payment */}
                                         {Object.values(POSPaymentMethod)
                                           .filter(method =>
-                                            method !== splitMethod1 &&
                                             method !== POSPaymentMethod.PARTIAL &&
                                             method !== POSPaymentMethod.SPLIT
                                           )
