@@ -1084,25 +1084,23 @@ export default function CheckoutModal({
       // Prepare order data with processed cart
       const orderData = preparePOSOrderData(processedCart);
       
-      // Special handling for split payments - ensure we use the correct split payment amounts
+      // Special handling for split payments - use the amounts exactly as entered
       if (currentPaymentMethodState === POSPaymentMethod.SPLIT) {
-        console.log('Split payment detected - creating a single payment record with correct split amounts');
-        console.log('Split amounts:', {
-          firstAmount: Number(splitAmount1) || 0,
-          secondAmount: Number(splitAmount2) || 0,
-          firstMethod: splitMethod1,
-          secondMethod: splitMethod2
+        console.log('Processing split payment with amounts:', {
+          amount1: splitAmount1,
+          amount2: splitAmount2,
+          method1: splitMethod1,
+          method2: splitMethod2
         });
         
-        // Get the exact amounts entered by the user
-        const amount1 = Number(splitAmount1) || 0;
-        const amount2 = Number(splitAmount2) || 0;
-        const totalAmount = amount1 + amount2;
+        // Convert amounts to numbers, default to 0 if invalid
+        const amount1 = parseFloat(splitAmount1) || 0;
+        const amount2 = parseFloat(splitAmount2) || 0;
         
-        // Create a single payment record for the split payment with the correct amounts
+        // Create a single payment record for the split payment
         const splitPayment = {
           id: nanoid(),
-          amount: totalAmount,
+          amount: amount1 + amount2, // Total amount should match the sum of both payments
           method: POSPaymentMethod.SPLIT,
           reference: null,
           status: POSPaymentStatus.FULLY_PAID,
@@ -1114,6 +1112,8 @@ export default function CheckoutModal({
           splitSecondAmount: amount2,
           splitSecondReference: splitReference2 || null
         };
+        
+        console.log('Created split payment:', splitPayment);
         
         // Replace the payments in the order data with our single split payment
         orderData.payments = [splitPayment];
