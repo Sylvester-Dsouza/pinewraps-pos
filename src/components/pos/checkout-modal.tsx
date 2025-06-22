@@ -169,8 +169,8 @@ export default function CheckoutModal({
   const [showSplitPaymentModal, setShowSplitPaymentModal] = useState(false);
 
   // Payment method and reference state
-  const [currentPaymentMethodState, setCurrentPaymentMethodState] = useState<POSPaymentMethod>(
-    paymentMethod || POSPaymentMethod.CASH
+  const [currentPaymentMethodState, setCurrentPaymentMethodState] = useState<POSPaymentMethod | null>(
+    paymentMethod || null
   );
   const [currentPaymentReferenceState, setCurrentPaymentReferenceState] = useState('');
   const [currentPaymentAmountState, setCurrentPaymentAmountState] = useState('');
@@ -662,10 +662,7 @@ export default function CheckoutModal({
       }
     }
 
-    // Validate payment details
-    if (!currentPaymentMethodState) {
-      throw new Error('Payment method is required');
-    }
+    // Payment method validation is now optional - user can proceed without selecting a payment method
 
     // Validate payment reference for card and bank transfer payments
     if ((currentPaymentMethodState === POSPaymentMethod.CARD ||
@@ -1560,7 +1557,7 @@ export default function CheckoutModal({
         includeCash: false
       });
       setPaymentsState([]);
-      setCurrentPaymentMethodState(POSPaymentMethod.CASH);
+      setCurrentPaymentMethodState(null);
       setCurrentPaymentReferenceState('');
       setCurrentPaymentAmountState('');
       setIsPartialPaymentState(false);
