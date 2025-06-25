@@ -1133,6 +1133,38 @@ const OrdersPage = () => {
     }
   };
 
+  const handleMarkAsCompleted = async (orderId: string) => {
+    try {
+      // Find the order to validate it exists and is pending
+      const order = orders.find(o => o.id === orderId);
+      if (!order) {
+        toast.error('Order not found');
+        return;
+      }
+
+      if (order.status !== 'PENDING') {
+        toast.error('Only pending orders can be marked as completed');
+        return;
+      }
+
+      const result = await apiMethods.pos.updateOrderStatus(orderId, {
+        status: 'COMPLETED',
+        notes: 'Order marked as completed from POS'
+      });
+
+      if (result.success) {
+        toast.success('Order marked as completed successfully');
+        // Refresh the orders list
+        fetchOrders();
+      } else {
+        toast.error(result.message || 'Failed to mark order as completed');
+      }
+    } catch (error) {
+      console.error('Error marking order as completed:', error);
+      toast.error('Failed to mark order as completed');
+    }
+  };
+
   if (!isAuthenticated) {
     return <div className="min-h-screen bg-gray-50 flex items-center justify-center">
       <div className="text-center">
@@ -1799,7 +1831,7 @@ const OrdersPage = () => {
                     // Show success message
                     toast.success('All filters have been reset');
                   }}
-                  className="px-4 py-2.5 text-sm font-medium text-red-700 bg-red-50 border-2 border-red-200 rounded-lg hover:bg-red-100 hover:border-red-300 flex items-center gap-2 transition-all duration-200"
+                  className="px-4 py-2.5 text-sm font-medium text-red-700 bg-red-50 border-2 border-red-200 rounded-lg hover:bg-red-100 hover:border-red-300"
                 >
                   <X className="h-4 w-4" />
                   Reset All
@@ -1807,7 +1839,7 @@ const OrdersPage = () => {
 
                 <button
                   onClick={handleRefresh}
-                  className="px-4 py-2.5 text-sm font-medium text-gray-700 bg-gray-50 border-2 border-gray-200 rounded-lg hover:bg-gray-100 hover:border-gray-300 flex items-center gap-2 transition-all duration-200"
+                  className="px-4 py-2.5 text-sm font-medium text-gray-700 bg-gray-50 border-2 border-gray-200 rounded-lg hover:bg-gray-100 hover:border-gray-300"
                 >
                   <RotateCcw className="h-4 w-4" />
                   Refresh
@@ -2442,8 +2474,8 @@ const OrdersPage = () => {
                           Update Details
                         </button>
                         <button
-                          onClick={() => isSuperAdmin ? setShowCancelConfirm(order.id) : handleCancelAttempt()}
-                          className={`px-3 py-2 text-sm font-medium ${isSuperAdmin ? 'text-red-700 bg-red-100 hover:bg-red-200' : 'text-gray-500 bg-gray-100 hover:bg-gray-200'} rounded-md min-w-fit`}
+                          onClick={() => handleCancelOrder(order.id)}
+                          className="px-3 py-2 text-sm font-medium text-red-700 bg-red-100 rounded-md hover:bg-red-200 min-w-fit"
                         >
                           Cancel Order
                         </button>
@@ -2508,6 +2540,15 @@ const OrdersPage = () => {
                           Mark as Partial Refund
                         </button>
                       </>
+                    )}
+                    {order.status === 'PENDING' && (
+                      <button
+                        onClick={() => handleMarkAsCompleted(order.id)}
+                        className="px-3 py-2 text-sm font-medium text-green-600 bg-green-100 rounded-md hover:bg-green-200 flex items-center gap-1 min-w-fit whitespace-nowrap"
+                      >
+                        <CheckCircle className="h-4 w-4" />
+                        Mark as Completed
+                      </button>
                     )}
                   </div>
                   </div>
