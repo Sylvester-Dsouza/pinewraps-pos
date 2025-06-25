@@ -2127,15 +2127,13 @@ const OrdersPage = () => {
                               <p className="text-sm">Cash Gift: AED {parseFloat(String(order.giftCashAmount)).toFixed(2)}</p>
                             )}
                             {/* Add button to update gift details */}
-                            {!['COMPLETED', 'CANCELLED'].includes(order.status) && (
-                              <button
-                                onClick={() => setSelectedOrderForPickupUpdate(order)}
-                                className="mt-2 px-3 py-1 text-xs font-medium text-pink-600 bg-pink-100 rounded-md hover:bg-pink-200 inline-flex items-center"
-                              >
-                                <Gift className="h-3 w-3 mr-1" />
-                                Update Gift Details
-                              </button>
-                            )}
+                            <button
+                              onClick={() => setSelectedOrderForPickupUpdate(order)}
+                              className="mt-2 px-3 py-1 text-xs font-medium text-pink-600 bg-pink-100 rounded-md hover:bg-pink-200 inline-flex items-center"
+                            >
+                              <Gift className="h-3 w-3 mr-1" />
+                              Update Gift Details
+                            </button>
                           </div>
                         )}
                       </div>
