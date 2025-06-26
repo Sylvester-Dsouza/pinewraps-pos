@@ -1124,11 +1124,14 @@ const OrdersPage = () => {
       hasRemainingBalance
     });
     
-    // An order has pending payment if it has a pending payment status OR
-    // it has any pay later payment OR
-    // it has a pay later payment that is still pending OR
-    // it has a pending payment status in the order status AND
-    // it has a remaining balance to be paid
+    // For the filter dropdown, we need to match the exact paymentStatus value that's sent to the API
+    // When selectedPaymentStatus is 'PENDING', we need to return true for orders with pending payments
+    if (selectedPaymentStatus === 'PENDING') {
+      // Return true if any payment has PENDING status
+      return hasPendingPaymentStatus || hasPayLaterPending;
+    }
+    
+    // For other UI elements (like showing the Pay Now button), use the original logic
     return (hasPendingPaymentStatus || hasPayLaterPayment || hasPayLaterPending || hasPendingPaymentStatus2) && hasRemainingBalance;
   };
 
