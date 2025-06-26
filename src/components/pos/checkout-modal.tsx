@@ -889,10 +889,62 @@ export default function CheckoutModal({
     try {
       setIsSubmitting(true);
 
+      // Validate split payment references if split payment is selected
+      if (isSplitPaymentState) {
+        // Check if amounts are entered for both payments
+        const splitAmount1Value = parseFloat(splitAmount1);
+        const splitAmount2Value = parseFloat(splitAmount2);
+        
+        if (!splitAmount1Value || isNaN(splitAmount1Value) || splitAmount1Value <= 0) {
+          toast.error('Please enter a valid amount for the first payment');
+          setIsSubmitting(false);
+          return;
+        }
+        
+        if (!splitAmount2Value || isNaN(splitAmount2Value) || splitAmount2Value <= 0) {
+          toast.error('Please enter a valid amount for the second payment');
+          setIsSubmitting(false);
+          return;
+        }
+        
+        // Check if references are provided for methods that require them
+        if ((splitMethod1 === POSPaymentMethod.CARD || 
+             splitMethod1 === POSPaymentMethod.BANK_TRANSFER || 
+             splitMethod1 === POSPaymentMethod.PBL || 
+             splitMethod1 === POSPaymentMethod.TALABAT) && 
+            !splitReference1.trim()) {
+          toast.error('Payment reference is required for the first payment method');
+          setIsSubmitting(false);
+          return;
+        }
+        
+        if ((splitMethod2 === POSPaymentMethod.CARD || 
+             splitMethod2 === POSPaymentMethod.BANK_TRANSFER || 
+             splitMethod2 === POSPaymentMethod.PBL || 
+             splitMethod2 === POSPaymentMethod.TALABAT) && 
+            !splitReference2.trim()) {
+          toast.error('Payment reference is required for the second payment method');
+          setIsSubmitting(false);
+          return;
+        }
+      }
+
       // If current payment method is PARTIAL and amount is entered, add it as a payment first
       if (currentPaymentMethodState === POSPaymentMethod.PARTIAL && currentPaymentAmountState) {
         const amount = parseFloat(currentPaymentAmountState);
         const finalTotal = calculateFinalTotal();
+        
+        // Validate payment reference for methods that require it
+        if ((partialPaymentMethod === POSPaymentMethod.CARD ||
+             partialPaymentMethod === POSPaymentMethod.BANK_TRANSFER ||
+             partialPaymentMethod === POSPaymentMethod.PBL ||
+             partialPaymentMethod === POSPaymentMethod.TALABAT) && 
+            !currentPaymentReferenceState.trim()) {
+          toast.error('Payment reference is required for the selected payment method');
+          setIsSubmitting(false);
+          return;
+        }
+        
         if (amount && !isNaN(amount) && amount > 0 && amount < finalTotal) {
           const payment: Payment = {
             id: nanoid(),
@@ -901,7 +953,7 @@ export default function CheckoutModal({
             reference: (partialPaymentMethod === POSPaymentMethod.CARD ||
                       partialPaymentMethod === POSPaymentMethod.BANK_TRANSFER ||
                       partialPaymentMethod === POSPaymentMethod.PBL ||
-                      partialPaymentMethod === POSPaymentMethod.TALABAT) ? currentPaymentReferenceState || null : null,
+                      partialPaymentMethod === POSPaymentMethod.TALABAT) ? currentPaymentReferenceState : null,
             status: POSPaymentStatus.PARTIALLY_PAID,
             isPartialPayment: true,
             remainingAmount: finalTotal - amount,
@@ -1830,11 +1882,19 @@ export default function CheckoutModal({
       return;
     }
 
-    // For card and bank transfer payments, payment reference is mandatory
+    // For card, bank transfer, PBL, and Talabat payments, payment reference is mandatory
     if ((currentPaymentMethodState === POSPaymentMethod.CARD ||
-         currentPaymentMethodState === POSPaymentMethod.BANK_TRANSFER) &&
+         currentPaymentMethodState === POSPaymentMethod.BANK_TRANSFER ||
+         currentPaymentMethodState === POSPaymentMethod.PBL ||
+         currentPaymentMethodState === POSPaymentMethod.TALABAT) &&
         !currentPaymentReferenceState.trim()) {
-      toast.error(`Please enter a ${currentPaymentMethodState === POSPaymentMethod.CARD ? 'card' : 'bank transfer'} reference`);
+      let methodName = '';
+      if (currentPaymentMethodState === POSPaymentMethod.CARD) methodName = 'card';
+      else if (currentPaymentMethodState === POSPaymentMethod.BANK_TRANSFER) methodName = 'bank transfer';
+      else if (currentPaymentMethodState === POSPaymentMethod.PBL) methodName = 'pay by link';
+      else if (currentPaymentMethodState === POSPaymentMethod.TALABAT) methodName = 'talabat';
+      
+      toast.error(`Please enter a ${methodName} reference`);
       return;
     }
 
@@ -3279,35 +3339,36 @@ export default function CheckoutModal({
                                   <label className="block text-sm font-medium text-gray-700 mb-2">
                                     {currentPaymentMethodState === POSPaymentMethod.CARD ? 'Card Reference' :
                                      currentPaymentMethodState === POSPaymentMethod.BANK_TRANSFER ? 'Bank Transfer Reference' :
+                                     currentPaymentMethodState === POSPaymentMethod.PBL ? 'Pay by Link Reference' :
+                                     currentPaymentMethodState === POSPaymentMethod.TALABAT ? 'Talabat Reference' :
                                      'Payment Reference'}
-                                    {(currentPaymentMethodState === POSPaymentMethod.CARD ||
-                                      currentPaymentMethodState === POSPaymentMethod.BANK_TRANSFER) && (
-                                      <span className="text-red-500 ml-1">*</span>
-                                    )}
+                                    <span className="text-red-500 ml-1">*</span>
                                   </label>
                                   <input
                                     type="text"
                                     value={currentPaymentReferenceState}
                                     onChange={(e) => setCurrentPaymentReferenceState(e.target.value)}
                                     className={`block w-full rounded-xl border-2 shadow-sm focus:ring-black text-lg p-4 ${
-                                      (currentPaymentMethodState === POSPaymentMethod.CARD ||
-                                       currentPaymentMethodState === POSPaymentMethod.BANK_TRANSFER) && !currentPaymentReferenceState.trim()
+                                      !currentPaymentReferenceState.trim()
                                         ? 'border-red-300 focus:border-red-500'
                                         : 'border-gray-200 focus:border-black'
                                     }`}
                                     placeholder={
                                       currentPaymentMethodState === POSPaymentMethod.CARD ? 'Enter card reference (required)' :
                                       currentPaymentMethodState === POSPaymentMethod.BANK_TRANSFER ? 'Enter bank transfer reference (required)' :
-                                      'Enter payment reference (optional)'
+                                      currentPaymentMethodState === POSPaymentMethod.PBL ? 'Enter pay by link reference (required)' :
+                                      currentPaymentMethodState === POSPaymentMethod.TALABAT ? 'Enter talabat reference (required)' :
+                                      'Enter payment reference (required)'
                                     }
-                                    required={currentPaymentMethodState === POSPaymentMethod.CARD ||
-                                             currentPaymentMethodState === POSPaymentMethod.BANK_TRANSFER}
+                                    required
                                   />
-                                  {(currentPaymentMethodState === POSPaymentMethod.CARD ||
-                                    currentPaymentMethodState === POSPaymentMethod.BANK_TRANSFER) &&
-                                   !currentPaymentReferenceState.trim() && (
+                                  {!currentPaymentReferenceState.trim() && (
                                     <p className="text-red-500 text-sm mt-1">
-                                      {currentPaymentMethodState === POSPaymentMethod.CARD ? 'Card' : 'Bank transfer'} reference is required
+                                      {currentPaymentMethodState === POSPaymentMethod.CARD ? 'Card' :
+                                       currentPaymentMethodState === POSPaymentMethod.BANK_TRANSFER ? 'Bank transfer' :
+                                       currentPaymentMethodState === POSPaymentMethod.PBL ? 'Pay by link' :
+                                       currentPaymentMethodState === POSPaymentMethod.TALABAT ? 'Talabat' :
+                                       'Payment'} reference is required
                                     </p>
                                   )}
                                 </div>
@@ -3330,7 +3391,6 @@ export default function CheckoutModal({
                                         <option value={POSPaymentMethod.BANK_TRANSFER}>Bank Transfer</option>
                                         <option value={POSPaymentMethod.PBL}>Pay by Link</option>
                                         <option value={POSPaymentMethod.TALABAT}>Talabat</option>
-                                        <option value={POSPaymentMethod.COD}>Cash on Delivery</option>
                                       </select>
                                       <input
                                         type="number"
@@ -3356,7 +3416,10 @@ export default function CheckoutModal({
                                     splitMethod1 === POSPaymentMethod.PBL ||
                                     splitMethod1 === POSPaymentMethod.TALABAT) && (
                                     <div>
-                                      <label className="block text-sm font-medium text-gray-700 mb-2">Reference</label>
+                                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Reference
+                                        <span className="text-red-500 ml-1">*</span>
+                                      </label>
                                       <input
                                         type="text"
                                         value={splitReference1}
@@ -3367,9 +3430,15 @@ export default function CheckoutModal({
                                             setSplitCardReference(e.target.value);
                                           }
                                         }}
-                                        className="block w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4"
-                                        placeholder="Enter payment reference"
+                                        className={`block w-full rounded-xl border-2 shadow-sm focus:ring-black text-lg p-4 ${!splitReference1.trim() ? 'border-red-300 focus:border-red-500' : 'border-gray-200 focus:border-black'}`}
+                                        placeholder="Enter payment reference (required)"
+                                        required
                                       />
+                                      {!splitReference1.trim() && (
+                                        <p className="text-red-500 text-sm mt-1">
+                                          Payment reference is required
+                                        </p>
+                                      )}
                                     </div>
                                   )}
 
@@ -3385,7 +3454,8 @@ export default function CheckoutModal({
                                         {Object.values(POSPaymentMethod)
                                           .filter(method =>
                                             method !== POSPaymentMethod.PARTIAL &&
-                                            method !== POSPaymentMethod.SPLIT
+                                            method !== POSPaymentMethod.SPLIT &&
+                                            method !== POSPaymentMethod.COD
                                           )
                                           .map(method => (
                                             <option key={method} value={method}>
@@ -3394,7 +3464,6 @@ export default function CheckoutModal({
                                               {method === POSPaymentMethod.BANK_TRANSFER && 'Bank Transfer'}
                                               {method === POSPaymentMethod.PBL && 'Pay by Link'}
                                               {method === POSPaymentMethod.TALABAT && 'Talabat'}
-                                              {method === POSPaymentMethod.COD && 'Cash on Delivery'}
                                             </option>
                                           ))
                                         }
@@ -3423,7 +3492,10 @@ export default function CheckoutModal({
                                     splitMethod2 === POSPaymentMethod.PBL ||
                                     splitMethod2 === POSPaymentMethod.TALABAT) && (
                                     <div>
-                                      <label className="block text-sm font-medium text-gray-700 mb-2">Reference</label>
+                                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Reference
+                                        <span className="text-red-500 ml-1">*</span>
+                                      </label>
                                       <input
                                         type="text"
                                         value={splitReference2}
@@ -3434,9 +3506,15 @@ export default function CheckoutModal({
                                             setSplitCardReference(e.target.value);
                                           }
                                         }}
-                                        className="block w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4"
-                                        placeholder="Enter payment reference"
+                                        className={`block w-full rounded-xl border-2 shadow-sm focus:ring-black text-lg p-4 ${!splitReference2.trim() ? 'border-red-300 focus:border-red-500' : 'border-gray-200 focus:border-black'}`}
+                                        placeholder="Enter payment reference (required)"
+                                        required
                                       />
+                                      {!splitReference2.trim() && (
+                                        <p className="text-red-500 text-sm mt-1">
+                                          Payment reference is required
+                                        </p>
+                                      )}
                                     </div>
                                   )}
 
@@ -3510,7 +3588,7 @@ export default function CheckoutModal({
                                       </button>
                                     </div>
                                     {/* Second row of payment methods */}
-                                    <div className="grid grid-cols-3 gap-3">
+                                    <div className="grid grid-cols-2 gap-3">
                                       <button
                                         type="button"
                                         onClick={() => setPartialPaymentMethod(POSPaymentMethod.PBL)}
@@ -3533,17 +3611,6 @@ export default function CheckoutModal({
                                       >
                                         Talabat
                                       </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => setPartialPaymentMethod(POSPaymentMethod.COD)}
-                                        className={`p-3 text-base font-medium rounded-xl border-2 transition-all ${
-                                          partialPaymentMethod === POSPaymentMethod.COD
-                                            ? "bg-black text-white"
-                                            : "bg-gray-100 text-gray-700"
-                                        }`}
-                                      >
-                                        COD
-                                      </button>
                                     </div>
                                   </div>
                                   {(partialPaymentMethod === POSPaymentMethod.CARD ||
@@ -3551,14 +3618,23 @@ export default function CheckoutModal({
                                     partialPaymentMethod === POSPaymentMethod.PBL ||
                                     partialPaymentMethod === POSPaymentMethod.TALABAT) && (
                                     <div>
-                                      <label className="block text-sm font-medium text-gray-700 mb-2">Payment Reference</label>
+                                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Payment Reference
+                                        <span className="text-red-500 ml-1">*</span>
+                                      </label>
                                       <input
                                         type="text"
                                         value={currentPaymentReferenceState}
                                         onChange={(e) => setCurrentPaymentReferenceState(e.target.value)}
-                                        className="block w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4"
-                                        placeholder="Enter payment reference"
+                                        className={`block w-full rounded-xl border-2 shadow-sm focus:ring-black text-lg p-4 ${!currentPaymentReferenceState.trim() ? 'border-red-300 focus:border-red-500' : 'border-gray-200 focus:border-black'}`}
+                                        placeholder="Enter payment reference (required)"
+                                        required
                                       />
+                                      {!currentPaymentReferenceState.trim() && (
+                                        <p className="text-red-500 text-sm mt-1">
+                                          Payment reference is required
+                                        </p>
+                                      )}
                                     </div>
                                   )}
                                   <div className="flex items-center justify-between bg-gray-50 p-4 rounded-xl">

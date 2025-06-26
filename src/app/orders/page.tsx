@@ -33,7 +33,7 @@ import GiftReceipt from '@/components/receipt/GiftReceipt';
 import Cookies from 'js-cookie';
 import { nanoid } from 'nanoid';
 import { invoiceService } from '@/services/invoice.service';
-import { Order, POSPaymentMethod, POSPaymentStatus } from '@/types/order';
+import { Order, POSPaymentMethod, POSPaymentStatus, POSOrderStatus } from '@/types/order';
 import { getPaymentMethodString } from '@/utils/payment-utils';
 import RemainingPaymentModal from '@/components/pos/RemainingPaymentModal';
 import UpdateOrderDetailsModal from '@/components/pos/UpdateOrderDetailsModal';
@@ -886,27 +886,26 @@ const OrdersPage = () => {
 
   const handleRefundOrder = async (orderId: string) => {
     try {
-      // Reset modal state
+      // Close the modal first
       setShowRefundModal(null);
       
-      // Get the current order to check its status
-      const orderToRefund = orders.find(order => order.id === orderId);
+      const userEmail = Cookies.get('user-email') || 'Unknown';
       
-      // Get current user info
-      const auth = getAuth();
-      const user = auth.currentUser;
-      const userEmail = user?.email || 'Unknown user';
-      
-      // Format the notes - only include the actual notes, not the prefix
-      const formattedNotes = refundNotes.trim() 
-        ? refundNotes.trim() 
+      // Format notes with user email
+      const formattedNotes = refundNotes 
+        ? `Refunded by ${userEmail}: ${refundNotes}`
         : `Refunded by ${userEmail}`;
+
+      // Get the order first to access its payments
+      const orderResponse = await apiMethods.pos.getOrderById(orderId);
+      if (!orderResponse.success) {
+        throw new Error('Failed to fetch order details');
+      }
       
-      if (orderToRefund?.status === 'COMPLETED') {
-        // For completed orders, we need to first cancel the order
-        console.log('Order is in COMPLETED state, cancelling first before refunding');
-        
-        // First cancel the order
+      const order = orderResponse.data;
+      
+      // Check if order is completed and cancel it first
+      if (order.status === 'COMPLETED') {
         const cancelResponse = await apiMethods.pos.updateOrderStatus(orderId, {
           status: 'CANCELLED',
           notes: 'Order cancelled before refund by POS user'
@@ -922,11 +921,25 @@ const OrdersPage = () => {
       
       // Now refund the order
       const response = await apiMethods.pos.updateOrderStatus(orderId, {
-        status: 'REFUNDED',
+        status: POSOrderStatus.REFUNDED,
         notes: formattedNotes
       });
 
       if (response.success) {
+        // Update all payment statuses to REFUNDED
+        if (order.payments && order.payments.length > 0) {
+          for (const payment of order.payments) {
+            if (payment.id && payment.status !== POSPaymentStatus.REFUNDED) {
+              try {
+                await apiMethods.pos.updatePaymentStatus(orderId, payment.id, POSPaymentStatus.REFUNDED);
+              } catch (paymentError) {
+                console.error('Error updating payment status:', paymentError);
+                // Don't fail the entire operation if payment status update fails
+              }
+            }
+          }
+        }
+        
         toast.success('Order marked as refunded');
         setRefundNotes(''); // Clear notes
         fetchOrders(); // Refresh orders list
@@ -948,24 +961,23 @@ const OrdersPage = () => {
         return;
       }
 
-      // Get the current order to check its status
-      const orderToRefund = orders.find(order => order.id === orderId);
+      const userEmail = Cookies.get('user-email') || 'Unknown';
       
-      // Get current user info
-      const auth = getAuth();
-      const user = auth.currentUser;
-      const userEmail = user?.email || 'Unknown user';
-      
-      // Format the notes - only include the actual notes with amount, not the prefix
-      const formattedNotes = partialRefundNotes.trim() 
-        ? `${partialRefundNotes.trim()} (Amount: AED ${amount})` 
+      // Format notes with user email and amount
+      const formattedNotes = partialRefundNotes 
+        ? `Refunded by ${userEmail} (Amount: AED ${amount}): ${partialRefundNotes}`
         : `Refunded by ${userEmail} (Amount: AED ${amount})`;
+
+      // Get the order first to access its payments
+      const orderResponse = await apiMethods.pos.getOrderById(orderId);
+      if (!orderResponse.success) {
+        throw new Error('Failed to fetch order details');
+      }
       
-      if (orderToRefund?.status === 'COMPLETED') {
-        // For completed orders, we need to first cancel the order
-        console.log('Order is in COMPLETED state, cancelling first before partial refund');
-        
-        // First cancel the order
+      const order = orderResponse.data;
+
+      // Check if order is completed and cancel it first
+      if (order.status === 'COMPLETED') {
         const cancelResponse = await apiMethods.pos.updateOrderStatus(orderId, {
           status: 'CANCELLED',
           notes: 'Order cancelled before partial refund by POS user'
@@ -981,12 +993,26 @@ const OrdersPage = () => {
 
       // Now partially refund the order
       const response = await apiMethods.pos.updateOrderStatus(orderId, {
-        status: 'PARTIALLY_REFUNDED',
+        status: POSOrderStatus.PARTIALLY_REFUNDED,
         notes: formattedNotes,
         partialRefundAmount: amount
       });
 
       if (response.success) {
+        // Update all payment statuses to PARTIALLY_REFUNDED
+        if (order.payments && order.payments.length > 0) {
+          for (const payment of order.payments) {
+            if (payment.id && payment.status !== POSPaymentStatus.PARTIALLY_REFUNDED) {
+              try {
+                await apiMethods.pos.updatePaymentStatus(orderId, payment.id, POSPaymentStatus.PARTIALLY_REFUNDED);
+              } catch (paymentError) {
+                console.error('Error updating payment status:', paymentError);
+                // Don't fail the entire operation if payment status update fails
+              }
+            }
+          }
+        }
+        
         toast.success('Order marked as partially refunded');
         setShowPartialRefundModal(null);
         setPartialRefundAmount('');
@@ -1182,127 +1208,136 @@ const OrdersPage = () => {
         <div className="mb-6">
           <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center mb-6 gap-4">
             <h1 className="text-2xl font-bold text-gray-900">Orders</h1>
-
-            <div className="flex flex-col lg:flex-row gap-3 w-full lg:w-auto">
-              {/* Search Type Selector */}
-              <div className="w-full lg:w-[200px]">
-                <select
-                  value={searchType}
-                  onChange={(e) => setSearchType(e.target.value as 'all' | 'orderNumber' | 'customerPhone' | 'customerName')}
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm shadow-sm transition-all duration-200 bg-white"
-                >
-                  <option value="orderNumber">Order Number</option>
-                  <option value="customerPhone">Customer Phone</option>
-                  <option value="customerName">Customer Name</option>
-                  <option value="all">All Fields</option>
-                </select>
-              </div>
-
-              {/* Search Input */}
-              <div className="relative w-full lg:w-[400px]">
-                <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
-                <input
-                  type="text"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder={
-                    searchType === 'orderNumber' ? 'Search by order number...' :
-                    searchType === 'customerPhone' ? 'Search by customer phone...' :
-                    searchType === 'customerName' ? 'Search by customer name...' :
-                    'Search by order number, customer name, phone, or email...'
-                  }
-                  className="w-full pl-12 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm shadow-sm transition-all duration-200 bg-white"
-                />
-                {searchTerm && (
-                  <button
-                    onClick={() => setSearchTerm('')}
-                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                )}
-              </div>
-            </div>
           </div>
           
           {/* Enhanced Filters Section */}
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 mb-6">
-            {/* Quick Filter Presets */}
+            {/* Search and Quick Filter Presets */}
             <div className="mb-4 pb-4 border-b border-gray-100">
-              <label className="text-sm font-medium text-gray-700 mb-2 block">Quick Filters</label>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  onClick={() => {
-                    setStartDate(format(new Date(), 'yyyy-MM-dd'));
-                    setEndDate('');
-                    setSelectedOrderStatus('all');
-                    setSelectedPaymentStatus('all');
-                    setPickupDate('');
-                    setDeliveryDate('');
-                  }}
-                  className="px-3 py-1.5 text-xs font-medium bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors"
-                >
-                  Today's Orders
-                </button>
-                <button
-                  onClick={() => {
-                    const yesterday = new Date();
-                    yesterday.setDate(yesterday.getDate() - 1);
-                    setStartDate(format(yesterday, 'yyyy-MM-dd'));
-                    setEndDate(format(yesterday, 'yyyy-MM-dd'));
-                    setSelectedOrderStatus('all');
-                    setSelectedPaymentStatus('all');
-                    setPickupDate('');
-                    setDeliveryDate('');
-                  }}
-                  className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 rounded-lg hover:bg-green-100 transition-colors"
-                >
-                  Yesterday
-                </button>
-                <button
-                  onClick={() => {
-                    const weekAgo = new Date();
-                    weekAgo.setDate(weekAgo.getDate() - 7);
-                    setStartDate(format(weekAgo, 'yyyy-MM-dd'));
-                    setEndDate(format(new Date(), 'yyyy-MM-dd'));
-                    setSelectedOrderStatus('all');
-                    setSelectedPaymentStatus('all');
-                    setPickupDate('');
-                    setDeliveryDate('');
-                  }}
-                  className="px-3 py-1.5 text-xs font-medium bg-purple-50 text-purple-700 rounded-lg hover:bg-purple-100 transition-colors"
-                >
-                  Last 7 Days
-                </button>
-                <button
-                  onClick={() => {
-                    setSelectedOrderStatus('all');
-                    setSelectedPaymentStatus('PENDING');
-                    setStartDate('');
-                    setEndDate('');
-                    setPickupDate('');
-                    setDeliveryDate('');
-                  }}
-                  className="px-3 py-1.5 text-xs font-medium bg-orange-50 text-orange-700 rounded-lg hover:bg-orange-100 transition-colors"
-                >
-                  Pending Payments
-                </button>
-                <button
-                  onClick={() => {
-                    setSelectedOrderStatus('COMPLETED');
-                    setSelectedPaymentStatus('all');
-                    setStartDate('');
-                    setEndDate('');
-                    setPickupDate('');
-                    setDeliveryDate('');
-                  }}
-                  className="px-3 py-1.5 text-xs font-medium bg-emerald-50 text-emerald-700 rounded-lg hover:bg-emerald-100 transition-colors"
-                >
-                  Completed Orders
-                </button>
+              <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4 mb-4">
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mb-2 block">Quick Filters</label>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => {
+                        setStartDate(format(new Date(), 'yyyy-MM-dd'));
+                        setEndDate('');
+                        setSelectedOrderStatus('all');
+                        setSelectedPaymentStatus('all');
+                        setPickupDate('');
+                        setDeliveryDate('');
+                      }}
+                      className="px-3 py-1.5 text-xs font-medium bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors"
+                    >
+                      Today's Orders
+                    </button>
+                    <button
+                      onClick={() => {
+                        const yesterday = new Date();
+                        yesterday.setDate(yesterday.getDate() - 1);
+                        setStartDate(format(yesterday, 'yyyy-MM-dd'));
+                        setEndDate(format(yesterday, 'yyyy-MM-dd'));
+                        setSelectedOrderStatus('all');
+                        setSelectedPaymentStatus('all');
+                        setPickupDate('');
+                        setDeliveryDate('');
+                      }}
+                      className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 rounded-lg hover:bg-green-100 transition-colors"
+                    >
+                      Yesterday
+                    </button>
+                    <button
+                      onClick={() => {
+                        const weekAgo = new Date();
+                        weekAgo.setDate(weekAgo.getDate() - 7);
+                        setStartDate(format(weekAgo, 'yyyy-MM-dd'));
+                        setEndDate(format(new Date(), 'yyyy-MM-dd'));
+                        setSelectedOrderStatus('all');
+                        setSelectedPaymentStatus('all');
+                        setPickupDate('');
+                        setDeliveryDate('');
+                      }}
+                      className="px-3 py-1.5 text-xs font-medium bg-purple-50 text-purple-700 rounded-lg hover:bg-purple-100 transition-colors"
+                    >
+                      Last 7 Days
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSelectedOrderStatus('all');
+                        setSelectedPaymentStatus('PENDING');
+                        setStartDate('');
+                        setEndDate('');
+                        setPickupDate('');
+                        setDeliveryDate('');
+                      }}
+                      className="px-3 py-1.5 text-xs font-medium bg-orange-50 text-orange-700 rounded-lg hover:bg-orange-100 transition-colors"
+                    >
+                      Pending Payments
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSelectedOrderStatus('COMPLETED');
+                        setSelectedPaymentStatus('all');
+                        setStartDate('');
+                        setEndDate('');
+                        setPickupDate('');
+                        setDeliveryDate('');
+                      }}
+                      className="px-3 py-1.5 text-xs font-medium bg-emerald-50 text-emerald-700 rounded-lg hover:bg-emerald-100 transition-colors"
+                    >
+                      Completed Orders
+                    </button>
+                  </div>
+                </div>
+
+                {/* Search Section */}
+                <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto">
+                  {/* Search Type Selector */}
+                  <div className="w-full sm:w-[180px]">
+                    <label className="text-sm font-medium text-gray-700 mb-2 block">Search</label>
+                    <select
+                      value={searchType}
+                      onChange={(e) => setSearchType(e.target.value as 'all' | 'orderNumber' | 'customerPhone' | 'customerName')}
+                      className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm shadow-sm transition-all duration-200 bg-white"
+                    >
+                      <option value="orderNumber">Order Number</option>
+                      <option value="customerPhone">Customer Phone</option>
+                      <option value="customerName">Customer Name</option>
+                      <option value="all">All Fields</option>
+                    </select>
+                  </div>
+
+                  {/* Search Input */}
+                  <div className="relative w-full sm:w-[300px]">
+                    <label className="text-sm font-medium text-gray-700 mb-2 block">&nbsp;</label>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                      <input
+                        type="text"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        placeholder={
+                          searchType === 'orderNumber' ? 'Search by order number...' :
+                          searchType === 'customerPhone' ? 'Search by customer phone...' :
+                          searchType === 'customerName' ? 'Search by customer name...' :
+                          'Search by order number, customer name, phone, or email...'
+                        }
+                        className="w-full pl-10 pr-8 py-2 border-2 border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm shadow-sm transition-all duration-200 bg-white"
+                      />
+                      {searchTerm && (
+                        <button
+                          onClick={() => setSearchTerm('')}
+                          className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
-
+            
             {/* First Row: Main Filters */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 items-end">
 
@@ -1831,7 +1866,7 @@ const OrdersPage = () => {
                     // Show success message
                     toast.success('All filters have been reset');
                   }}
-                  className="px-4 py-2.5 text-sm font-medium text-red-700 bg-red-50 border-2 border-red-200 rounded-lg hover:bg-red-100 hover:border-red-300"
+                  className="px-4 py-2.5 text-sm font-medium text-red-700 bg-red-50 border-2 border-red-200 rounded-lg hover:bg-red-100 hover:border-red-300 flex items-center gap-2 transition-all duration-200"
                 >
                   <X className="h-4 w-4" />
                   Reset All
@@ -1839,7 +1874,7 @@ const OrdersPage = () => {
 
                 <button
                   onClick={handleRefresh}
-                  className="px-4 py-2.5 text-sm font-medium text-gray-700 bg-gray-50 border-2 border-gray-200 rounded-lg hover:bg-gray-100 hover:border-gray-300"
+                  className="px-4 py-2.5 text-sm font-medium text-gray-700 bg-gray-50 border-2 border-gray-200 rounded-lg hover:bg-gray-100 hover:border-gray-300 flex items-center gap-2 transition-all duration-200"
                 >
                   <RotateCcw className="h-4 w-4" />
                   Refresh
@@ -1883,7 +1918,7 @@ const OrdersPage = () => {
 
                   {(startDate || endDate) && (
                     <span className="inline-flex items-center gap-1 px-2 py-1 bg-indigo-100 text-indigo-800 text-xs rounded-full">
-                      Date: {startDate ? format(parse(startDate, 'yyyy-MM-dd', new Date()), 'PP') : ''}{endDate && startDate ? ` - ${format(parse(endDate, 'yyyy-MM-dd', new Date()), 'PP')}` : ''}
+                      Date: {startDate ? `${format(parse(startDate, 'yyyy-MM-dd', new Date()), 'PP')}${endDate ? ` - ${format(parse(endDate, 'yyyy-MM-dd', new Date()), 'PP')}` : ''}` : 'Select Date Range'}
                       <button onClick={() => { setStartDate(''); setEndDate(''); }} className="text-indigo-600 hover:text-indigo-800">
                         <X className="h-3 w-3" />
                       </button>
@@ -2120,19 +2155,10 @@ const OrdersPage = () => {
                               {!['COMPLETED', 'CANCELLED'].includes(order.status) && (
                                 <button
                                   onClick={() => setSelectedOrderForPickupUpdate(order)}
-                                  className="mt-2 px-3 py-1 text-xs font-medium text-indigo-600 bg-indigo-100 rounded-md hover:bg-indigo-200 inline-flex items-center"
+                                  className="mt-2 px-3 py-1 text-xs font-medium text-blue-700 bg-blue-100 rounded-md hover:bg-blue-200 inline-flex items-center"
                                 >
-                                  {order.deliveryMethod === 'PICKUP' ? (
-                                    <>
-                                      <Clock className="h-3 w-3 mr-1" />
-                                      Change Pickup/Delivery
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Truck className="h-3 w-3 mr-1" />
-                                      Change Delivery Method
-                                    </>
-                                  )}
+                                  <Clock className="h-3 w-3 mr-1" />
+                                  Change Pickup/Delivery
                                 </button>
                               )}
                             </div>
