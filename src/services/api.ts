@@ -975,13 +975,13 @@ export const apiMethods = {
 
     getOrderById: async (orderId: string) => {
       try {
-        const response = await api.get(`/api/pos/orders/${orderId}`);
-        
+        const response = await api.get(`/api/pos/orders/${orderId}/details`);
+
         if (response.data && typeof response.data === 'object') {
           const { success, data, message } = response.data;
           return { success, data, message };
         }
-        
+
         return {
           success: false,
           data: null,

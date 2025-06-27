@@ -289,7 +289,7 @@ const OrdersPage = () => {
               };
             }
 
-            if (payment.status === 'PARTIALLY_PAID' || payment.isPartialPayment) {
+            if (payment.status === POSPaymentStatus.PARTIALLY_PAID || payment.isPartialPayment) {
               return {
                 ...payment,
                 status: POSPaymentStatus.PARTIALLY_PAID,
@@ -494,7 +494,7 @@ const OrdersPage = () => {
             }
             
             // Handle partial payments
-            if (payment.status === 'PARTIALLY_PAID' || payment.isPartialPayment) {
+            if (payment.status === POSPaymentStatus.PARTIALLY_PAID || payment.isPartialPayment) {
               console.log('Processing partial payment:', payment);
               return {
                 ...payment,
@@ -530,7 +530,7 @@ const OrdersPage = () => {
             // Find the most recent REFUNDED or PARTIALLY_REFUNDED status entry
             const refundEntries = order.statusHistory
               .filter((entry: any) => 
-                (entry.status === 'REFUNDED' || entry.status === 'PARTIALLY_REFUNDED')
+                (entry.status === POSOrderStatus.REFUNDED || entry.status === POSOrderStatus.PARTIALLY_REFUNDED)
               );
               
             console.log(`Found ${refundEntries.length} refund status entries`);
@@ -569,7 +569,7 @@ const OrdersPage = () => {
           return {
             ...order,
             // Add the refund notes to the order object
-            notes: (order.status === 'REFUNDED' || order.status === 'PARTIALLY_REFUNDED') 
+            notes: (order.status === POSOrderStatus.REFUNDED || order.status === POSOrderStatus.PARTIALLY_REFUNDED)
               ? (refundNotes || order.notes || '') 
               : (order.notes || ''),
             items: order.items.map((item: any) => ({
@@ -836,44 +836,99 @@ const OrdersPage = () => {
   };
 
   const handleCancelOrder = async (orderId: string) => {
+    console.log('=== CANCEL ORDER STARTED ===');
+    console.log('Order ID:', orderId);
+    console.log('Is Super Admin:', isSuperAdmin);
+
     try {
       if (!isSuperAdmin) {
+        console.log('User is not super admin, showing error');
         toast.error('Only Super Admins can cancel orders');
         setShowCancelConfirm(null);
         return;
       }
 
-      // Get the current order to check its status
+      // Get the current order to check its status and payments
       const orderToCancel = orders.find(order => order.id === orderId);
-      
+
       if (!orderToCancel) {
+        console.error('Order not found in orders list');
         throw new Error('Order not found');
       }
 
-      console.log('Cancelling order:', orderId, 'with status:', orderToCancel.status);
+      console.log('Found order to cancel:', {
+        id: orderToCancel.id,
+        status: orderToCancel.status,
+        paymentsCount: orderToCancel.payments?.length || 0,
+        payments: orderToCancel.payments
+      });
 
       // For completed orders, proceed with cancel and refund
-      if (orderToCancel.status === 'COMPLETED') {
+      if (orderToCancel.status === POSOrderStatus.COMPLETED) {
+        console.log('Order is COMPLETED, calling cancelOrder API...');
         const success = await apiMethods.pos.cancelOrder(orderId);
+        console.log('Cancel order API response:', success);
+
         if (success) {
-          toast.success('Completed order cancelled and will be refunded');
+          console.log('Order cancelled successfully, updating payment statuses...');
+          // Update all payment statuses to REFUNDED
+          if (orderToCancel.payments && orderToCancel.payments.length > 0) {
+            console.log(`Updating ${orderToCancel.payments.length} payment statuses to REFUNDED`);
+            for (const payment of orderToCancel.payments) {
+              if (payment.id && payment.status !== POSPaymentStatus.REFUNDED) {
+                try {
+                  console.log(`Updating payment ${payment.id} from ${payment.status} to REFUNDED`);
+                  const paymentResponse = await apiMethods.pos.updatePaymentStatus(orderId, payment.id, POSPaymentStatus.REFUNDED);
+                  console.log(`Payment ${payment.id} update response:`, paymentResponse);
+                } catch (paymentError) {
+                  console.error('Error updating payment status to refunded:', paymentError);
+                  // Don't fail the entire operation if payment status update fails
+                }
+              }
+            }
+          }
+          console.log('All payment statuses updated, showing success message');
+          toast.success('Completed order cancelled and payments refunded');
           setShowCancelConfirm(null);
           fetchOrders();
         } else {
+          console.error('Cancel order API returned false');
           throw new Error('Failed to cancel completed order');
         }
       } else {
-        // For non-completed orders, just update the status to CANCELLED
+        console.log('Order is NOT completed, updating status to CANCELLED...');
+        // For non-completed orders, update the status to CANCELLED
         const response = await apiMethods.pos.updateOrderStatus(orderId, {
-          status: 'CANCELLED',
+          status: POSOrderStatus.CANCELLED,
           notes: 'Order cancelled by POS user'
         });
 
+        console.log('Update order status response:', response);
+
         if (response.success) {
+          console.log('Order status updated successfully, updating payment statuses...');
+          // Update all payment statuses to REFUNDED (if they exist)
+          if (orderToCancel.payments && orderToCancel.payments.length > 0) {
+            console.log(`Updating ${orderToCancel.payments.length} payment statuses to REFUNDED`);
+            for (const payment of orderToCancel.payments) {
+              if (payment.id) {
+                try {
+                  console.log(`Updating payment ${payment.id} from ${payment.status} to REFUNDED`);
+                  const paymentResponse = await apiMethods.pos.updatePaymentStatus(orderId, payment.id, POSPaymentStatus.REFUNDED);
+                  console.log(`Payment ${payment.id} update response:`, paymentResponse);
+                } catch (paymentError) {
+                  console.error('Error updating payment status:', paymentError);
+                  // Don't fail the entire operation if payment status update fails
+                }
+              }
+            }
+          }
+          console.log('All payment statuses updated, showing success message');
           toast.success('Order cancelled successfully');
           setShowCancelConfirm(null);
           fetchOrders();
         } else {
+          console.error('Update order status failed:', response);
           throw new Error(response.message || 'Failed to cancel order');
         }
       }
@@ -888,50 +943,64 @@ const OrdersPage = () => {
     try {
       // Close the modal first
       setShowRefundModal(null);
-      
+
       const userEmail = Cookies.get('user-email') || 'Unknown';
-      
+
       // Format notes with user email
-      const formattedNotes = refundNotes 
+      const formattedNotes = refundNotes
         ? `Refunded by ${userEmail}: ${refundNotes}`
         : `Refunded by ${userEmail}`;
+
+      console.log('Starting refund process for order:', orderId);
 
       // Get the order first to access its payments
       const orderResponse = await apiMethods.pos.getOrderById(orderId);
       if (!orderResponse.success) {
+        console.error('Failed to fetch order details:', orderResponse);
         throw new Error('Failed to fetch order details');
       }
-      
+
       const order = orderResponse.data;
-      
+      console.log('Order details for refund:', order);
+
       // Check if order is completed and cancel it first
-      if (order.status === 'COMPLETED') {
+      if (order.status === POSOrderStatus.COMPLETED) {
+        console.log('Order is completed, cancelling first...');
         const cancelResponse = await apiMethods.pos.updateOrderStatus(orderId, {
-          status: 'CANCELLED',
+          status: POSOrderStatus.CANCELLED,
           notes: 'Order cancelled before refund by POS user'
         });
-        
+
         if (!cancelResponse.success) {
+          console.error('Failed to cancel order before refund:', cancelResponse);
           throw new Error(cancelResponse.message || 'Failed to cancel order before refund');
         }
-        
+
+        console.log('Order cancelled successfully, waiting before refund...');
         // Wait a moment for the backend to process the cancellation
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
-      
+
       // Now refund the order
+      console.log('Updating order status to REFUNDED...');
       const response = await apiMethods.pos.updateOrderStatus(orderId, {
         status: POSOrderStatus.REFUNDED,
         notes: formattedNotes
       });
 
+      console.log('Order status update response:', response);
+
       if (response.success) {
+        console.log('Order status updated successfully, updating payment statuses...');
         // Update all payment statuses to REFUNDED
         if (order.payments && order.payments.length > 0) {
+          console.log(`Updating ${order.payments.length} payment statuses to REFUNDED`);
           for (const payment of order.payments) {
             if (payment.id && payment.status !== POSPaymentStatus.REFUNDED) {
               try {
-                await apiMethods.pos.updatePaymentStatus(orderId, payment.id, POSPaymentStatus.REFUNDED);
+                console.log(`Updating payment ${payment.id} status to REFUNDED`);
+                const paymentUpdateResponse = await apiMethods.pos.updatePaymentStatus(orderId, payment.id, POSPaymentStatus.REFUNDED);
+                console.log(`Payment ${payment.id} update response:`, paymentUpdateResponse);
               } catch (paymentError) {
                 console.error('Error updating payment status:', paymentError);
                 // Don't fail the entire operation if payment status update fails
@@ -939,11 +1008,12 @@ const OrdersPage = () => {
             }
           }
         }
-        
+
         toast.success('Order marked as refunded');
         setRefundNotes(''); // Clear notes
         fetchOrders(); // Refresh orders list
       } else {
+        console.error('Failed to update order status:', response);
         throw new Error(response.message || 'Failed to mark order as refunded');
       }
     } catch (error: any) {
@@ -962,49 +1032,63 @@ const OrdersPage = () => {
       }
 
       const userEmail = Cookies.get('user-email') || 'Unknown';
-      
+
       // Format notes with user email and amount
-      const formattedNotes = partialRefundNotes 
+      const formattedNotes = partialRefundNotes
         ? `Refunded by ${userEmail} (Amount: AED ${amount}): ${partialRefundNotes}`
         : `Refunded by ${userEmail} (Amount: AED ${amount})`;
+
+      console.log('Starting partial refund process for order:', orderId, 'amount:', amount);
 
       // Get the order first to access its payments
       const orderResponse = await apiMethods.pos.getOrderById(orderId);
       if (!orderResponse.success) {
+        console.error('Failed to fetch order details:', orderResponse);
         throw new Error('Failed to fetch order details');
       }
-      
+
       const order = orderResponse.data;
+      console.log('Order details for partial refund:', order);
 
       // Check if order is completed and cancel it first
-      if (order.status === 'COMPLETED') {
+      if (order.status === POSOrderStatus.COMPLETED) {
+        console.log('Order is completed, cancelling first...');
         const cancelResponse = await apiMethods.pos.updateOrderStatus(orderId, {
-          status: 'CANCELLED',
+          status: POSOrderStatus.CANCELLED,
           notes: 'Order cancelled before partial refund by POS user'
         });
-        
+
         if (!cancelResponse.success) {
+          console.error('Failed to cancel order before partial refund:', cancelResponse);
           throw new Error(cancelResponse.message || 'Failed to cancel order before partial refund');
         }
-        
+
+        console.log('Order cancelled successfully, waiting before partial refund...');
         // Wait a moment for the backend to process the cancellation
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
 
       // Now partially refund the order
+      console.log('Updating order status to PARTIALLY_REFUNDED...');
       const response = await apiMethods.pos.updateOrderStatus(orderId, {
         status: POSOrderStatus.PARTIALLY_REFUNDED,
         notes: formattedNotes,
         partialRefundAmount: amount
       });
 
+      console.log('Partial refund order status update response:', response);
+
       if (response.success) {
+        console.log('Order status updated successfully, updating payment statuses...');
         // Update all payment statuses to PARTIALLY_REFUNDED
         if (order.payments && order.payments.length > 0) {
+          console.log(`Updating ${order.payments.length} payment statuses to PARTIALLY_REFUNDED`);
           for (const payment of order.payments) {
             if (payment.id && payment.status !== POSPaymentStatus.PARTIALLY_REFUNDED) {
               try {
-                await apiMethods.pos.updatePaymentStatus(orderId, payment.id, POSPaymentStatus.PARTIALLY_REFUNDED);
+                console.log(`Updating payment ${payment.id} status to PARTIALLY_REFUNDED`);
+                const paymentUpdateResponse = await apiMethods.pos.updatePaymentStatus(orderId, payment.id, POSPaymentStatus.PARTIALLY_REFUNDED);
+                console.log(`Payment ${payment.id} update response:`, paymentUpdateResponse);
               } catch (paymentError) {
                 console.error('Error updating payment status:', paymentError);
                 // Don't fail the entire operation if payment status update fails
@@ -1012,7 +1096,7 @@ const OrdersPage = () => {
             }
           }
         }
-        
+
         toast.success('Order marked as partially refunded');
         setShowPartialRefundModal(null);
         setPartialRefundAmount('');
@@ -1063,7 +1147,7 @@ const OrdersPage = () => {
       }
       
       // If order has PENDING_PAYMENT status but no pending payments, use the final total
-      if (order.status === 'PENDING_PAYMENT') {
+      if (order.status === POSOrderStatus.PENDING_PAYMENT) {
         return finalTotal;
       }
     }
@@ -1100,7 +1184,7 @@ const OrdersPage = () => {
     );
     
     // Check if the order status indicates pending payment
-    const hasPendingPaymentStatus2 = order.status === 'PENDING_PAYMENT';
+    const hasPendingPaymentStatus2 = order.status === POSOrderStatus.PENDING_PAYMENT;
     
     // Calculate total paid amount
     const totalPaid = order.payments?.reduce((sum, payment) => {
@@ -1126,7 +1210,7 @@ const OrdersPage = () => {
     
     // For the filter dropdown, we need to match the exact paymentStatus value that's sent to the API
     // When selectedPaymentStatus is 'PENDING', we need to return true for orders with pending payments
-    if (selectedPaymentStatus === 'PENDING') {
+    if (selectedPaymentStatus === POSPaymentStatus.PENDING) {
       // Return true if any payment has PENDING status
       return hasPendingPaymentStatus || hasPayLaterPending;
     }
@@ -1156,11 +1240,7 @@ const OrdersPage = () => {
     setSelectedOrderForPickupUpdate(null);
   };
 
-  const handleCancelAttempt = () => {
-    if (!isSuperAdmin) {
-      toast.error('Only Super Admins can cancel orders');
-    }
-  };
+
 
   const handleMarkAsCompleted = async (orderId: string) => {
     try {
@@ -2073,7 +2153,7 @@ const OrdersPage = () => {
                         <p>Date: {format(new Date(order.createdAt), 'PPpp')}</p>
                         
                         {/* Display refund status */}
-                        {order.status === 'REFUNDED' && (
+                        {order.status === POSOrderStatus.REFUNDED && (
                           <div className="mt-2 pt-2 border-t border-gray-200">
                             <p className="font-medium text-red-600">Status: Fully Refunded</p>
                             {order.notes && (
@@ -2085,7 +2165,7 @@ const OrdersPage = () => {
                             )}
                           </div>
                         )}
-                        {order.status === 'PARTIALLY_REFUNDED' && order.partialRefundAmount && (
+                        {order.status === POSOrderStatus.PARTIALLY_REFUNDED && order.partialRefundAmount && (
                           <div className="mt-2 pt-2 border-t border-gray-200">
                             <p className="font-medium text-orange-600">
                               Status: Partially Refunded (AED {order.partialRefundAmount.toFixed(2)})
@@ -2254,7 +2334,7 @@ const OrdersPage = () => {
                     </div>
                     
                     {/* Display partial refund amount if applicable */}
-                    {order.status === 'PARTIALLY_REFUNDED' && order.partialRefundAmount && (
+                    {order.status === POSOrderStatus.PARTIALLY_REFUNDED && order.partialRefundAmount && (
                       <div className="mt-3 pt-2 border-t border-gray-200">
                         <p className="font-medium text-orange-600">
                           Partial Refund Amount: AED {order.partialRefundAmount.toFixed(2)}
@@ -2503,8 +2583,8 @@ const OrdersPage = () => {
                           Update Details
                         </button>
                         <button
-                          onClick={() => handleCancelOrder(order.id)}
-                          className="px-3 py-2 text-sm font-medium text-red-700 bg-red-100 rounded-md hover:bg-red-200 min-w-fit"
+                          onClick={() => isSuperAdmin ? setShowCancelConfirm(order.id) : toast.error('Only Super Admins can cancel orders')}
+                          className={`px-3 py-2 text-sm font-medium ${isSuperAdmin ? 'text-red-700 bg-red-100 hover:bg-red-200' : 'text-gray-500 bg-gray-100 hover:bg-gray-200'} rounded-md min-w-fit`}
                         >
                           Cancel Order
                         </button>
@@ -2545,7 +2625,7 @@ const OrdersPage = () => {
                         {hasPendingPayment(order) ? '💰 Pay Now' : '💰 Pay Remaining'}
                       </button>
                     )}
-                    {(order.status === 'CANCELLED' || order.status === 'COMPLETED') && (
+                    {(order.status === POSOrderStatus.CANCELLED || order.status === POSOrderStatus.COMPLETED) && (
                       <>
                         <button
                           onClick={() => {
@@ -2570,7 +2650,7 @@ const OrdersPage = () => {
                         </button>
                       </>
                     )}
-                    {order.status === 'PENDING' && (
+                    {order.status === POSOrderStatus.PENDING && (
                       <button
                         onClick={() => handleMarkAsCompleted(order.id)}
                         className="px-3 py-2 text-sm font-medium text-green-600 bg-green-100 rounded-md hover:bg-green-200 flex items-center gap-1 min-w-fit whitespace-nowrap"
