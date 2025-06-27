@@ -78,7 +78,8 @@ const paymentStatusLabels = {
   PARTIALLY_PAID: 'Partially Paid',
   PENDING: 'Pending',
   REFUNDED: 'Refunded',
-  PARTIALLY_REFUNDED: 'Partially Refunded'
+  PARTIALLY_REFUNDED: 'Partially Refunded',
+  CANCELLED: 'Cancelled'
 } as const;
 
 const deliveryMethodColors = {
@@ -126,7 +127,7 @@ const OrdersPage = () => {
   const [refundNotes, setRefundNotes] = useState<string>('');
   const [partialRefundNotes, setPartialRefundNotes] = useState<string>('');
   const [showRefundModal, setShowRefundModal] = useState<string | null>(null);
-  const { isSuperAdmin } = useUserRole();
+  const { isSuperAdmin, userRole } = useUserRole();
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -839,6 +840,7 @@ const OrdersPage = () => {
     console.log('=== CANCEL ORDER STARTED ===');
     console.log('Order ID:', orderId);
     console.log('Is Super Admin:', isSuperAdmin);
+    console.log('User Role:', userRole);
 
     try {
       if (!isSuperAdmin) {
@@ -863,78 +865,58 @@ const OrdersPage = () => {
         payments: orderToCancel.payments
       });
 
-      // For completed orders, proceed with cancel and refund
-      if (orderToCancel.status === POSOrderStatus.COMPLETED) {
-        console.log('Order is COMPLETED, calling cancelOrder API...');
-        const success = await apiMethods.pos.cancelOrder(orderId);
-        console.log('Cancel order API response:', success);
+      // Use a unified approach for cancelling orders regardless of status
+      console.log(`Cancelling order with status: ${orderToCancel.status}`);
 
-        if (success) {
-          console.log('Order cancelled successfully, updating payment statuses...');
-          // Update all payment statuses to REFUNDED
-          if (orderToCancel.payments && orderToCancel.payments.length > 0) {
-            console.log(`Updating ${orderToCancel.payments.length} payment statuses to REFUNDED`);
-            for (const payment of orderToCancel.payments) {
-              if (payment.id && payment.status !== POSPaymentStatus.REFUNDED) {
-                try {
-                  console.log(`Updating payment ${payment.id} from ${payment.status} to REFUNDED`);
-                  const paymentResponse = await apiMethods.pos.updatePaymentStatus(orderId, payment.id, POSPaymentStatus.REFUNDED);
-                  console.log(`Payment ${payment.id} update response:`, paymentResponse);
-                } catch (paymentError) {
-                  console.error('Error updating payment status to refunded:', paymentError);
-                  // Don't fail the entire operation if payment status update fails
+      // Use the cancelOrder API which handles the order status update
+      console.log('Calling cancelOrder API...');
+      const success = await apiMethods.pos.cancelOrder(orderId);
+      console.log('Cancel order API response:', success);
+
+      if (success) {
+        console.log('Order cancelled successfully, updating payment statuses...');
+        // Update all payment statuses to CANCELLED
+        if (orderToCancel.payments && orderToCancel.payments.length > 0) {
+          console.log(`Updating ${orderToCancel.payments.length} payment statuses to CANCELLED`);
+          for (const payment of orderToCancel.payments) {
+            if (payment.id && payment.status !== POSPaymentStatus.CANCELLED) {
+              try {
+                console.log(`Updating payment ${payment.id} from ${payment.status} to CANCELLED`);
+                const paymentResponse = await apiMethods.pos.updatePaymentStatus(orderId, payment.id, POSPaymentStatus.CANCELLED);
+                console.log(`Payment ${payment.id} update response:`, paymentResponse);
+
+                if (paymentResponse.success) {
+                  console.log(`✅ Payment ${payment.id} successfully updated to CANCELLED`);
+                } else {
+                  console.error(`❌ Failed to update payment ${payment.id}:`, paymentResponse);
                 }
+              } catch (paymentError) {
+                console.error('Error updating payment status to cancelled:', paymentError);
+                // Don't fail the entire operation if payment status update fails
               }
+            } else {
+              console.log(`Skipping payment ${payment.id} - already CANCELLED or no ID`);
             }
           }
-          console.log('All payment statuses updated, showing success message');
-          toast.success('Completed order cancelled and payments refunded');
-          setShowCancelConfirm(null);
-          fetchOrders();
-        } else {
-          console.error('Cancel order API returned false');
-          throw new Error('Failed to cancel completed order');
         }
+        console.log('All payment statuses updated, showing success message');
+        toast.success('Order cancelled successfully');
+        setShowCancelConfirm(null);
+        fetchOrders();
       } else {
-        console.log('Order is NOT completed, updating status to CANCELLED...');
-        // For non-completed orders, update the status to CANCELLED
-        const response = await apiMethods.pos.updateOrderStatus(orderId, {
-          status: POSOrderStatus.CANCELLED,
-          notes: 'Order cancelled by POS user'
-        });
-
-        console.log('Update order status response:', response);
-
-        if (response.success) {
-          console.log('Order status updated successfully, updating payment statuses...');
-          // Update all payment statuses to REFUNDED (if they exist)
-          if (orderToCancel.payments && orderToCancel.payments.length > 0) {
-            console.log(`Updating ${orderToCancel.payments.length} payment statuses to REFUNDED`);
-            for (const payment of orderToCancel.payments) {
-              if (payment.id) {
-                try {
-                  console.log(`Updating payment ${payment.id} from ${payment.status} to REFUNDED`);
-                  const paymentResponse = await apiMethods.pos.updatePaymentStatus(orderId, payment.id, POSPaymentStatus.REFUNDED);
-                  console.log(`Payment ${payment.id} update response:`, paymentResponse);
-                } catch (paymentError) {
-                  console.error('Error updating payment status:', paymentError);
-                  // Don't fail the entire operation if payment status update fails
-                }
-              }
-            }
-          }
-          console.log('All payment statuses updated, showing success message');
-          toast.success('Order cancelled successfully');
-          setShowCancelConfirm(null);
-          fetchOrders();
-        } else {
-          console.error('Update order status failed:', response);
-          throw new Error(response.message || 'Failed to cancel order');
-        }
+        console.error('Cancel order API returned false');
+        throw new Error('Failed to cancel order - API returned false');
       }
     } catch (error: any) {
       console.error('Error cancelling order:', error);
-      toast.error(error.message || 'Failed to cancel order');
+
+      // Check if it's a permission error
+      if (error.message?.includes('super admin') || error.message?.includes('Super Admin')) {
+        toast.error('Only Super Admins can cancel orders');
+      } else {
+        toast.error(error.message || 'Failed to cancel order');
+      }
+
       setShowCancelConfirm(null);
     }
   };
@@ -1018,7 +1000,13 @@ const OrdersPage = () => {
       }
     } catch (error: any) {
       console.error('Error marking order as refunded:', error);
-      toast.error(error.message || 'Failed to mark order as refunded');
+
+      // Check if it's a permission error
+      if (error.message?.includes('super admin') || error.message?.includes('Super Admin')) {
+        toast.error('Only Super Admins can refund orders');
+      } else {
+        toast.error(error.message || 'Failed to mark order as refunded');
+      }
     }
   };
 
@@ -1107,7 +1095,13 @@ const OrdersPage = () => {
       }
     } catch (error: any) {
       console.error('Error marking order as partially refunded:', error);
-      toast.error(error.message || 'Failed to mark order as partially refunded');
+
+      // Check if it's a permission error
+      if (error.message?.includes('super admin') || error.message?.includes('Super Admin')) {
+        toast.error('Only Super Admins can refund orders');
+      } else {
+        toast.error(error.message || 'Failed to mark order as partially refunded');
+      }
     }
   };
 
@@ -1483,6 +1477,8 @@ const OrdersPage = () => {
                             return order.payments?.some(p => p.status === POSPaymentStatus.REFUNDED);
                           } else if (value === 'PARTIALLY_REFUNDED') {
                             return order.payments?.some(p => p.status === POSPaymentStatus.PARTIALLY_REFUNDED);
+                          } else if (value === 'CANCELLED') {
+                            return order.payments?.some(p => p.status === POSPaymentStatus.CANCELLED);
                           }
                           return false;
                         }).length})
@@ -2583,7 +2579,20 @@ const OrdersPage = () => {
                           Update Details
                         </button>
                         <button
-                          onClick={() => isSuperAdmin ? setShowCancelConfirm(order.id) : toast.error('Only Super Admins can cancel orders')}
+                          onClick={() => {
+                            console.log('=== CANCEL BUTTON CLICKED ===');
+                            console.log('Is Super Admin:', isSuperAdmin);
+                            console.log('User Role:', userRole);
+                            console.log('Order ID:', order.id);
+
+                            if (isSuperAdmin) {
+                              console.log('Opening cancel confirmation modal');
+                              setShowCancelConfirm(order.id);
+                            } else {
+                              console.log('User is not super admin, showing error');
+                              toast.error('Only Super Admins can cancel orders');
+                            }
+                          }}
                           className={`px-3 py-2 text-sm font-medium ${isSuperAdmin ? 'text-red-700 bg-red-100 hover:bg-red-200' : 'text-gray-500 bg-gray-100 hover:bg-gray-200'} rounded-md min-w-fit`}
                         >
                           Cancel Order
