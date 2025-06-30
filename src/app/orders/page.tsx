@@ -10,6 +10,7 @@ import { DayPicker } from 'react-day-picker';
 import 'react-day-picker/dist/style.css';
 import { apiMethods } from '@/services/api';
 import { toast } from 'react-hot-toast';
+import { toast as sonnerToast } from 'sonner';
 
 // Process image URL to use our proxy for Firebase Storage URLs
 function processImageUrl(url: string): string {
@@ -935,11 +936,17 @@ const OrdersPage = () => {
 
       console.log('Starting refund process for order:', orderId);
 
+      // Show processing notification
+      sonnerToast.loading('Processing refund...', {
+        id: `refund-${orderId}`,
+        description: 'Please wait while we process the refund',
+      });
+
       // Get the order first to access its payments
       const orderResponse = await apiMethods.pos.getOrderById(orderId);
       if (!orderResponse.success) {
         console.error('Failed to fetch order details:', orderResponse);
-        throw new Error('Failed to fetch order details');
+        throw new Error(orderResponse.message || 'Failed to fetch order details');
       }
 
       const order = orderResponse.data;
@@ -974,6 +981,13 @@ const OrdersPage = () => {
 
       if (response.success) {
         console.log('Order status updated successfully, updating payment statuses...');
+
+        // Update loading message
+        sonnerToast.loading('Updating payment statuses...', {
+          id: `refund-${orderId}`,
+          description: 'Finalizing refund process',
+        });
+
         // Update all payment statuses to REFUNDED
         if (order.payments && order.payments.length > 0) {
           console.log(`Updating ${order.payments.length} payment statuses to REFUNDED`);
@@ -983,6 +997,10 @@ const OrdersPage = () => {
                 console.log(`Updating payment ${payment.id} status to REFUNDED`);
                 const paymentUpdateResponse = await apiMethods.pos.updatePaymentStatus(orderId, payment.id, POSPaymentStatus.REFUNDED);
                 console.log(`Payment ${payment.id} update response:`, paymentUpdateResponse);
+
+                if (!paymentUpdateResponse.success) {
+                  console.warn(`Failed to update payment ${payment.id} status:`, paymentUpdateResponse);
+                }
               } catch (paymentError) {
                 console.error('Error updating payment status:', paymentError);
                 // Don't fail the entire operation if payment status update fails
@@ -991,7 +1009,12 @@ const OrdersPage = () => {
           }
         }
 
-        toast.success('Order marked as refunded');
+        // Dismiss loading toast and show success
+        sonnerToast.dismiss(`refund-${orderId}`);
+        sonnerToast.success('Order Refunded Successfully', {
+          description: `Order #${order.orderNumber || orderId} has been marked as refunded`,
+          duration: 5000,
+        });
         setRefundNotes(''); // Clear notes
         fetchOrders(); // Refresh orders list
       } else {
@@ -1001,11 +1024,20 @@ const OrdersPage = () => {
     } catch (error: any) {
       console.error('Error marking order as refunded:', error);
 
+      // Dismiss loading toast
+      sonnerToast.dismiss(`refund-${orderId}`);
+
       // Check if it's a permission error
       if (error.message?.includes('super admin') || error.message?.includes('Super Admin')) {
-        toast.error('Only Super Admins can refund orders');
+        sonnerToast.error('Permission Denied', {
+          description: 'Only Super Admins can refund orders',
+          duration: 5000,
+        });
       } else {
-        toast.error(error.message || 'Failed to mark order as refunded');
+        sonnerToast.error('Refund Failed', {
+          description: error.message || 'Failed to mark order as refunded',
+          duration: 5000,
+        });
       }
     }
   };
@@ -1015,7 +1047,10 @@ const OrdersPage = () => {
       // Validate refund amount
       const amount = parseFloat(partialRefundAmount);
       if (isNaN(amount) || amount <= 0) {
-        toast.error('Please enter a valid refund amount');
+        sonnerToast.error('Invalid Amount', {
+          description: 'Please enter a valid refund amount greater than 0',
+          duration: 4000,
+        });
         return;
       }
 
@@ -1028,11 +1063,17 @@ const OrdersPage = () => {
 
       console.log('Starting partial refund process for order:', orderId, 'amount:', amount);
 
+      // Show processing notification
+      sonnerToast.loading('Processing partial refund...', {
+        id: `partial-refund-${orderId}`,
+        description: `Processing AED ${amount} refund`,
+      });
+
       // Get the order first to access its payments
       const orderResponse = await apiMethods.pos.getOrderById(orderId);
       if (!orderResponse.success) {
         console.error('Failed to fetch order details:', orderResponse);
-        throw new Error('Failed to fetch order details');
+        throw new Error(orderResponse.message || 'Failed to fetch order details');
       }
 
       const order = orderResponse.data;
@@ -1068,6 +1109,13 @@ const OrdersPage = () => {
 
       if (response.success) {
         console.log('Order status updated successfully, updating payment statuses...');
+
+        // Update loading message
+        sonnerToast.loading('Updating payment statuses...', {
+          id: `partial-refund-${orderId}`,
+          description: 'Finalizing partial refund process',
+        });
+
         // Update all payment statuses to PARTIALLY_REFUNDED
         if (order.payments && order.payments.length > 0) {
           console.log(`Updating ${order.payments.length} payment statuses to PARTIALLY_REFUNDED`);
@@ -1077,6 +1125,10 @@ const OrdersPage = () => {
                 console.log(`Updating payment ${payment.id} status to PARTIALLY_REFUNDED`);
                 const paymentUpdateResponse = await apiMethods.pos.updatePaymentStatus(orderId, payment.id, POSPaymentStatus.PARTIALLY_REFUNDED);
                 console.log(`Payment ${payment.id} update response:`, paymentUpdateResponse);
+
+                if (!paymentUpdateResponse.success) {
+                  console.warn(`Failed to update payment ${payment.id} status:`, paymentUpdateResponse);
+                }
               } catch (paymentError) {
                 console.error('Error updating payment status:', paymentError);
                 // Don't fail the entire operation if payment status update fails
@@ -1085,7 +1137,12 @@ const OrdersPage = () => {
           }
         }
 
-        toast.success('Order marked as partially refunded');
+        // Dismiss loading toast and show success
+        sonnerToast.dismiss(`partial-refund-${orderId}`);
+        sonnerToast.success('Partial Refund Processed', {
+          description: `Order #${order.orderNumber || orderId} has been partially refunded (AED ${amount})`,
+          duration: 5000,
+        });
         setShowPartialRefundModal(null);
         setPartialRefundAmount('');
         setPartialRefundNotes(''); // Clear notes
@@ -1096,11 +1153,20 @@ const OrdersPage = () => {
     } catch (error: any) {
       console.error('Error marking order as partially refunded:', error);
 
+      // Dismiss loading toast
+      sonnerToast.dismiss(`partial-refund-${orderId}`);
+
       // Check if it's a permission error
       if (error.message?.includes('super admin') || error.message?.includes('Super Admin')) {
-        toast.error('Only Super Admins can refund orders');
+        sonnerToast.error('Permission Denied', {
+          description: 'Only Super Admins can refund orders',
+          duration: 5000,
+        });
       } else {
-        toast.error(error.message || 'Failed to mark order as partially refunded');
+        sonnerToast.error('Partial Refund Failed', {
+          description: error.message || 'Failed to mark order as partially refunded',
+          duration: 5000,
+        });
       }
     }
   };

@@ -1,6 +1,7 @@
 import "./globals.css";
 import { Inter } from "next/font/google";
 import { Toaster } from "@/components/ui/toaster";
+import { Toaster as SonnerToaster } from "sonner";
 import Script from "next/script";
 import { QueryProvider } from "@/providers/query-provider";
 import { AuthProvider } from "@/providers/auth-provider";
@@ -31,6 +32,12 @@ export default function RootLayout({
           </AuthProvider>
         </QueryProvider>
         <Toaster />
+        <SonnerToaster
+          position="top-right"
+          richColors
+          closeButton
+          duration={4000}
+        />
         <Script
           id="register-sw"
           strategy="afterInteractive"
