@@ -6,6 +6,7 @@ import { LogOut, Settings, User, Maximize2, Minimize2, Plus, Calculator, DollarS
 import { useAuth } from "@/providers/auth-provider";
 import { useState, useEffect, useRef } from "react";
 import CalculatorModal from "../pos/calculator-modal";
+import ConnectionStatus from "../connection-status";
 
 interface HeaderProps {
   title?: string;
@@ -108,6 +109,11 @@ export default function Header({ title }: HeaderProps) {
 
           {/* Actions */}
           <div className="flex items-center gap-4">
+            {/* Connection Status */}
+            <div className="hidden lg:block">
+              <ConnectionStatus />
+            </div>
+
             {pathname === "/pos" && (
               <>
                 <button

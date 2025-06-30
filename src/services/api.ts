@@ -5,6 +5,8 @@ import { getAuth, signInWithEmailAndPassword } from 'firebase/auth';
 import Cookies from 'js-cookie';
 import { nanoid } from 'nanoid';
 import { toast } from 'react-hot-toast';
+import EnhancedApiClient from '@/lib/enhanced-api';
+import TokenManager from '@/lib/token-manager';
 import { 
   Order, 
   OrderPayment, 
@@ -20,6 +22,10 @@ import { CartItem, CustomImage } from '@/types/cart';
 
 const baseURL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
+// Use enhanced API client for better error handling and token management
+const enhancedApi = EnhancedApiClient.getInstance();
+
+// Keep the old axios instance for backward compatibility where needed
 const api = axios.create({
   baseURL,
   headers: {
@@ -911,7 +917,7 @@ export const apiMethods = {
     updateOrderStatus: async (orderId: string, { status, notes, teamNotes, qualityControl, partialRefundAmount, returnToKitchenOrDesign, parallelProcessing }: { status: string, notes?: string, teamNotes?: string, qualityControl?: any, partialRefundAmount?: number, returnToKitchenOrDesign?: boolean, parallelProcessing?: { designStatus?: string, kitchenStatus?: string } }) => {
       try {
         console.log('API call: updateOrderStatus', { orderId, status, notes, teamNotes, qualityControl, partialRefundAmount, returnToKitchenOrDesign });
-        const response = await api.patch(`/api/pos/orders/${orderId}/status`, {
+        const response = await enhancedApi.patch(`/api/pos/orders/${orderId}/status`, {
           status,
           notes: notes || '',
           teamNotes: teamNotes || '',
@@ -1173,7 +1179,8 @@ export const apiMethods = {
       return api.post(`/api/pos/orders/${orderId}/partial-payment`, payment);
     },
     updatePaymentStatus: async (orderId: string, paymentId: string, status: POSPaymentStatus): Promise<APIResponse<Order>> => {
-      return api.patch(`/api/pos/orders/${orderId}/payments/${paymentId}`, { status });
+      const response = await enhancedApi.patch(`/api/pos/orders/${orderId}/payments/${paymentId}`, { status });
+      return response.data;
     },
     completePayment: async (orderId: string): Promise<APIResponse<Order>> => {
       return api.post(`/api/pos/orders/${orderId}/complete-payment`);

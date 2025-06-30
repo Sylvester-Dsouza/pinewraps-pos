@@ -5,12 +5,17 @@ import { User, onAuthStateChanged } from 'firebase/auth';
 import { useRouter } from 'next/navigation';
 import { auth } from '@/lib/firebase';
 import Cookies from 'js-cookie';
+import TokenManager from '@/lib/token-manager';
+import { toast } from 'sonner';
+import SessionExtensionModal from '@/components/session-extension-modal';
 
 interface AuthContextType {
   user: User | null;
   loading: boolean;
   signOut: () => Promise<void>;
   refreshToken: () => Promise<string | null>;
+  connectionStatus: string;
+  sessionTimeRemaining: number;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -18,12 +23,18 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
   signOut: async () => {},
   refreshToken: async () => null,
+  connectionStatus: 'online',
+  sessionTimeRemaining: 0,
 });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [connectionStatus, setConnectionStatus] = useState('online');
+  const [sessionTimeRemaining, setSessionTimeRemaining] = useState(0);
+  const [showSessionModal, setShowSessionModal] = useState(false);
   const router = useRouter();
+  const tokenManager = TokenManager.getInstance();
 
   const handleSignOut = async () => {
     try {
@@ -37,19 +48,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const refreshToken = async () => {
     try {
-      if (!user) return null;
-      
-      // Force refresh the token
-      const token = await user.getIdToken(true);
-      
-      // Store token in cookie
-      Cookies.set('firebase-token', token, {
-        expires: 7, // 7 days
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict'
-      });
-
-      return token;
+      return await tokenManager.refreshToken();
     } catch (error) {
       console.error('Error refreshing token:', error);
       return null;
@@ -149,19 +148,76 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => unsubscribe();
   }, [router]);
 
-  // Set up token refresh interval
+  // Initialize token manager and setup session monitoring
   useEffect(() => {
     if (!user) return;
 
-    // Refresh token every 30 minutes
-    const interval = setInterval(refreshToken, 30 * 60 * 1000);
+    // Initialize token manager
+    tokenManager.initialize().catch(error => {
+      console.error('Failed to initialize token manager:', error);
+    });
 
-    return () => clearInterval(interval);
+    // Setup session time monitoring
+    const sessionTimer = setInterval(() => {
+      const token = Cookies.get('firebase-token');
+      if (token) {
+        try {
+          const payload = JSON.parse(atob(token.split('.')[1]));
+          const expiresAt = payload.exp * 1000;
+          const now = Date.now();
+          const timeRemaining = Math.max(0, Math.floor((expiresAt - now) / 1000 / 60)); // minutes
+          setSessionTimeRemaining(timeRemaining);
+
+          // Show session extension modal when session is about to expire
+          if (timeRemaining <= 10 && timeRemaining > 0 && !showSessionModal) {
+            setShowSessionModal(true);
+          } else if (timeRemaining > 10) {
+            setShowSessionModal(false);
+          }
+        } catch (error) {
+          console.error('Error parsing token for session time:', error);
+        }
+      }
+    }, 60000); // Check every minute
+
+    return () => {
+      clearInterval(sessionTimer);
+      tokenManager.cleanup();
+    };
   }, [user]);
 
+  // Setup connection status monitoring
+  useEffect(() => {
+    const updateConnectionStatus = () => {
+      setConnectionStatus(navigator.onLine ? 'online' : 'offline');
+    };
+
+    window.addEventListener('online', updateConnectionStatus);
+    window.addEventListener('offline', updateConnectionStatus);
+
+    return () => {
+      window.removeEventListener('online', updateConnectionStatus);
+      window.removeEventListener('offline', updateConnectionStatus);
+    };
+  }, []);
+
   return (
-    <AuthContext.Provider value={{ user, loading, signOut: handleSignOut, refreshToken }}>
+    <AuthContext.Provider value={{
+      user,
+      loading,
+      signOut: handleSignOut,
+      refreshToken,
+      connectionStatus,
+      sessionTimeRemaining
+    }}>
       {!loading && children}
+
+      {/* Session Extension Modal */}
+      <SessionExtensionModal
+        isOpen={showSessionModal}
+        onClose={() => setShowSessionModal(false)}
+        timeRemaining={sessionTimeRemaining}
+      />
     </AuthContext.Provider>
   );
 }
