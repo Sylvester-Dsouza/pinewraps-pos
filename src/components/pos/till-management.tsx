@@ -466,55 +466,40 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
     }
   };
 
-  // Calculate session summary
+  // Calculate session summary using simple formula:
+  // Opening Balance + Pay In + Cash Transactions - Pay Outs = Expected Amount
   const calculateSessionSummary = () => {
-    if (!currentSession) return { total: 0, payIns: 0, payOuts: 0, sales: 0, cashSales: 0, cashFromPayments: 0 };
+    if (!currentSession) return { total: 0, payIns: 0, payOuts: 0, cashTransactions: 0, openAmount: 0 };
 
     let payIns = 0;
     let payOuts = 0;
-    let sales = 0;
-    let cashSales = 0;
 
     if (transactions && transactions.length > 0) {
       transactions.forEach(tx => {
         const amount = parseFloat(tx.amount) || 0;
 
-        // Handle all cash-related transactions
-        if (tx.type === 'OPENING_BALANCE') {
-          // Opening balance is already included separately, don't double count
-        } else if (tx.type === 'ADD' || tx.type === 'ADD_CASH') {
+        if (tx.type === 'ADD' || tx.type === 'ADD_CASH') {
           // Cash added to the drawer
           payIns += amount;
         } else if (tx.type === 'REMOVE' || tx.type === 'REMOVE_CASH' || tx.type === 'TAKE_CASH') {
           // Cash removed from the drawer (use absolute value for consistency)
           payOuts += Math.abs(amount);
-        } else if (tx.type === 'SALE') {
-          // Track all sales for reporting
-          sales += amount;
-
-          // Only cash sales affect the drawer balance
-          if (tx.paymentMethod === 'CASH') {
-            cashSales += amount;
-            // We don't add cash sales to payIns to avoid double counting
-            // Cash sales are tracked separately in cashSales
-          }
-        } else if (tx.type === 'REFUND' && tx.paymentMethod === 'CASH') {
-          // Cash refunds reduce the drawer balance (use absolute value)
-          payOuts += Math.abs(amount);
         }
+        // Note: OPENING_BALANCE, SALE, and REFUND operations are not included in payIns/payOuts
+        // as they are handled separately
       });
     }
 
-    // Calculate the expected amount in the drawer
+    // Get opening amount
     const openAmount = parseFloat(currentSession.openingAmount) || 0;
 
-    // Use payment totals from session if available (more accurate than SALE operations)
-    const cashFromPayments = currentSession.paymentTotals?.CASH || cashSales;
+    // Get cash transactions from payment totals (this is the authoritative source)
+    const cashTransactions = currentSession.paymentTotals?.CASH || 0;
 
-    // Expected balance = opening + cash from payments + manual additions - manual removals
-    const total = openAmount + cashFromPayments + payIns - payOuts;
+    // Simple formula: Opening Balance + Pay In + Cash Transactions - Pay Outs = Expected Amount
+    const total = openAmount + payIns + cashTransactions - payOuts;
 
-    return { total, payIns, payOuts, openAmount, sales, cashSales, cashFromPayments };
+    return { total, payIns, payOuts, cashTransactions, openAmount };
   };
   
   const summary = calculateSessionSummary();
@@ -553,10 +538,10 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
                   </div>
                   <div className="bg-slate-50 dark:bg-slate-800 p-4 rounded-lg min-w-[180px]">
                     <div className="text-sm text-muted-foreground mb-1">Cash Transactions</div>
-                    <div className="text-lg font-bold truncate">{formatCurrency(summary.cashFromPayments + summary.payIns - summary.payOuts)}</div>
+                    <div className="text-lg font-bold truncate">{formatCurrency(summary.cashTransactions)}</div>
                     <div className="text-xs text-muted-foreground mt-1 space-y-1">
                       <div>
-                        <span className="text-blue-500">Cash Sales: +{formatCurrency(summary.cashFromPayments)}</span>
+                        <span className="text-blue-500">Cash from Sales/Payments</span>
                       </div>
                       <div>
                         <span className="text-green-500">Manual In: +{formatCurrency(summary.payIns)}</span> /
@@ -849,15 +834,13 @@ export function TillManagement({ onSessionChange }: TillManagementProps) {
                     <strong>Expected Cash in Drawer:</strong> <span className="font-medium">{formatCurrency(summary.total)}</span>
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    <div>Opening amount: {formatCurrency(summary.openAmount)}</div>
-                    <div>+ Cash from sales: {formatCurrency(summary.cashFromPayments)}</div>
-                    <div>+ Manual cash added: {formatCurrency(summary.payIns)}</div>
-                    <div>- Manual cash removed: {formatCurrency(summary.payOuts)}</div>
-                    {Math.abs(summary.cashFromPayments - summary.cashSales) > 0.01 && (
-                      <div className="text-amber-600 text-xs mt-1">
-                        ⚠️ Payment totals ({formatCurrency(summary.cashFromPayments)}) vs SALE ops ({formatCurrency(summary.cashSales)})
-                      </div>
-                    )}
+                    <div>Opening Balance: {formatCurrency(summary.openAmount)}</div>
+                    <div>+ Pay In (Manual): {formatCurrency(summary.payIns)}</div>
+                    <div>+ Cash Transactions: {formatCurrency(summary.cashTransactions)}</div>
+                    <div>- Pay Out (Manual): {formatCurrency(summary.payOuts)}</div>
+                    <div className="border-t pt-1 mt-1 font-medium">
+                      = Expected Amount: {formatCurrency(summary.total)}
+                    </div>
                   </div>
                 </div>
               )}

@@ -291,6 +291,43 @@ export class DrawerService {
       return { transactions: [], totalCount: 0 };
     }
   }
+
+  async getAllTransactions(limit: number = 10, offset: number = 0): Promise<{
+    sessions: any[];
+    totalCount: number;
+    hasMore: boolean;
+    currentPage: number;
+    totalPages: number;
+  }> {
+    try {
+      console.log('Fetching all transactions with pagination:', { limit, offset });
+
+      const response = await api.get(`/api/pos/drawer-session/all-transactions?limit=${limit}&offset=${offset}`);
+
+      console.log('All transactions response:', response.data);
+
+      return {
+        sessions: response.data.sessions || [],
+        totalCount: response.data.totalCount || 0,
+        hasMore: response.data.hasMore || false,
+        currentPage: response.data.currentPage || 1,
+        totalPages: response.data.totalPages || 1
+      };
+    } catch (error) {
+      console.error('Error getting all transactions:', error);
+      if (error.response) {
+        console.error('Response error data:', error.response.data);
+        console.error('Response status:', error.response.status);
+      }
+      return {
+        sessions: [],
+        totalCount: 0,
+        hasMore: false,
+        currentPage: 1,
+        totalPages: 1
+      };
+    }
+  }
 }
 
 export const drawerService = DrawerService.getInstance();

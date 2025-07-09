@@ -17,8 +17,27 @@ export default function TillPage() {
   const [sessionHistory, setSessionHistory] = useState<any[]>([]);
   const [drawerLogs, setDrawerLogs] = useState<any[]>([]);
   const [transactionHistory, setTransactionHistory] = useState<any[]>([]);
+  const [allTransactions, setAllTransactions] = useState<any[]>([]);
+  const [allTransactionsPagination, setAllTransactionsPagination] = useState({
+    currentPage: 1,
+    totalPages: 1,
+    hasMore: false,
+    totalCount: 0
+  });
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingAllTransactions, setIsLoadingAllTransactions] = useState(false);
+  const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set());
   const router = useRouter();
+
+  const toggleSessionExpansion = (sessionId: string) => {
+    const newExpanded = new Set(expandedSessions);
+    if (newExpanded.has(sessionId)) {
+      newExpanded.delete(sessionId);
+    } else {
+      newExpanded.add(sessionId);
+    }
+    setExpandedSessions(newExpanded);
+  };
 
   useEffect(() => {
     fetchData();
@@ -35,10 +54,34 @@ export default function TillPage() {
 
       const transactionsResponse = await drawerService.getTransactionHistory(50);
       setTransactionHistory(transactionsResponse.transactions || []);
+
+      // Fetch initial all transactions data
+      await fetchAllTransactions(1);
     } catch (error) {
       console.error('Error fetching till data:', error);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const fetchAllTransactions = async (page: number = 1) => {
+    setIsLoadingAllTransactions(true);
+    try {
+      const limit = 5; // Show 5 sessions per page
+      const offset = (page - 1) * limit;
+
+      const response = await drawerService.getAllTransactions(limit, offset);
+      setAllTransactions(response.sessions);
+      setAllTransactionsPagination({
+        currentPage: response.currentPage,
+        totalPages: response.totalPages,
+        hasMore: response.hasMore,
+        totalCount: response.totalCount
+      });
+    } catch (error) {
+      console.error('Error fetching all transactions:', error);
+    } finally {
+      setIsLoadingAllTransactions(false);
     }
   };
 
@@ -88,8 +131,9 @@ export default function TillPage() {
           <Tabs defaultValue="sessions">
             <TabsList className="mb-4">
               <TabsTrigger value="sessions">Session History</TabsTrigger>
-              <TabsTrigger value="transactions">Transactions</TabsTrigger>
-              <TabsTrigger value="operations">Operations Log</TabsTrigger>
+              <TabsTrigger value="transactions">Session Transactions</TabsTrigger>
+              <TabsTrigger value="operations">Session Operations Log</TabsTrigger>
+              <TabsTrigger value="all-transactions">All Transactions</TabsTrigger>
             </TabsList>
 
             <TabsContent value="sessions">
@@ -258,7 +302,7 @@ export default function TillPage() {
                                 log.action === 'REMOVE_CASH' ? 'bg-yellow-100 text-yellow-800' :
                                 'bg-gray-100 text-gray-800'
                               }>
-                                {log.action.split('_').map(word => word.charAt(0) + word.slice(1).toLowerCase()).join(' ')}
+                                {log.action.split('_').map((word: string) => word.charAt(0) + word.slice(1).toLowerCase()).join(' ')}
                               </Badge>
                             </TableCell>
                             <TableCell>
@@ -282,6 +326,203 @@ export default function TillPage() {
                   ) : (
                     <div className="text-center py-8 text-muted-foreground">
                       No operations found
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="all-transactions">
+              <Card>
+                <CardHeader>
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <CardTitle>All Till Transactions</CardTitle>
+                      <CardDescription>
+                        Complete transaction history organized by till sessions
+                      </CardDescription>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => fetchAllTransactions(1)}
+                      disabled={isLoadingAllTransactions}
+                    >
+                      {isLoadingAllTransactions ? 'Refreshing...' : 'Refresh'}
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {isLoadingAllTransactions ? (
+                    <div className="text-center py-8">Loading all transactions...</div>
+                  ) : allTransactions.length > 0 ? (
+                    <div className="space-y-6">
+                      {allTransactions.map((session) => (
+                        <div key={session.id} className="border rounded-lg p-4 space-y-4">
+                          {/* Session Header */}
+                          <div className="flex justify-between items-start border-b pb-3">
+                            <div>
+                              <h3 className="font-semibold text-lg">
+                                Session #{session.id.slice(-8)}
+                              </h3>
+                              <div className="text-sm text-muted-foreground space-y-1">
+                                <p>Opened: {formatDate(session.openedAt)} by {session.user ? `${session.user.firstName} ${session.user.lastName}` : 'Unknown'}</p>
+                                {session.closedAt && (
+                                  <p>Closed: {formatDate(session.closedAt)}</p>
+                                )}
+                                <p>Opening Amount: {formatCurrency(parseFloat(session.openingAmount))}</p>
+                                {session.closingAmount && (
+                                  <p>Closing Amount: {formatCurrency(parseFloat(session.closingAmount))}</p>
+                                )}
+                              </div>
+                            </div>
+                            <div className="text-right space-y-2">
+                              <Badge variant={session.status === 'OPEN' ? 'success' : 'secondary'}>
+                                {session.status}
+                              </Badge>
+                              <div className="text-sm text-muted-foreground">
+                                <p>{session.operations.length} operations</p>
+                                {session.payments && <p>{session.payments.length} payments</p>}
+                              </div>
+                              {session.paymentTotals && (
+                                <div className="text-xs space-y-1">
+                                  <p className="font-medium">Payment Totals:</p>
+                                  {Object.entries(session.paymentTotals).map(([method, amount]) => {
+                                    const numAmount = Number(amount);
+                                    return numAmount > 0 && (
+                                      <p key={method} className="text-muted-foreground">
+                                        {method}: {formatCurrency(numAmount)}
+                                      </p>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Session Summary */}
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-3 bg-gray-50 rounded-lg">
+                            <div className="text-center">
+                              <p className="text-sm text-muted-foreground">Total Operations</p>
+                              <p className="font-semibold">{session.operations.length}</p>
+                            </div>
+                            <div className="text-center">
+                              <p className="text-sm text-muted-foreground">Total Payments</p>
+                              <p className="font-semibold">{session.payments ? session.payments.length : 0}</p>
+                            </div>
+                            <div className="text-center">
+                              <p className="text-sm text-muted-foreground">Cash Total</p>
+                              <p className="font-semibold text-green-600">
+                                {session.paymentTotals ? formatCurrency(session.paymentTotals.CASH || 0) : formatCurrency(0)}
+                              </p>
+                            </div>
+                            <div className="text-center">
+                              <p className="text-sm text-muted-foreground">Card Total</p>
+                              <p className="font-semibold text-blue-600">
+                                {session.paymentTotals ? formatCurrency(session.paymentTotals.CARD || 0) : formatCurrency(0)}
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Operations Table */}
+                          {session.operations.length > 0 && (
+                            <div>
+                              <div className="flex justify-between items-center mb-2">
+                                <h4 className="font-medium">Operations ({session.operations.length})</h4>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => toggleSessionExpansion(session.id)}
+                                >
+                                  {expandedSessions.has(session.id) ? 'Hide Details' : 'Show Details'}
+                                </Button>
+                              </div>
+                              {expandedSessions.has(session.id) && (
+                                <>
+                                  <Table>
+                                    <TableHeader>
+                                      <TableRow>
+                                        <TableHead>Time</TableHead>
+                                        <TableHead>Type</TableHead>
+                                        <TableHead>Amount</TableHead>
+                                        <TableHead>User</TableHead>
+                                        <TableHead>Notes</TableHead>
+                                      </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                      {session.operations.map((operation: any) => (
+                                        <TableRow key={operation.id}>
+                                          <TableCell className="text-sm">
+                                            {new Date(operation.createdAt).toLocaleTimeString()}
+                                          </TableCell>
+                                          <TableCell>
+                                            <Badge variant="outline" className={
+                                              operation.type === 'OPENING_BALANCE' ? 'bg-green-100' :
+                                              operation.type === 'CLOSING_BALANCE' ? 'bg-red-100' :
+                                              operation.type === 'ADD_CASH' ? 'bg-blue-100' :
+                                              operation.type === 'TAKE_CASH' ? 'bg-yellow-100' :
+                                              operation.type === 'SALE' ? 'bg-purple-100' :
+                                              'bg-gray-100'
+                                            }>
+                                              {operation.type.replace('_', ' ')}
+                                            </Badge>
+                                          </TableCell>
+                                          <TableCell className={
+                                            operation.type === 'ADD_CASH' || operation.type === 'SALE' || operation.type === 'OPENING_BALANCE'
+                                              ? 'text-green-600 font-medium'
+                                              : 'text-red-600 font-medium'
+                                          }>
+                                            {operation.type === 'ADD_CASH' || operation.type === 'SALE' || operation.type === 'OPENING_BALANCE' ? '+' : '-'}
+                                            {formatCurrency(Math.abs(parseFloat(operation.amount)))}
+                                          </TableCell>
+                                          <TableCell className="text-sm">
+                                            {operation.user ? `${operation.user.firstName} ${operation.user.lastName}` : 'Unknown'}
+                                          </TableCell>
+                                          <TableCell className="text-sm max-w-xs truncate">
+                                            {operation.notes || '-'}
+                                          </TableCell>
+                                        </TableRow>
+                                      ))}
+                                    </TableBody>
+                                  </Table>
+                                </>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+
+                      {/* Pagination */}
+                      <div className="flex justify-between items-center pt-4">
+                        <div className="text-sm text-muted-foreground">
+                          Showing {allTransactions.length} of {allTransactionsPagination.totalCount} sessions
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => fetchAllTransactions(allTransactionsPagination.currentPage - 1)}
+                            disabled={allTransactionsPagination.currentPage <= 1 || isLoadingAllTransactions}
+                          >
+                            Previous
+                          </Button>
+                          <span className="px-3 py-1 text-sm">
+                            Page {allTransactionsPagination.currentPage} of {allTransactionsPagination.totalPages}
+                          </span>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => fetchAllTransactions(allTransactionsPagination.currentPage + 1)}
+                            disabled={!allTransactionsPagination.hasMore || isLoadingAllTransactions}
+                          >
+                            Next
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-muted-foreground">
+                      No transactions found
                     </div>
                   )}
                 </CardContent>
