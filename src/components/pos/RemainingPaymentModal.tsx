@@ -308,9 +308,46 @@ export default function RemainingPaymentModal({
           // Use orderDrawerService to handle cash drawer and receipt printing
           if (hasCashPayment) {
             console.log('Processing cash payment with orderDrawerService');
+
+            // First, record the cash transaction in the till
+            try {
+              // Calculate total cash amount from the payment (SIMPLIFIED APPROACH)
+              // Only record actual cash amounts to ensure till calculation accuracy
+              let totalCashAmount = 0;
+              if (paymentMethod === POSPaymentMethod.CASH) {
+                totalCashAmount = payment.amount;
+              } else if (isSplitPayment) {
+                // Handle split payments - only count cash portions
+                if (splitMethod1 === POSPaymentMethod.CASH && splitAmount1) {
+                  totalCashAmount += parseFloat(splitAmount1.toString());
+                }
+                if (splitMethod2 === POSPaymentMethod.CASH && splitAmount2) {
+                  totalCashAmount += parseFloat(splitAmount2.toString());
+                }
+              }
+
+              if (totalCashAmount > 0) {
+                console.log('Recording cash sale in till for amount:', totalCashAmount);
+                const recordResult = await orderDrawerService.recordCashSale(
+                  totalCashAmount,
+                  response.data?.orderNumber,
+                  orderId // Pass order ID for duplicate prevention
+                );
+
+                if (recordResult) {
+                  console.log('Successfully recorded cash sale in till');
+                } else {
+                  console.error('Failed to record cash sale in till');
+                }
+              }
+            } catch (recordError) {
+              console.error('Error recording cash sale in till:', recordError);
+            }
+
+            // Then handle receipt printing and drawer opening
             const success = await orderDrawerService.handleOrderCashDrawer(
               [paymentObj],
-              undefined, // orderNumber
+              response.data?.orderNumber,
               orderId,
               response.data // complete order data
             );

@@ -1431,7 +1431,8 @@ export default function CheckoutModal({
 
                   // Record cash transaction in the till
                   try {
-                    // Calculate total cash amount from all payments using consistent logic with backend
+                    // Calculate total cash amount from all payments (SIMPLIFIED APPROACH)
+                    // Only record actual cash amounts to ensure till calculation accuracy
                     const totalCashAmount = paymentData.reduce((total, payment) => {
                       if (payment.method === POSPaymentMethod.CASH) {
                         return total + parseFloat(payment.amount.toString());
@@ -1452,7 +1453,8 @@ export default function CheckoutModal({
                     console.log('Recording cash sale in till for amount:', totalCashAmount);
                     const recordResult = await orderDrawerService.recordCashSale(
                       totalCashAmount,
-                      response.data?.orderNumber
+                      response.data?.orderNumber,
+                      response.data?.id // Pass order ID for duplicate prevention
                     );
 
                     if (recordResult) {

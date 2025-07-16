@@ -446,21 +446,25 @@ export class OrderDrawerService {
   }
 
   /**
-   * Record a cash sale in the current drawer session
-   * @param amount Amount of the cash sale
+   * Record a cash sale in the current drawer session (SIMPLIFIED APPROACH)
+   * This creates a SALE operation that will be used in the till closing calculation:
+   * Opening Balance + Total Cash Sales + Pay In - Pay Out = Expected Cash
+   * @param amount Amount of the cash sale (only actual cash received)
    * @param orderNumber Optional order number for reference
+   * @param orderId Optional order ID for duplicate prevention
    * @returns Promise resolving to the API response
    */
-  public async recordCashSale(amount: number, orderNumber?: string): Promise<any> {
+  public async recordCashSale(amount: number, orderNumber?: string, orderId?: string): Promise<any> {
     try {
-      console.log('Recording cash sale transaction:', { amount, orderNumber });
-      
+      console.log('Recording cash sale transaction (simplified approach):', { amount, orderNumber, orderId });
+
       // Call the API to record the cash sale
       try {
         const response = await api.post('/api/pos/drawer-session/operation/sale', {
           amount: amount.toString(),
           notes: `Cash payment received${orderNumber ? ` for order #${orderNumber}` : ''}`,
-          orderNumber
+          orderNumber,
+          orderId
         });
         
         console.log('Cash sale recording response:', response.data);
