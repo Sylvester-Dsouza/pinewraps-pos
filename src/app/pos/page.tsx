@@ -13,6 +13,7 @@ import Image from 'next/image';
 import { nanoid } from 'nanoid';
 import { CartItem, CustomImage, CartProduct } from '@/types/cart';
 import { useDrawerStatus } from '@/providers/drawer-status-provider';
+import { saveCartToStorage, loadCartFromStorage, clearCartFromStorage, debugStorageUsage, clearAllPOSStorage } from '@/utils/cart-storage';
 
 import { Search, X, Minus, Plus, Edit } from 'lucide-react';
 
@@ -74,76 +75,16 @@ export default function POSPage() {
   // Load cart items from localStorage on mount
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      // First try to load from localStorage
-      const savedCartItems = localStorage.getItem('pos-cart');
+      // Load cart using utility function
+      const loadedCart = loadCartFromStorage();
+      if (loadedCart.length > 0) {
+        console.log('Setting cart with loaded items:', loadedCart);
+        setCart(loadedCart);
+      }
+      
+      // Load checkout details
       const savedCheckoutDetails = localStorage.getItem('pos-checkout-details');
       const loadingParkedOrder = localStorage.getItem('pos-loading-parked-order');
-
-      if (savedCartItems) {
-        try {
-          const parsedCartItems = JSON.parse(savedCartItems);
-          console.log('Loading cart items from localStorage:', parsedCartItems);
-
-          if (Array.isArray(parsedCartItems)) {
-            // Ensure all required fields are present
-            const validatedCartItems = parsedCartItems.map(item => {
-              // Check if product exists
-              if (!item.product) {
-                console.error('Cart item missing product:', item);
-                return null;
-              }
-
-              // Process selected variations - ensure they have proper structure
-              let selectedVariations = [];
-              if (item.selectedVariations && Array.isArray(item.selectedVariations)) {
-                selectedVariations = item.selectedVariations.map((v: any) => ({
-                  id: v.id || nanoid(),
-                  type: v.type || 'Option',
-                  value: v.value || '',
-                  priceAdjustment: parseFloat(String(v.price || v.priceAdjustment)) || 0
-                }));
-              }
-
-              // Process custom images - ensure they have proper structure
-              let customImages = [];
-              if (item.customImages && Array.isArray(item.customImages)) {
-                customImages = item.customImages.map((img: any) => ({
-                  id: img.id || nanoid(),
-                  url: img.url || '',
-                  previewUrl: img.previewUrl || img.url || '',
-                  comment: img.comment || ''
-                }));
-              }
-
-              // Create a properly formatted cart item
-              return {
-                id: item.id || nanoid(),
-                product: {
-                  id: item.product?.id || '',
-                  name: item.product?.name || 'Unknown Product',
-                  basePrice: parseFloat(String(item.product?.basePrice)) || 0,
-                  requiresKitchen: item.product?.requiresKitchen || false,
-                  requiresDesign: item.product?.requiresDesign || false,
-                  allowCustomImages: item.product?.allowCustomImages || false,
-                  status: item.product?.status || 'ACTIVE',
-                  images: Array.isArray(item.product?.images) ? item.product.images : [],
-                  allowCustomPrice: item.product?.allowCustomPrice || false,
-                },
-                quantity: parseInt(String(item.quantity)) || 1,
-                selectedVariations,
-                notes: item.notes || '',
-                customImages,
-                totalPrice: parseFloat(String(item.totalPrice)) || 0,
-              };
-            }).filter(item => item !== null);
-
-            console.log('Setting cart with validated items:', validatedCartItems);
-            setCart(validatedCartItems);
-          }
-        } catch (error) {
-          console.error('Error parsing cart items from localStorage:', error);
-        }
-      }
 
       if (savedCheckoutDetails) {
         try {
@@ -196,7 +137,7 @@ export default function POSPage() {
 
           // Clean up localStorage
           localStorage.removeItem('pos-checkout-details');
-          localStorage.removeItem('pos-cart');
+          // Note: Don't clear cart here as it should persist during checkout
 
           // Open the checkout modal after a short delay to ensure state is updated
           setTimeout(() => {
@@ -226,37 +167,27 @@ export default function POSPage() {
   useEffect(() => {
     if (typeof window !== 'undefined') {
       if (cart.length > 0 || isCheckoutModalOpen) {
-        try {
-          // Optimize storage by limiting image data
-          const optimizedCart = cart.map(item => ({
-            ...item,
-            customImages: item.customImages ? item.customImages.map(img => ({
-              id: img.id,
-              url: img.url,
-              previewUrl: img.previewUrl,
-              type: img.type,
-              notes: img.notes,
-              comment: img.comment,
-              // Remove file property and other large data
-              file: undefined
-            })) : undefined
-          }));
-          
-          localStorage.setItem('pos-cart', JSON.stringify(optimizedCart));
-        } catch (error) {
-          console.error('Error saving cart to localStorage:', error);
-          // Don't show toast here as this runs on every cart change
-        }
+        // Use utility function for safe storage
+        saveCartToStorage(cart);
       } else {
-        localStorage.removeItem('pos-cart');
+        clearCartFromStorage();
       }
     }
   }, [cart, isCheckoutModalOpen]);
 
+  // Expose debug functions to window for development
+  useEffect(() => {
+    if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+      (window as any).debugPOSStorage = debugStorageUsage;
+      (window as any).clearPOSStorage = clearAllPOSStorage;
+      console.log('Debug functions available: window.debugPOSStorage(), window.clearPOSStorage()');
+    }
+  }, []);
+
   // Clear cart function
   const handleClearCart = () => {
     setCart([]);
-    localStorage.removeItem('pos-cart');
+    clearCartFromStorage();
     toast.success('Cart cleared');
   };
 
@@ -444,64 +375,26 @@ export default function POSPage() {
     };
 
     setCart(prevCart => {
-      const updatedCart = [...prevCart, cartItem];
-      
-      try {
-        // Optimize storage by limiting image data
-        const optimizedCart = updatedCart.map(item => ({
-          ...item,
-          customImages: item.customImages ? item.customImages.map(img => ({
-            id: img.id,
-            url: img.url,
-            previewUrl: img.previewUrl,
-            type: img.type,
-            notes: img.notes,
-            comment: img.comment,
-            // Remove file property and other large data
-            file: undefined
-          })) : undefined
-        }));
-        
-        localStorage.setItem('pos-cart', JSON.stringify(optimizedCart));
-      } catch (error) {
-        console.error('Error saving cart to localStorage:', error);
-        toast.error('Unable to save cart data. Try removing some items.');
-      }
-      
-      return updatedCart;
-    });
+    const updatedCart = [...prevCart, cartItem];
+    
+    // Save to storage using utility function
+    saveCartToStorage(updatedCart);
+    
+    return updatedCart;
+  });
     toast.success('Added to cart');
   };
 
   // Handle removing from cart
   const handleRemoveFromCart = (itemId: string) => {
     setCart(prevCart => {
-      const filteredCart = prevCart.filter(item => item.id !== itemId);
-      
-      try {
-        // Optimize storage by limiting image data
-        const optimizedCart = filteredCart.map(item => ({
-          ...item,
-          customImages: item.customImages ? item.customImages.map(img => ({
-            id: img.id,
-            url: img.url,
-            previewUrl: img.previewUrl,
-            type: img.type,
-            notes: img.notes,
-            comment: img.comment,
-            // Remove file property and other large data
-            file: undefined
-          })) : undefined
-        }));
-        
-        localStorage.setItem('pos-cart', JSON.stringify(optimizedCart));
-      } catch (error) {
-        console.error('Error saving cart to localStorage:', error);
-        toast.error('Unable to save cart data');
-      }
-      
-      return filteredCart;
-    });
+    const filteredCart = prevCart.filter(item => item.id !== itemId);
+    
+    // Save to storage using utility function
+    saveCartToStorage(filteredCart);
+    
+    return filteredCart;
+  });
     toast.success('Removed from cart');
   };
 
@@ -548,7 +441,7 @@ export default function POSPage() {
       const updatedCart = prevCart.map(item => 
         item.id === editingCartItem.id ? cartItem : item
       );
-      localStorage.setItem('pos-cart', JSON.stringify(updatedCart));
+      saveCartToStorage(updatedCart);
       return updatedCart;
     });
     
@@ -566,8 +459,8 @@ export default function POSPage() {
       return;
     }
 
-    setCart(prevCart =>
-      prevCart.map(item =>
+    setCart(prevCart => {
+      const updatedCart = prevCart.map(item =>
         item.id === itemId
           ? {
               ...item,
@@ -575,8 +468,13 @@ export default function POSPage() {
               totalPrice: calculateTotalPrice(item.product.basePrice, newQuantity, item.selectedVariations)
             }
           : item
-      )
-    );
+      );
+      
+      // Save to storage using utility function
+      saveCartToStorage(updatedCart);
+      
+      return updatedCart;
+    });
   };
 
   // Calculate cart total including variations
@@ -622,7 +520,7 @@ export default function POSPage() {
     }
 
     setCart([]);
-    localStorage.removeItem('pos-cart');
+    clearCartFromStorage();
     localStorage.removeItem('pos-checkout-details');
   };
 
