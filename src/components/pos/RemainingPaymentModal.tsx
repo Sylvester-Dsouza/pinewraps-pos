@@ -159,24 +159,9 @@ export default function RemainingPaymentModal({
     }
   }, [splitAmount1, remainingAmount, isSplitPayment]);
   
-  // Reset second payment method if it's the same as the first
-  useEffect(() => {
-    if (splitMethod1 === splitMethod2) {
-      // Find the first available payment method that's not the same as splitMethod1
-      const methods = [
-        POSPaymentMethod.CASH,
-        POSPaymentMethod.CARD,
-        POSPaymentMethod.BANK_TRANSFER,
-        POSPaymentMethod.TALABAT,
-        POSPaymentMethod.PBL
-      ];
-      
-      const availableMethod = methods.find(method => method !== splitMethod1);
-      if (availableMethod) {
-        setSplitMethod2(availableMethod);
-      }
-    }
-  }, [splitMethod1, splitMethod2]);
+  // Allow same payment methods for split payments in remaining payment modal
+  // This is useful when customer wants to pay remaining amount using same method
+  // but with different references (e.g., two different cards, two different bank transfers)
 
   const handlePayment = async () => {
     try {
@@ -585,7 +570,14 @@ export default function RemainingPaymentModal({
                     {/* Split Payment Options */}
                     {isSplitPayment && (
                       <div className="space-y-4 border border-gray-200 rounded-md p-4 bg-gray-50">
-                        <h4 className="font-medium text-gray-800">Split Payment</h4>
+                        <div className="flex justify-between items-center">
+                          <h4 className="font-medium text-gray-800">Split Payment</h4>
+                          {splitMethod1 === splitMethod2 && (
+                            <span className="text-xs text-blue-600 bg-blue-100 px-2 py-1 rounded">
+                              Same payment method selected
+                            </span>
+                          )}
+                        </div>
                         
                         {/* First Payment Method */}
                         <div>
@@ -610,13 +602,10 @@ export default function RemainingPaymentModal({
                             <button
                               type="button"
                               onClick={() => setSplitMethod1(POSPaymentMethod.CASH)}
-                              disabled={splitMethod2 === POSPaymentMethod.CASH}
                               className={`flex-1 px-3 py-1 text-sm rounded-md mb-1 ${
                                 splitMethod1 === POSPaymentMethod.CASH
                                   ? "bg-black text-white"
-                                  : splitMethod2 === POSPaymentMethod.CASH
-                                    ? "bg-gray-200 text-gray-400 cursor-not-allowed"
-                                    : "bg-gray-100 text-gray-700"
+                                  : "bg-gray-100 text-gray-700"
                               }`}
                             >
                               Cash
@@ -624,13 +613,10 @@ export default function RemainingPaymentModal({
                             <button
                               type="button"
                               onClick={() => setSplitMethod1(POSPaymentMethod.CARD)}
-                              disabled={splitMethod2 === POSPaymentMethod.CARD}
                               className={`flex-1 px-3 py-1 text-sm rounded-md mb-1 ${
                                 splitMethod1 === POSPaymentMethod.CARD
                                   ? "bg-black text-white"
-                                  : splitMethod2 === POSPaymentMethod.CARD
-                                    ? "bg-gray-200 text-gray-400 cursor-not-allowed"
-                                    : "bg-gray-100 text-gray-700"
+                                  : "bg-gray-100 text-gray-700"
                               }`}
                             >
                               Card
@@ -638,13 +624,10 @@ export default function RemainingPaymentModal({
                             <button
                               type="button"
                               onClick={() => setSplitMethod1(POSPaymentMethod.BANK_TRANSFER)}
-                              disabled={splitMethod2 === POSPaymentMethod.BANK_TRANSFER}
                               className={`flex-1 px-3 py-1 text-sm rounded-md mb-1 ${
                                 splitMethod1 === POSPaymentMethod.BANK_TRANSFER
                                   ? "bg-black text-white"
-                                  : splitMethod2 === POSPaymentMethod.BANK_TRANSFER
-                                    ? "bg-gray-200 text-gray-400 cursor-not-allowed"
-                                    : "bg-gray-100 text-gray-700"
+                                  : "bg-gray-100 text-gray-700"
                               }`}
                             >
                               Bank Transfer
@@ -652,13 +635,10 @@ export default function RemainingPaymentModal({
                             <button
                               type="button"
                               onClick={() => setSplitMethod1(POSPaymentMethod.TALABAT)}
-                              disabled={splitMethod2 === POSPaymentMethod.TALABAT}
                               className={`flex-1 px-3 py-1 text-sm rounded-md mb-1 ${
                                 splitMethod1 === POSPaymentMethod.TALABAT
                                   ? "bg-black text-white"
-                                  : splitMethod2 === POSPaymentMethod.TALABAT
-                                    ? "bg-gray-200 text-gray-400 cursor-not-allowed"
-                                    : "bg-gray-100 text-gray-700"
+                                  : "bg-gray-100 text-gray-700"
                               }`}
                             >
                               Talabat
@@ -666,13 +646,10 @@ export default function RemainingPaymentModal({
                             <button
                               type="button"
                               onClick={() => setSplitMethod1(POSPaymentMethod.PBL)}
-                              disabled={splitMethod2 === POSPaymentMethod.PBL}
                               className={`flex-1 px-3 py-1 text-sm rounded-md mb-1 ${
                                 splitMethod1 === POSPaymentMethod.PBL
                                   ? "bg-black text-white"
-                                  : splitMethod2 === POSPaymentMethod.PBL
-                                    ? "bg-gray-200 text-gray-400 cursor-not-allowed"
-                                    : "bg-gray-100 text-gray-700"
+                                  : "bg-gray-100 text-gray-700"
                               }`}
                             >
                               PBL
@@ -737,13 +714,10 @@ export default function RemainingPaymentModal({
                             <button
                               type="button"
                               onClick={() => setSplitMethod2(POSPaymentMethod.CASH)}
-                              disabled={splitMethod1 === POSPaymentMethod.CASH}
                               className={`flex-1 px-3 py-1 text-sm rounded-md mb-1 ${
                                 splitMethod2 === POSPaymentMethod.CASH
                                   ? "bg-black text-white"
-                                  : splitMethod1 === POSPaymentMethod.CASH
-                                    ? "bg-gray-200 text-gray-400 cursor-not-allowed"
-                                    : "bg-gray-100 text-gray-700"
+                                  : "bg-gray-100 text-gray-700"
                               }`}
                             >
                               Cash
@@ -751,13 +725,10 @@ export default function RemainingPaymentModal({
                             <button
                               type="button"
                               onClick={() => setSplitMethod2(POSPaymentMethod.CARD)}
-                              disabled={splitMethod1 === POSPaymentMethod.CARD}
                               className={`flex-1 px-3 py-1 text-sm rounded-md mb-1 ${
                                 splitMethod2 === POSPaymentMethod.CARD
                                   ? "bg-black text-white"
-                                  : splitMethod1 === POSPaymentMethod.CARD
-                                    ? "bg-gray-200 text-gray-400 cursor-not-allowed"
-                                    : "bg-gray-100 text-gray-700"
+                                  : "bg-gray-100 text-gray-700"
                               }`}
                             >
                               Card
@@ -765,13 +736,10 @@ export default function RemainingPaymentModal({
                             <button
                               type="button"
                               onClick={() => setSplitMethod2(POSPaymentMethod.BANK_TRANSFER)}
-                              disabled={splitMethod1 === POSPaymentMethod.BANK_TRANSFER}
                               className={`flex-1 px-3 py-1 text-sm rounded-md mb-1 ${
                                 splitMethod2 === POSPaymentMethod.BANK_TRANSFER
                                   ? "bg-black text-white"
-                                  : splitMethod1 === POSPaymentMethod.BANK_TRANSFER
-                                    ? "bg-gray-200 text-gray-400 cursor-not-allowed"
-                                    : "bg-gray-100 text-gray-700"
+                                  : "bg-gray-100 text-gray-700"
                               }`}
                             >
                               Bank Transfer
@@ -779,13 +747,10 @@ export default function RemainingPaymentModal({
                             <button
                               type="button"
                               onClick={() => setSplitMethod2(POSPaymentMethod.TALABAT)}
-                              disabled={splitMethod1 === POSPaymentMethod.TALABAT}
                               className={`flex-1 px-3 py-1 text-sm rounded-md mb-1 ${
                                 splitMethod2 === POSPaymentMethod.TALABAT
                                   ? "bg-black text-white"
-                                  : splitMethod1 === POSPaymentMethod.TALABAT
-                                    ? "bg-gray-200 text-gray-400 cursor-not-allowed"
-                                    : "bg-gray-100 text-gray-700"
+                                  : "bg-gray-100 text-gray-700"
                               }`}
                             >
                               Talabat
@@ -793,13 +758,10 @@ export default function RemainingPaymentModal({
                             <button
                               type="button"
                               onClick={() => setSplitMethod2(POSPaymentMethod.PBL)}
-                              disabled={splitMethod1 === POSPaymentMethod.PBL}
                               className={`flex-1 px-3 py-1 text-sm rounded-md mb-1 ${
                                 splitMethod2 === POSPaymentMethod.PBL
                                   ? "bg-black text-white"
-                                  : splitMethod1 === POSPaymentMethod.PBL
-                                    ? "bg-gray-200 text-gray-400 cursor-not-allowed"
-                                    : "bg-gray-100 text-gray-700"
+                                  : "bg-gray-100 text-gray-700"
                               }`}
                             >
                               PBL
