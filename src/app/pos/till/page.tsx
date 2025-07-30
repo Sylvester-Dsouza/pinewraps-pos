@@ -109,10 +109,10 @@ export default function TillPage() {
       <Header />
       <div className="flex justify-between items-center px-6">
         <div className="flex items-center gap-4">
-          <Button 
-            variant="ghost" 
-            size="sm" 
-            className="flex items-center gap-2" 
+          <Button
+            variant="ghost"
+            size="sm"
+            className="flex items-center gap-2"
             onClick={() => router.push('/pos')}
           >
             <ArrowLeftIcon className="h-4 w-4" />
@@ -253,7 +253,7 @@ export default function TillPage() {
                             <TableCell className={transaction.type === 'ADD' || transaction.type === 'ADD_CASH' || transaction.type === 'SALE' || transaction.type === 'OPENING_BALANCE' ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
                               {transaction.type === 'ADD' || transaction.type === 'ADD_CASH' || transaction.type === 'SALE' || transaction.type === 'OPENING_BALANCE' ? '+' : '-'}{formatCurrency(transaction.amount)}
                             </TableCell>
-                            <TableCell className="max-w-xs truncate">{transaction.notes || '-'}</TableCell>
+                            <TableCell className="max-w-sm break-words">{transaction.notes || '-'}</TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
@@ -297,10 +297,10 @@ export default function TillPage() {
                             <TableCell>
                               <Badge variant="outline" className={
                                 log.action === 'OPEN_SESSION' ? 'bg-green-100 text-green-800' :
-                                log.action === 'CLOSE_SESSION' ? 'bg-red-100 text-red-800' :
-                                log.action === 'ADD_CASH' ? 'bg-blue-100 text-blue-800' :
-                                log.action === 'REMOVE_CASH' ? 'bg-yellow-100 text-yellow-800' :
-                                'bg-gray-100 text-gray-800'
+                                  log.action === 'CLOSE_SESSION' ? 'bg-red-100 text-red-800' :
+                                    log.action === 'ADD_CASH' ? 'bg-blue-100 text-blue-800' :
+                                      log.action === 'REMOVE_CASH' ? 'bg-yellow-100 text-yellow-800' :
+                                        'bg-gray-100 text-gray-800'
                               }>
                                 {log.action.split('_').map((word: string) => word.charAt(0) + word.slice(1).toLowerCase()).join(' ')}
                               </Badge>
@@ -316,7 +316,7 @@ export default function TillPage() {
                                 {log.success ? 'Success' : 'Failed'}
                               </Badge>
                             </TableCell>
-                            <TableCell className="max-w-xs truncate">
+                            <TableCell className="max-w-sm break-words">
                               {log.error || log.deviceInfo || '-'}
                             </TableCell>
                           </TableRow>
@@ -458,11 +458,11 @@ export default function TillPage() {
                                           <TableCell>
                                             <Badge variant="outline" className={
                                               operation.type === 'OPENING_BALANCE' ? 'bg-green-100' :
-                                              operation.type === 'CLOSING_BALANCE' ? 'bg-red-100' :
-                                              operation.type === 'ADD_CASH' ? 'bg-blue-100' :
-                                              operation.type === 'TAKE_CASH' ? 'bg-yellow-100' :
-                                              operation.type === 'SALE' ? 'bg-purple-100' :
-                                              'bg-gray-100'
+                                                operation.type === 'CLOSING_BALANCE' ? 'bg-red-100' :
+                                                  operation.type === 'ADD_CASH' ? 'bg-blue-100' :
+                                                    operation.type === 'TAKE_CASH' ? 'bg-yellow-100' :
+                                                      operation.type === 'SALE' ? 'bg-purple-100' :
+                                                        'bg-gray-100'
                                             }>
                                               {operation.type.replace('_', ' ')}
                                             </Badge>
@@ -478,7 +478,7 @@ export default function TillPage() {
                                           <TableCell className="text-sm">
                                             {operation.user ? `${operation.user.firstName} ${operation.user.lastName}` : 'Unknown'}
                                           </TableCell>
-                                          <TableCell className="text-sm max-w-xs truncate">
+                                          <TableCell className="text-sm max-w-sm break-words">
                                             {operation.notes || '-'}
                                           </TableCell>
                                         </TableRow>
