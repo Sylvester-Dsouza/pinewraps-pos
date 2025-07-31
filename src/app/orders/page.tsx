@@ -131,6 +131,9 @@ const OrdersPage = () => {
   const [showRefundModal, setShowRefundModal] = useState<string | null>(null);
   const [showCustomImageModal, setShowCustomImageModal] = useState(false);
   const [selectedOrderItem, setSelectedOrderItem] = useState<{orderId: string, item: any, itemIndex: number} | null>(null);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxImages, setLightboxImages] = useState<Array<{src: string, comment?: string}>>([]);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
   const { isSuperAdmin, userRole } = useUserRole();
 
   // Pagination state
@@ -2381,27 +2384,49 @@ const OrdersPage = () => {
                               </div>
 
                               {item.customImages && item.customImages.length > 0 ? (
-                                <div className="grid grid-cols-2 gap-2 mt-1">
+                                <div className="grid grid-cols-3 gap-2 mt-1">
                                   {item.customImages.map((img, idx) => (
-                                    <div key={idx} className="relative">
-                                      <img
-                                        src={processImageUrl(img.url)}
-                                        alt={`Custom image ${idx + 1}`}
-                                        className="w-full h-24 object-cover rounded"
-                                        onError={(e) => {
-                                          if (e.currentTarget.src !== '/placeholder.jpg') {
-                                            e.currentTarget.src = '/placeholder.jpg';
-                                          }
+                                    <div key={idx} className="relative group cursor-pointer">
+                                      <div
+                                        className="w-full h-16 bg-gray-100 rounded border border-gray-200 flex items-center justify-center overflow-hidden hover:shadow-md transition-shadow"
+                                        onClick={() => {
+                                          const images = item.customImages.map((image: any) => ({
+                                            src: processImageUrl(image.url),
+                                            comment: image.comment || ''
+                                          }));
+                                          setLightboxImages(images);
+                                          setLightboxIndex(idx);
+                                          setLightboxOpen(true);
                                         }}
-                                      />
+                                      >
+                                        <img
+                                          src={processImageUrl(img.url)}
+                                          alt={`Custom image ${idx + 1}`}
+                                          className="w-full h-full object-cover group-hover:opacity-75 transition-opacity"
+                                          onError={(e) => {
+                                            if (e.currentTarget.src !== '/placeholder.jpg') {
+                                              e.currentTarget.src = '/placeholder.jpg';
+                                            }
+                                          }}
+                                        />
+                                      </div>
                                       {img.comment && (
-                                        <p className="text-xs text-gray-600 mt-1">{img.comment}</p>
+                                        <p className="text-xs text-gray-600 mt-1 truncate" title={img.comment}>
+                                          {img.comment}
+                                        </p>
                                       )}
                                     </div>
                                   ))}
                                 </div>
                               ) : (
-                                <p className="text-sm text-gray-500 mt-1">No custom images added</p>
+                                <div className="mt-1 p-3 bg-gray-50 border border-gray-200 rounded-lg">
+                                  <div className="flex items-center justify-center text-gray-400">
+                                    <svg className="w-8 h-8 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                    </svg>
+                                    <span className="text-sm">No custom images</span>
+                                  </div>
+                                </div>
                               )}
                             </div>
                           </div>
@@ -2967,6 +2992,65 @@ const OrdersPage = () => {
               >
                 Confirm Partial Refund
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Image Lightbox */}
+      {lightboxOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50">
+          <div className="relative max-w-4xl max-h-full p-4">
+            {/* Close button */}
+            <button
+              onClick={() => setLightboxOpen(false)}
+              className="absolute top-4 right-4 text-white hover:text-gray-300 z-10"
+            >
+              <X className="h-8 w-8" />
+            </button>
+
+            {/* Navigation buttons */}
+            {lightboxImages.length > 1 && (
+              <>
+                <button
+                  onClick={() => setLightboxIndex(prev => prev > 0 ? prev - 1 : lightboxImages.length - 1)}
+                  className="absolute left-4 top-1/2 transform -translate-y-1/2 text-white hover:text-gray-300 z-10"
+                >
+                  <ChevronLeft className="h-8 w-8" />
+                </button>
+                <button
+                  onClick={() => setLightboxIndex(prev => prev < lightboxImages.length - 1 ? prev + 1 : 0)}
+                  className="absolute right-4 top-1/2 transform -translate-y-1/2 text-white hover:text-gray-300 z-10"
+                >
+                  <ChevronRight className="h-8 w-8" />
+                </button>
+              </>
+            )}
+
+            {/* Image */}
+            <div className="flex flex-col items-center">
+              <img
+                src={lightboxImages[lightboxIndex]?.src}
+                alt={`Custom image ${lightboxIndex + 1}`}
+                className="max-w-full max-h-[80vh] object-contain"
+                onError={(e) => {
+                  if (e.currentTarget.src !== '/placeholder.jpg') {
+                    e.currentTarget.src = '/placeholder.jpg';
+                  }
+                }}
+              />
+
+              {/* Image info */}
+              <div className="mt-4 text-center text-white">
+                <p className="text-sm opacity-75">
+                  {lightboxIndex + 1} of {lightboxImages.length}
+                </p>
+                {lightboxImages[lightboxIndex]?.comment && (
+                  <p className="mt-2 text-lg">
+                    {lightboxImages[lightboxIndex].comment}
+                  </p>
+                )}
+              </div>
             </div>
           </div>
         </div>
