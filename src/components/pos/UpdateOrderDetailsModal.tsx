@@ -17,9 +17,20 @@ interface UpdateOrderDetailsModalProps {
 }
 
 const timeSlots = [
-  '9:00 AM', '10:00 AM', '11:00 AM', '12:00 PM', 
-  '1:00 PM', '2:00 PM', '3:00 PM', '4:00 PM', 
+  '9:00 AM', '10:00 AM', '11:00 AM', '12:00 PM',
+  '1:00 PM', '2:00 PM', '3:00 PM', '4:00 PM',
   '5:00 PM', '6:00 PM', '7:00 PM', '8:00 PM'
+];
+
+const emirates = [
+  { value: 'DUBAI', label: 'Dubai' },
+  { value: 'ABU_DHABI', label: 'Abu Dhabi' },
+  { value: 'SHARJAH', label: 'Sharjah' },
+  { value: 'AJMAN', label: 'Ajman' },
+  { value: 'UMM_AL_QUWAIN', label: 'Umm Al Quwain' },
+  { value: 'RAS_AL_KHAIMAH', label: 'Ras Al Khaimah' },
+  { value: 'FUJAIRAH', label: 'Fujairah' },
+  { value: 'AL_AIN', label: 'Al Ain' }
 ];
 
 const UpdateOrderDetailsModal: React.FC<UpdateOrderDetailsModalProps> = ({
@@ -59,6 +70,12 @@ const UpdateOrderDetailsModal: React.FC<UpdateOrderDetailsModalProps> = ({
     String(order.deliveryCharge || 0)
   );
 
+  // Delivery address details
+  const [streetAddress, setStreetAddress] = useState<string>(order.streetAddress || '');
+  const [apartment, setApartment] = useState<string>(order.apartment || '');
+  const [emirate, setEmirate] = useState<string>(order.emirate || 'DUBAI');
+  const [city, setCity] = useState<string>(order.city || 'Dubai');
+
   // Gift details
   const [isGift, setIsGift] = useState<boolean>(order.isGift || false);
   const [giftRecipientName, setGiftRecipientName] = useState<string>(order.giftRecipientName || '');
@@ -87,9 +104,15 @@ const UpdateOrderDetailsModal: React.FC<UpdateOrderDetailsModalProps> = ({
       return;
     }
     
-    if (deliveryMethod === 'DELIVERY' && (!deliveryDate || !deliveryTimeSlot)) {
-      toast.error('Please select both date and time for delivery');
-      return;
+    if (deliveryMethod === 'DELIVERY') {
+      if (!deliveryDate || !deliveryTimeSlot) {
+        toast.error('Please select both date and time for delivery');
+        return;
+      }
+      if (!streetAddress.trim() || !emirate) {
+        toast.error('Please provide street address and emirate for delivery');
+        return;
+      }
     }
     
     try {
@@ -102,6 +125,10 @@ const UpdateOrderDetailsModal: React.FC<UpdateOrderDetailsModalProps> = ({
         deliveryDate: deliveryMethod === 'DELIVERY' ? deliveryDate : undefined,
         deliveryTimeSlot: deliveryMethod === 'DELIVERY' ? deliveryTimeSlot : undefined,
         deliveryCharge: deliveryMethod === 'DELIVERY' ? parseFloat(deliveryCharge) || 0 : 0,
+        streetAddress: deliveryMethod === 'DELIVERY' ? streetAddress : undefined,
+        apartment: deliveryMethod === 'DELIVERY' ? apartment : undefined,
+        emirate: deliveryMethod === 'DELIVERY' ? emirate : undefined,
+        city: deliveryMethod === 'DELIVERY' ? city : undefined,
         isGift,
         giftRecipientName: isGift ? giftRecipientName : undefined,
         giftRecipientPhone: isGift ? giftRecipientPhone : undefined,
@@ -288,6 +315,71 @@ const UpdateOrderDetailsModal: React.FC<UpdateOrderDetailsModalProps> = ({
                               step="0.01"
                               placeholder="Enter delivery charge"
                             />
+                          </div>
+
+                          {/* Delivery Address Section */}
+                          <div className="space-y-3 p-3 bg-gray-50 rounded-lg border">
+                            <h4 className="text-sm font-medium text-gray-700">Delivery Address</h4>
+
+                            <div>
+                              <label className="text-sm font-medium text-gray-700 mb-1 block">
+                                Street Address *
+                              </label>
+                              <input
+                                type="text"
+                                value={streetAddress}
+                                onChange={(e) => setStreetAddress(e.target.value)}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                                placeholder="Enter street address"
+                                required={deliveryMethod === 'DELIVERY'}
+                              />
+                            </div>
+
+                            <div>
+                              <label className="text-sm font-medium text-gray-700 mb-1 block">
+                                Apartment/Unit
+                              </label>
+                              <input
+                                type="text"
+                                value={apartment}
+                                onChange={(e) => setApartment(e.target.value)}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                                placeholder="Apartment, suite, unit, etc."
+                              />
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="text-sm font-medium text-gray-700 mb-1 block">
+                                  Emirate *
+                                </label>
+                                <select
+                                  value={emirate}
+                                  onChange={(e) => setEmirate(e.target.value)}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                                  required={deliveryMethod === 'DELIVERY'}
+                                >
+                                  {emirates.map((emirateOption) => (
+                                    <option key={emirateOption.value} value={emirateOption.value}>
+                                      {emirateOption.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+
+                              <div>
+                                <label className="text-sm font-medium text-gray-700 mb-1 block">
+                                  City
+                                </label>
+                                <input
+                                  type="text"
+                                  value={city}
+                                  onChange={(e) => setCity(e.target.value)}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                                  placeholder="City"
+                                />
+                              </div>
+                            </div>
                           </div>
                         </>
                       )}

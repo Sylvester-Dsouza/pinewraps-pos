@@ -79,6 +79,11 @@ interface FinalCheckOrder {
   pickupTimeSlot?: string;
   deliveryDate?: string;
   deliveryTimeSlot?: string;
+  deliveryInstructions?: string;
+  streetAddress?: string;
+  apartment?: string;
+  emirate?: string;
+  city?: string;
   qualityControl?: {
     returnedFromFinalCheck?: boolean;
     returnReason?: string;
@@ -365,6 +370,26 @@ export default function OrderCard({ order, onUpdateStatus }: OrderCardProps) {
                   </span>
                 )}
               </p>
+
+              {/* Delivery Address and Instructions */}
+              {order.deliveryMethod === 'DELIVERY' && (
+                <div className="mt-2 space-y-1">
+                  {(order.streetAddress || order.apartment || order.emirate || order.city) && (
+                    <div className="text-sm">
+                      <span className="font-medium">Address: </span>
+                      <span className="text-gray-700">
+                        {[order.streetAddress, order.apartment, order.city, order.emirate].filter(Boolean).join(', ')}
+                      </span>
+                    </div>
+                  )}
+                  {order.deliveryInstructions && (
+                    <div className="text-sm">
+                      <span className="font-medium">Instructions: </span>
+                      <span className="text-gray-700">{order.deliveryInstructions}</span>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>

@@ -2326,9 +2326,8 @@ const OrdersPage = () => {
                             {order.giftMessage && (
                               <p className="text-sm break-words overflow-hidden">Message: "{order.giftMessage}"</p>
                             )}
-                            {order.giftCashAmount && parseFloat(String(order.giftCashAmount)) > 0 && (
-                              <p className="text-sm">Cash Gift: AED {parseFloat(String(order.giftCashAmount)).toFixed(2)}</p>
-                            )}
+                            <p className="text-sm">Gift Cash: AED {parseFloat(String(order.giftCashAmount || 0)).toFixed(2)}</p>
+
                             {/* Add button to update gift details */}
                             <button
                               onClick={() => setSelectedOrderForPickupUpdate(order)}
@@ -2492,9 +2491,6 @@ const OrdersPage = () => {
                                   <div className="text-orange-600 mt-1 ml-2">
                                     <div>Paid with {getPaymentMethodString(payment.method)}: AED {payment.amount.toFixed(2)}</div>
                                     <div>Remaining: AED {(order.totalAmount - payment.amount).toFixed(2)}</div>
-                                    {payment.futurePaymentMethod && (
-                                      <div>To be paid with: {getPaymentMethodString(payment.futurePaymentMethod)}</div>
-                                    )}
                                     {payment.reference && (
                                       <div>Reference: {payment.reference}</div>
                                     )}
@@ -2534,13 +2530,6 @@ const OrdersPage = () => {
                                 <span>Remaining Amount:</span>
                                 <span>AED {(order.totalAmount - (order.payments?.reduce((sum, payment) => sum + payment.amount, 0) || 0)).toFixed(2)}</span>
                               </div>
-                              {/* Show future payment method if available */}
-                              {order.payments?.some(p => p.futurePaymentMethod) && (
-                                <div className="flex justify-between text-sm text-gray-600 mt-1">
-                                  <span>To be paid with:</span>
-                                  <span>{getPaymentMethodString(order.payments.find(p => p.futurePaymentMethod)?.futurePaymentMethod || POSPaymentMethod.CASH)}</span>
-                                </div>
-                              )}
                             </div>
                           )}
                         </div>

@@ -415,6 +415,9 @@ export interface Product {
   requiresDesign: boolean;  // For design team processing
   requiresKitchen: boolean; // For kitchen team processing
   allowCustomImages: boolean; // For customer custom image uploads
+  // Buffer time fields
+  bufferTimeValue?: number;
+  bufferTimeUnit?: 'HOURS' | 'DAYS';
   addons?: ProductAddon[]; // Product addons
 }
 
@@ -1159,6 +1162,10 @@ export const apiMethods = {
       deliveryDate?: string,
       deliveryTimeSlot?: string,
       deliveryCharge?: number,
+      streetAddress?: string,
+      apartment?: string,
+      emirate?: string,
+      city?: string,
       isGift?: boolean,
       giftRecipientName?: string,
       giftRecipientPhone?: string,

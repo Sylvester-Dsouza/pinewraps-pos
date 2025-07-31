@@ -884,6 +884,53 @@ export default function CheckoutModal({
     setShowRemainingPaymentModal(true);
   }, [handleAddPayment, cartTotal]);
 
+  // Function to check if payment reference is required and missing
+  const isPaymentReferenceRequired = useCallback(() => {
+    // Payment methods that require payment reference
+    const methodsRequiringReference = [
+      POSPaymentMethod.CARD,
+      POSPaymentMethod.BANK_TRANSFER,
+      POSPaymentMethod.PBL,
+      POSPaymentMethod.TALABAT
+    ];
+
+    // Check current payment method
+    if (currentPaymentMethodState && methodsRequiringReference.includes(currentPaymentMethodState)) {
+      return !currentPaymentReferenceState?.trim();
+    }
+
+    // Check split payment methods
+    if (isSplitPaymentState) {
+      const method1RequiresRef = methodsRequiringReference.includes(splitMethod1);
+      const method2RequiresRef = methodsRequiringReference.includes(splitMethod2);
+
+      if (method1RequiresRef && !splitReference1?.trim()) {
+        return true;
+      }
+      if (method2RequiresRef && !splitReference2?.trim()) {
+        return true;
+      }
+    }
+
+    // Check partial payment method
+    if (currentPaymentMethodState === POSPaymentMethod.PARTIAL) {
+      if (methodsRequiringReference.includes(partialPaymentMethod)) {
+        return !currentPaymentReferenceState?.trim();
+      }
+    }
+
+    return false;
+  }, [
+    currentPaymentMethodState,
+    currentPaymentReferenceState,
+    isSplitPaymentState,
+    splitMethod1,
+    splitMethod2,
+    splitReference1,
+    splitReference2,
+    partialPaymentMethod
+  ]);
+
   // Handle create order
   const handleCreateOrder = useCallback(async () => {
     try {
@@ -3695,7 +3742,7 @@ export default function CheckoutModal({
                               <button
                                 type="button"
                                 onClick={handleCreateOrder}
-                                disabled={isSubmitting || isParkingOrder}
+                                disabled={isSubmitting || isParkingOrder || isPaymentReferenceRequired()}
                                 className={`flex-[2] inline-flex justify-center rounded-lg border border-transparent shadow-sm px-6 py-4 bg-black text-xl font-medium text-white hover:bg-gray-900 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors`}
                               >
                                 <div className="flex flex-col items-center justify-center">
@@ -3717,6 +3764,15 @@ export default function CheckoutModal({
                                 {isParkingOrder ? "Processing..." : "Hold Order"}
                               </button>
                             </div>
+
+                            {/* Payment Reference Required Message */}
+                            {isPaymentReferenceRequired() && (
+                              <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+                                <p className="text-sm text-red-600 font-medium">
+                                  Payment reference is required to complete the order
+                                </p>
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>
