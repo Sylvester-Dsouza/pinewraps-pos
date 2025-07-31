@@ -39,6 +39,7 @@ import { getPaymentMethodString } from '@/utils/payment-utils';
 import RemainingPaymentModal from '@/components/pos/RemainingPaymentModal';
 import UpdateOrderDetailsModal from '@/components/pos/UpdateOrderDetailsModal';
 import { useUserRole } from '@/hooks/use-user-role';
+import CustomImageManager from '@/components/orders/CustomImageManager';
 
 const statusColors = {
   PENDING: { bg: 'bg-yellow-100', text: 'text-yellow-800', icon: Clock },
@@ -128,6 +129,8 @@ const OrdersPage = () => {
   const [refundNotes, setRefundNotes] = useState<string>('');
   const [partialRefundNotes, setPartialRefundNotes] = useState<string>('');
   const [showRefundModal, setShowRefundModal] = useState<string | null>(null);
+  const [showCustomImageModal, setShowCustomImageModal] = useState(false);
+  const [selectedOrderItem, setSelectedOrderItem] = useState<{orderId: string, item: any, itemIndex: number} | null>(null);
   const { isSuperAdmin, userRole } = useUserRole();
 
   // Pagination state
@@ -2362,9 +2365,22 @@ const OrdersPage = () => {
                             {item.notes && (
                               <p className="text-gray-600 mt-1 break-words overflow-hidden">Notes: {item.notes}</p>
                             )}
-                            {item.customImages && item.customImages.length > 0 && (
-                              <div className="mt-2">
+                            {/* Custom Images Section - Always show if order has items */}
+                            <div className="mt-2">
+                              <div className="flex items-center justify-between">
                                 <p className="font-medium text-gray-700">Custom Images:</p>
+                                <button
+                                  onClick={() => {
+                                    setSelectedOrderItem({ orderId: order.id, item, itemIndex: index });
+                                    setShowCustomImageModal(true);
+                                  }}
+                                  className="px-2 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+                                >
+                                  Manage Images
+                                </button>
+                              </div>
+
+                              {item.customImages && item.customImages.length > 0 ? (
                                 <div className="grid grid-cols-2 gap-2 mt-1">
                                   {item.customImages.map((img, idx) => (
                                     <div key={idx} className="relative">
@@ -2384,8 +2400,10 @@ const OrdersPage = () => {
                                     </div>
                                   ))}
                                 </div>
-                              </div>
-                            )}
+                              ) : (
+                                <p className="text-sm text-gray-500 mt-1">No custom images added</p>
+                              )}
+                            </div>
                           </div>
                           <div className="text-right">
                             <p>AED {typeof item.totalPrice === 'number' ? item.totalPrice.toFixed(2) : '0.00'}</p>
@@ -2952,6 +2970,39 @@ const OrdersPage = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Custom Image Manager Modal */}
+      {showCustomImageModal && selectedOrderItem && (
+        <CustomImageManager
+          isOpen={showCustomImageModal}
+          onClose={() => {
+            setShowCustomImageModal(false);
+            setSelectedOrderItem(null);
+          }}
+          orderId={selectedOrderItem.orderId}
+          orderItem={selectedOrderItem.item}
+          itemIndex={selectedOrderItem.itemIndex}
+          onImagesUpdated={(orderId, itemIndex, images) => {
+            // Update the orders state with new images
+            setOrders(prevOrders =>
+              prevOrders.map(order =>
+                order.id === orderId
+                  ? {
+                      ...order,
+                      items: order.items.map((item, idx) =>
+                        idx === itemIndex
+                          ? { ...item, customImages: images }
+                          : item
+                      )
+                    }
+                  : order
+              )
+            );
+            setShowCustomImageModal(false);
+            setSelectedOrderItem(null);
+          }}
+        />
       )}
     </div>
   );
