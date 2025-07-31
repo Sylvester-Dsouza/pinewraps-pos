@@ -373,9 +373,19 @@ export default function FinalCheckDisplay({ staffRoles, router: externalRouter }
           return statusMatch || parallelReady;
         });
 
-        // Map orders to include product images
+        // Map orders to include product images and properly structure gift data
         const ordersWithImages = finalCheckOrders.map((order: any) => ({
           ...order,
+          // Map gift information from direct fields to giftDetails object
+          giftDetails: order.isGift ? {
+            isGift: order.isGift,
+            recipientName: order.giftRecipientName,
+            recipientPhone: order.giftRecipientPhone,
+            message: order.giftMessage,
+            cashAmount: order.giftCashAmount ? `AED ${parseFloat(String(order.giftCashAmount)).toFixed(2)}` : null,
+            includeCash: order.giftCashAmount && parseFloat(String(order.giftCashAmount)) > 0,
+            note: order.giftNote || null
+          } : null,
           items: order.items.map((item: any) => ({
             ...item,
             customImages: item.customImages?.map((img: any) => ({
