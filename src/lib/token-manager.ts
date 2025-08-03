@@ -124,7 +124,19 @@ class TokenManager {
     const user = auth.currentUser;
 
     if (!user) {
+      console.log('No authenticated user found during token refresh');
+      // Clear any stored tokens since user is not authenticated
+      this.clearToken();
       throw new Error('No authenticated user found');
+    }
+
+    // Double-check that the user is still valid
+    try {
+      await user.reload();
+    } catch (reloadError) {
+      console.error('User reload failed, user may be invalid:', reloadError);
+      this.clearToken();
+      throw new Error('User authentication is invalid');
     }
 
     let retryCount = 0;
@@ -239,6 +251,15 @@ class TokenManager {
    */
   private async checkAndRefreshToken(): Promise<void> {
     try {
+      // First check if user is still authenticated
+      const auth = getAuth();
+      const user = auth.currentUser;
+
+      if (!user) {
+        console.log('No authenticated user found, skipping token refresh');
+        return;
+      }
+
       const currentToken = this.getCurrentToken();
       if (!currentToken || !this.isTokenValid(currentToken)) {
         console.log('Token invalid or expired, refreshing...');
@@ -246,6 +267,11 @@ class TokenManager {
       }
     } catch (error) {
       console.error('Error checking token:', error);
+      // If there's an auth error, don't keep retrying
+      if (error instanceof Error && error.message.includes('No authenticated user found')) {
+        console.log('Stopping token refresh attempts due to auth error');
+        this.cleanup();
+      }
     }
   }
 
@@ -264,6 +290,14 @@ class TokenManager {
   }
 
   /**
+   * Clear stored token
+   */
+  clearToken(): void {
+    Cookies.remove('firebase-token');
+    console.log('Token cleared from storage');
+  }
+
+  /**
    * Cleanup resources
    */
   cleanup(): void {
@@ -271,15 +305,16 @@ class TokenManager {
       clearTimeout(this.refreshTimer);
       this.refreshTimer = null;
     }
-    
+
     if (this.heartbeatTimer) {
       clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = null;
     }
-    
+
     this.pendingRequests = [];
     this.isRefreshing = false;
     this.refreshPromise = null;
+    console.log('Token manager cleanup completed');
   }
 
   /**

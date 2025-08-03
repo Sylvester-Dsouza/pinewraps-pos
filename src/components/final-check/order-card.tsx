@@ -746,6 +746,27 @@ export default function OrderCard({ order, onUpdateStatus }: OrderCardProps) {
           doubleClickMaxStops: 3,
           scrollToZoom: true
         }}
+        render={{
+          slide: ({ slide }) => (
+            <div className="flex flex-col items-center justify-center h-full">
+              <div className="relative max-w-full max-h-[80vh] flex items-center justify-center">
+                <img
+                  src={slide.src}
+                  alt="Custom image"
+                  className="max-w-full max-h-full object-contain"
+                  style={{ maxHeight: '80vh' }}
+                />
+              </div>
+              {slide.comment && (
+                <div className="mt-4 max-w-2xl text-center">
+                  <div className="bg-black bg-opacity-75 text-white px-4 py-2 rounded-lg">
+                    <p className="text-lg">{slide.comment}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        }}
       />
     </motion.div>
   );

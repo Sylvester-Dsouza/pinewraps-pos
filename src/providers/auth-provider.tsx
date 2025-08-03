@@ -59,6 +59,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       try {
         if (user) {
+          console.log('Auth state changed: User authenticated');
+          setUser(user);
           // Get the ID token with force refresh
           const token = await user.getIdToken(true);
           
@@ -118,10 +120,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             }
           }
         } else {
+          console.log('Auth state changed: User not authenticated');
           // Remove token from cookie
           Cookies.remove('firebase-token');
           setUser(null);
-          
+
+          // Cleanup token manager to stop refresh attempts
+          tokenManager.cleanup();
+
           // Redirect to login if not already there
           if (window.location.pathname !== '/login') {
             router.push('/login');
@@ -132,12 +138,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Remove token and user on error
         Cookies.remove('firebase-token');
         setUser(null);
-        
+
+        // Cleanup token manager to stop refresh attempts
+        tokenManager.cleanup();
+
         // Show error message
         if (error.message) {
           window.alert(error.message);
         }
-        
+
         // Always redirect to login on error
         router.push('/login');
       } finally {
