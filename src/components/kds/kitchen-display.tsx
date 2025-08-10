@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useRouter } from "next/navigation";
 import Cookies from "js-cookie";
@@ -148,6 +148,7 @@ export default function KitchenDisplay({ staffRoles, router: externalRouter }: K
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [currentImages, setCurrentImages] = useState<CustomSlide[]>([]);
+  const zoomRef = useRef<any>(null);
   const [selectedOrder, setSelectedOrder] = useState<KitchenOrder | null>(null);
   const [showNotesInput, setShowNotesInput] = useState(false);
   const [teamNotes, setTeamNotes] = useState('');
@@ -849,10 +850,24 @@ export default function KitchenDisplay({ staffRoles, router: externalRouter }: K
       animate: { opacity: 1, scale: 1, transition: { duration: 0.2 } },
       exit: { opacity: 0, scale: 0.98, transition: { duration: 0.1 } }
     };
+    const openLightbox = (images: Array<{ url: string; comment?: string }>, index: number) => {
+      const slides = images.map(img => ({
+        src: img.url,
+        comment: img.comment,
+        width: 1200, // Add width for zoom plugin
+        height: 800  // Add height for zoom plugin
+      }));
+      setCurrentImages(slides);
+      setLightboxIndex(index);
+      setLightboxOpen(true);
+    };
+
     const handleImageClick = (images: any[], index: number) => {
       const slides = images.map(img => ({
         src: img.url,
-        comment: img.comment || ''
+        comment: img.comment || '',
+        width: 1200, // Add width for zoom plugin
+        height: 800  // Add height for zoom plugin
       }));
       setCurrentImages(slides);
       setLightboxIndex(index);
@@ -1689,10 +1704,21 @@ export default function KitchenDisplay({ staffRoles, router: externalRouter }: K
         slides={currentImages}
         plugins={[Zoom]}
         zoom={{
-          maxZoomPixelRatio: 3,
-          zoomInMultiplier: 2,
+          ref: zoomRef,
+          maxZoomPixelRatio: 5,
+          zoomInMultiplier: 1.5,
           doubleClickMaxStops: 3,
-          scrollToZoom: true
+          scrollToZoom: true,
+          wheelZoomDistanceFactor: 100,
+          doubleClickDelay: 300,
+          pinchZoomDistanceFactor: 100
+        }}
+        carousel={{
+          finite: true
+        }}
+        controller={{
+          touchAction: "none",
+          closeOnBackdropClick: true
         }}
         render={{
           slide: ({ slide }) => {
@@ -1704,7 +1730,8 @@ export default function KitchenDisplay({ staffRoles, router: externalRouter }: K
                     src={customSlide.src}
                     alt="Custom image"
                     className="max-w-full max-h-full object-contain"
-                    style={{ maxHeight: '80vh' }}
+                    style={{ maxHeight: '80vh', touchAction: 'none' }}
+                    draggable={false}
                   />
                 </div>
                 {customSlide.comment && (

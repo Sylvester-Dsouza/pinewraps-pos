@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { motion } from "framer-motion";
 import { FileCheck, CheckCircle2, AlertCircle, ChevronDown, ChevronUp, Clock, ExternalLink, Gift, Maximize2 } from "lucide-react";
 import OrderTimer from "./order-timer";
@@ -124,6 +124,7 @@ export default function OrderCard({ order, onUpdateStatus }: OrderCardProps) {
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [currentImages, setCurrentImages] = useState<CustomSlide[]>([]);
+  const zoomRef = useRef<any>(null);
 
   const toggleExpand = () => {
     setExpanded(!expanded);
@@ -262,7 +263,9 @@ export default function OrderCard({ order, onUpdateStatus }: OrderCardProps) {
   const handleImageClick = (images: any[], index: number) => {
     const slides = images.map(img => ({
       src: img.url,
-      comment: img.comment || ''
+      comment: img.comment || '',
+      width: 1200, // Add width for zoom plugin
+      height: 800  // Add height for zoom plugin
     }));
     setCurrentImages(slides);
     setLightboxIndex(index);
@@ -741,10 +744,24 @@ export default function OrderCard({ order, onUpdateStatus }: OrderCardProps) {
         close={() => setLightboxOpen(false)}
         plugins={[Zoom]}
         zoom={{
-          maxZoomPixelRatio: 3,
-          zoomInMultiplier: 2,
+          ref: zoomRef,
+          maxZoomPixelRatio: 5,
+          zoomInMultiplier: 1.5,
           doubleClickMaxStops: 3,
-          scrollToZoom: true
+          scrollToZoom: true,
+          wheelZoomDistanceFactor: 100,
+          doubleClickDelay: 300,
+          pinchZoomDistanceFactor: 100
+        }}
+        carousel={{
+          finite: true
+        }}
+        controller={{
+          touchAction: "none",
+          closeOnBackdropClick: true
+        }}
+        toolbar={{
+          buttons: ["zoom", "close"]
         }}
         render={{
           slide: ({ slide }) => {
@@ -756,7 +773,8 @@ export default function OrderCard({ order, onUpdateStatus }: OrderCardProps) {
                     src={customSlide.src}
                     alt="Custom image"
                     className="max-w-full max-h-full object-contain"
-                    style={{ maxHeight: '80vh' }}
+                    style={{ maxHeight: '80vh', touchAction: 'none' }}
+                    draggable={false}
                   />
                 </div>
                 {customSlide.comment && (
@@ -768,7 +786,49 @@ export default function OrderCard({ order, onUpdateStatus }: OrderCardProps) {
                 )}
               </div>
             );
-          }
+          },
+          iconZoomIn: () => (
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              <line x1="11" y1="8" x2="11" y2="14"></line>
+              <line x1="8" y1="11" x2="14" y2="11"></line>
+            </svg>
+          ),
+          iconZoomOut: () => (
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              <line x1="8" y1="11" x2="14" y2="11"></line>
+            </svg>
+          ),
+          buttonZoom: ({ zoomIn, zoomOut }) => (
+            <div className="flex gap-2">
+              <button
+                onClick={zoomIn}
+                className="bg-black bg-opacity-50 hover:bg-opacity-75 rounded-full p-2 transition-all"
+                aria-label="Zoom in"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                  <line x1="11" y1="8" x2="11" y2="14"></line>
+                  <line x1="8" y1="11" x2="14" y2="11"></line>
+                </svg>
+              </button>
+              <button
+                onClick={zoomOut}
+                className="bg-black bg-opacity-50 hover:bg-opacity-75 rounded-full p-2 transition-all"
+                aria-label="Zoom out"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                  <line x1="8" y1="11" x2="14" y2="11"></line>
+                </svg>
+              </button>
+            </div>
+          )
         }}
       />
     </motion.div>
