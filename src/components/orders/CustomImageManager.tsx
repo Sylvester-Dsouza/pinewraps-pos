@@ -89,28 +89,43 @@ export default function CustomImageManager({
 
   const handleRemoveImage = async (imageId: string) => {
     const imageToRemove = images.find(img => img.id === imageId);
-
     if (!imageToRemove) return;
 
-    // If it's a new image (has file property), just remove from state
-    if (imageToRemove.file) {
-      setImages(prev => prev.filter(img => img.id !== imageId));
-      return;
-    }
-
-    // If it's an existing image, delete from backend
     try {
-      const response = await apiMethods.pos.deleteCustomImage(imageId);
+      // Show loading state
+      setLoading(true);
+      
+      // Optimistically remove the image from the UI
+      setImages(prev => prev.filter(img => img.id !== imageId));
+      
+      // If it's a new image (has file property), we're done
+      if (imageToRemove.file) {
+        return;
+      }
 
-      if (response.success) {
-        setImages(prev => prev.filter(img => img.id !== imageId));
-        toast.success('Image deleted successfully');
-      } else {
-        toast.error('Failed to delete image');
+      // If it's an existing image, delete from backend
+      if (imageToRemove.id) {
+        try {
+          const response = await apiMethods.pos.deleteCustomImage(imageToRemove.id);
+          
+          if (!response.success) {
+            // If the delete failed, add the image back to the list
+            setImages(prev => [...prev, imageToRemove]);
+            throw new Error(response.message || 'Failed to delete image');
+          }
+          
+          toast.success('Image removed successfully');
+        } catch (error) {
+          // If the delete failed, log the error but don't show an error to the user
+          // since we've already removed it from the UI
+          console.error('Error deleting image from backend:', error);
+        }
       }
     } catch (error) {
-      console.error('Error deleting image:', error);
-      toast.error('Failed to delete image');
+      console.error('Error removing image:', error);
+      toast.error('Failed to remove image. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
