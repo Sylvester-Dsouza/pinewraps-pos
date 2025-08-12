@@ -1196,8 +1196,9 @@ const OrdersPage = () => {
   };
 
   const calculateRemainingAmount = (order: Order) => {
-    // Get the final total after coupon discount
-    const finalTotal = order.totalAmount - (order.couponDiscount || 0);
+    // Get the effective total after partial refunds and coupon discount
+    const effectiveTotal = getEffectiveOrderTotal(order);
+    const finalTotal = effectiveTotal - (order.couponDiscount || 0);
     
     // For orders with pending payments, we need to handle them differently
     if (hasPendingPayment(order)) {
@@ -1218,7 +1219,7 @@ const OrdersPage = () => {
       }
     }
     
-    // For partial payments, calculate the difference between total and paid
+    // For partial payments, calculate the difference between effective total and paid
     const totalPaid = order.payments?.reduce((sum, payment) => {
       // Only count payments that are not pending
       if (payment.status !== POSPaymentStatus.PENDING && payment.method !== POSPaymentMethod.PAY_LATER) {
@@ -1227,13 +1228,21 @@ const OrdersPage = () => {
       return sum;
     }, 0) || 0;
     
-    return Math.max(0, order.totalAmount - totalPaid);
+    return Math.max(0, effectiveTotal - totalPaid);
   };
 
   const hasPartialPayment = (order: Order) => {
     const hasPartialStatus = order.payments?.some(p => p.status === POSPaymentStatus.PARTIALLY_PAID || p.isPartialPayment);
     const totalPaid = order.payments?.reduce((sum, payment) => sum + payment.amount, 0) || 0;
-    return hasPartialStatus || (totalPaid > 0 && totalPaid < order.totalAmount);
+    const effectiveTotal = getEffectiveOrderTotal(order);
+    return hasPartialStatus || (totalPaid > 0 && totalPaid < effectiveTotal);
+  };
+
+  // Calculate the effective order total after partial refunds
+  const getEffectiveOrderTotal = (order: Order) => {
+    const originalTotal = order.totalAmount || 0;
+    const partialRefundAmount = order.partialRefundAmount || 0;
+    return Math.max(0, originalTotal - partialRefundAmount);
   };
   
   const hasPendingPayment = (order: Order) => {
@@ -1292,7 +1301,8 @@ const OrdersPage = () => {
     }
     
     const paidAmount = order.payments?.reduce((sum, payment) => sum + payment.amount, 0) || 0;
-    const finalTotal = order.totalAmount - (order.couponDiscount || 0);
+    const effectiveTotal = getEffectiveOrderTotal(order);
+    const finalTotal = effectiveTotal - (order.couponDiscount || 0);
     return Math.max(0, finalTotal - paidAmount) === 0; // Using a small epsilon for floating point comparison
   };
 
@@ -2238,6 +2248,9 @@ const OrdersPage = () => {
                             <p className="font-medium text-orange-600">
                               Status: Partially Refunded (AED {order.partialRefundAmount.toFixed(2)})
                             </p>
+                            <p className="text-sm text-gray-600 mt-1">
+                              Current Order Value: AED {getEffectiveOrderTotal(order).toFixed(2)}
+                            </p>
                             {order.notes && (
                               <div className="bg-orange-50 p-2 rounded-md mt-1 border border-orange-200">
                                 <p className="text-orange-700 text-sm">
@@ -2443,6 +2456,9 @@ const OrdersPage = () => {
                         <p className="font-medium text-orange-600">
                           Partial Refund Amount: AED {order.partialRefundAmount.toFixed(2)}
                         </p>
+                        <p className="text-sm text-gray-600 mt-1">
+                          Current Order Value: AED {getEffectiveOrderTotal(order).toFixed(2)}
+                        </p>
                       </div>
                     )}
                     
@@ -2533,7 +2549,7 @@ const OrdersPage = () => {
                                 {payment.status === POSPaymentStatus.PARTIALLY_PAID && (
                                   <div className="text-orange-600 mt-1 ml-2">
                                     <div>Paid with {getPaymentMethodString(payment.method)}: AED {payment.amount.toFixed(2)}</div>
-                                    <div>Remaining: AED {(order.totalAmount - payment.amount).toFixed(2)}</div>
+                                    <div>Remaining: AED {(getEffectiveOrderTotal(order) - payment.amount).toFixed(2)}</div>
                                     {payment.reference && (
                                       <div>Reference: {payment.reference}</div>
                                     )}
@@ -2571,7 +2587,7 @@ const OrdersPage = () => {
                               </div>
                               <div className="flex justify-between font-medium text-orange-600">
                                 <span>Remaining Amount:</span>
-                                <span>AED {(order.totalAmount - (order.payments?.reduce((sum, payment) => sum + payment.amount, 0) || 0)).toFixed(2)}</span>
+                                <span>AED {(getEffectiveOrderTotal(order) - (order.payments?.reduce((sum, payment) => sum + payment.amount, 0) || 0)).toFixed(2)}</span>
                               </div>
                             </div>
                           )}
@@ -2585,7 +2601,10 @@ const OrdersPage = () => {
                         {/* Always show subtotal */}
                         <div className="flex justify-between text-sm">
                           <span>Subtotal:</span>
-                          <span>AED {order.subtotal?.toFixed(2) || order.totalAmount?.toFixed(2) || '0.00'}</span>
+                          <span>AED {(order.status === POSOrderStatus.PARTIALLY_REFUNDED && order.partialRefundAmount 
+                            ? Math.max(0, (order.subtotal || order.totalAmount || 0) - order.partialRefundAmount).toFixed(2)
+                            : (order.subtotal?.toFixed(2) || order.totalAmount?.toFixed(2) || '0.00')
+                          )}</span>
                         </div>
                         
                         {/* Show coupon discount if available */}
@@ -2636,16 +2655,16 @@ const OrdersPage = () => {
                           <span>Includes VAT (5%):</span>
                           <span>
                             {(() => {
-                              // Get the subtotal and any discounts
-                              const subtotal = (order as any).subtotal || (order as any).total || 0;
+                              // Use effective total (after partial refunds) for VAT calculation
+                              const effectiveTotal = getEffectiveOrderTotal(order);
                               const discount = (order as any).discount || (order as any).metadata?.discount || (order as any).metadata?.coupon?.discount || 0;
                               
-                              // Calculate the discounted subtotal
-                              const discountedSubtotal = subtotal - discount;
+                              // Calculate the discounted effective total
+                              const discountedTotal = effectiveTotal - discount;
                               
                               // Calculate amount before VAT and VAT amount using improved rounding
-                              const amountBeforeVAT = Math.round((discountedSubtotal / 1.05) * 100) / 100;
-                              const vatAmount = Math.round((discountedSubtotal - amountBeforeVAT) * 100) / 100;
+                              const amountBeforeVAT = Math.round((discountedTotal / 1.05) * 100) / 100;
+                              const vatAmount = Math.round((discountedTotal - amountBeforeVAT) * 100) / 100;
                               
                               return `AED ${vatAmount.toFixed(2)}`;
                             })()}
@@ -2654,8 +2673,22 @@ const OrdersPage = () => {
                         
                         <div className="flex justify-between font-medium text-gray-900 pt-1 border-t border-gray-100">
                           <span>Total:</span>
-                          <span>AED {order.totalAmount?.toFixed(2) || '0.00'}</span>
+                          <span>AED {getEffectiveOrderTotal(order).toFixed(2)}</span>
                         </div>
+                        
+                        {/* Show original total and refund details for partially refunded orders */}
+                        {order.status === POSOrderStatus.PARTIALLY_REFUNDED && order.partialRefundAmount && (
+                          <div className="mt-2 pt-2 border-t border-gray-200 text-sm text-gray-600">
+                            <div className="flex justify-between">
+                              <span>Original Total:</span>
+                              <span>AED {order.totalAmount?.toFixed(2) || '0.00'}</span>
+                            </div>
+                            <div className="flex justify-between text-red-600">
+                              <span>Refunded Amount:</span>
+                              <span>-AED {order.partialRefundAmount.toFixed(2)}</span>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>

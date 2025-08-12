@@ -111,22 +111,22 @@ export const generateReceiptContent = (order: Order): string => `
             <td style="text-align: right;">${formatCurrency(item.totalPrice)}</td>
           </tr>
           ${Array.isArray(item.selectedVariations) ? item.selectedVariations.map(variation => {
-            // Ensure variation has the correct structure
-            const type = typeof variation === 'object' && variation !== null 
-              ? (variation.type || variation.id || '').toString()
-              : '';
-            const value = typeof variation === 'object' && variation !== null 
-              ? (variation.value || variation.id || '').toString()
-              : '';
-            
-            return type && value ? `
+  // Ensure variation has the correct structure
+  const type = typeof variation === 'object' && variation !== null
+    ? (variation.type || variation.id || '').toString()
+    : '';
+  const value = typeof variation === 'object' && variation !== null
+    ? (variation.value || variation.id || '').toString()
+    : '';
+
+  return type && value ? `
               <tr>
                 <td class="variation">${type}: ${value}${variation.customText ? ` (${variation.customText})` : ''}</td>
                 <td></td>
                 <td style="text-align: right;">${variation.price ? formatCurrency(variation.price) : ''}</td>
               </tr>
             ` : '';
-          }).join('') : ''}
+}).join('') : ''}
           ${item.notes ? `
             <tr>
               <td colspan="3" class="notes">Note: ${item.notes}</td>
@@ -143,87 +143,102 @@ export const generateReceiptContent = (order: Order): string => `
       <div class="divider"></div>
       
       <!-- Always show subtotal -->
-      <p style="margin: 2px 0;">${formatLineItem('Subtotal:', formatCurrency(order.subtotal || order.totalAmount))}</p>
+      <p style="margin: 2px 0;">${formatLineItem('Subtotal:', formatCurrency(order.subtotal || getEffectiveOrderTotal(order)))}</p>
       
       <!-- Display coupon discount if available -->
       ${order.couponDiscount > 0 && order.couponCode ? `<p style="margin: 2px 0;">${formatLineItem(`Coupon Discount (${order.couponCode}):`, formatCurrency(-order.couponDiscount))}</p>` : ''}
       ${order.couponDiscount > 0 && !order.couponCode ? `<p style="margin: 2px 0;">${formatLineItem('Discount:', formatCurrency(-order.couponDiscount))}</p>` : ''}
       
       <!-- For backward compatibility with older orders -->
-      ${!order.couponDiscount && (order as any).metadata?.discount > 0 && (order as any).metadata?.coupon?.code ? 
-        `<p style="margin: 2px 0;">${formatLineItem(`Coupon Discount (${(order as any).metadata.coupon.code}):`, formatCurrency(-(order as any).metadata.discount))}</p>` : ''}
-      ${!order.couponDiscount && (order as any).metadata?.discount > 0 && !(order as any).metadata?.coupon?.code ? 
-        `<p style="margin: 2px 0;">${formatLineItem('Discount:', formatCurrency(-(order as any).metadata.discount))}</p>` : ''}
-      ${!order.couponDiscount && !(order as any).metadata?.discount && (order as any).metadata?.coupon?.discount > 0 && (order as any).metadata?.coupon?.code ? 
-        `<p style="margin: 2px 0;">${formatLineItem(`Coupon Discount (${(order as any).metadata.coupon.code}):`, formatCurrency(-(order as any).metadata.coupon.discount))}</p>` : ''}
-      ${!order.couponDiscount && !(order as any).metadata?.discount && (order as any).metadata?.coupon?.discount > 0 && !(order as any).metadata?.coupon?.code ? 
-        `<p style="margin: 2px 0;">${formatLineItem('Discount:', formatCurrency(-(order as any).metadata.coupon.discount))}</p>` : ''}
+      ${!order.couponDiscount && (order as any).metadata?.discount > 0 && (order as any).metadata?.coupon?.code ?
+    `<p style="margin: 2px 0;">${formatLineItem(`Coupon Discount (${(order as any).metadata.coupon.code}):`, formatCurrency(-(order as any).metadata.discount))}</p>` : ''}
+      ${!order.couponDiscount && (order as any).metadata?.discount > 0 && !(order as any).metadata?.coupon?.code ?
+    `<p style="margin: 2px 0;">${formatLineItem('Discount:', formatCurrency(-(order as any).metadata.discount))}</p>` : ''}
+      ${!order.couponDiscount && !(order as any).metadata?.discount && (order as any).metadata?.coupon?.discount > 0 && (order as any).metadata?.coupon?.code ?
+    `<p style="margin: 2px 0;">${formatLineItem(`Coupon Discount (${(order as any).metadata.coupon.code}):`, formatCurrency(-(order as any).metadata.coupon.discount))}</p>` : ''}
+      ${!order.couponDiscount && !(order as any).metadata?.discount && (order as any).metadata?.coupon?.discount > 0 && !(order as any).metadata?.coupon?.code ?
+    `<p style="margin: 2px 0;">${formatLineItem('Discount:', formatCurrency(-(order as any).metadata.coupon.discount))}</p>` : ''}
       
       <!-- Display delivery charge if applicable -->
       ${order.deliveryMethod === 'DELIVERY' && order.deliveryCharge && order.deliveryCharge > 0 ? `<p style="margin: 2px 0;">${formatLineItem('Delivery Charge:', formatCurrency(order.deliveryCharge))}</p>` : ''}
       
       <!-- Calculate tax as 5% of subtotal after coupon discount -->
       ${(() => {
-        // Get the subtotal
-        const subtotal = order.subtotal || order.totalAmount || 0;
-        
-        // Get the coupon discount
-        let couponDiscount = 0;
-        if (order.couponDiscount && order.couponDiscount > 0) {
-          couponDiscount = order.couponDiscount;
-        } else if ((order as any).metadata?.discount && (order as any).metadata.discount > 0) {
-          couponDiscount = (order as any).metadata.discount;
-        } else if ((order as any).metadata?.coupon?.discount && (order as any).metadata.coupon.discount > 0) {
-          couponDiscount = (order as any).metadata.coupon.discount;
-        }
-        
-        // Calculate the taxable amount (subtotal - coupon discount)
-        const taxableAmount = Math.max(0, subtotal - couponDiscount);
-        
-        // Calculate tax using the formula: total / 1.05 = amount before VAT, then VAT = total - amountBeforeVAT
-        // This matches the calculation used in the checkout page and order emails
-        const amountBeforeVAT = Math.round((taxableAmount / 1.05) * 100) / 100;
-        const tax = Math.round((taxableAmount - amountBeforeVAT) * 100) / 100;
-        
-        // Return the tax line
-        return `<p style="margin: 2px 0;">${formatLineItem(`Tax (5%):`, formatCurrency(tax))}</p>`;
-      })()}
+    // Use effective total (after partial refunds) for VAT calculation
+    const effectiveTotal = getEffectiveOrderTotal(order);
+    const subtotal = order.subtotal || effectiveTotal || 0;
+
+    // Get the coupon discount
+    let couponDiscount = 0;
+    if (order.couponDiscount && order.couponDiscount > 0) {
+      couponDiscount = order.couponDiscount;
+    } else if ((order as any).metadata?.discount && (order as any).metadata.discount > 0) {
+      couponDiscount = (order as any).metadata.discount;
+    } else if ((order as any).metadata?.coupon?.discount && (order as any).metadata.coupon.discount > 0) {
+      couponDiscount = (order as any).metadata.coupon.discount;
+    }
+
+    // Calculate the taxable amount (effective subtotal - coupon discount)
+    const effectiveSubtotal = Math.min(subtotal, effectiveTotal);
+    const taxableAmount = Math.max(0, effectiveSubtotal - couponDiscount);
+
+    // Calculate tax using the formula: total / 1.05 = amount before VAT, then VAT = total - amountBeforeVAT
+    // This matches the calculation used in the checkout page and order emails
+    const amountBeforeVAT = Math.round((taxableAmount / 1.05) * 100) / 100;
+    const tax = Math.round((taxableAmount - amountBeforeVAT) * 100) / 100;
+
+    // Return the tax line
+    return `<p style="margin: 2px 0;">${formatLineItem(`Tax (5%):`, formatCurrency(tax))}</p>`;
+  })()}
       
       <div class="divider"></div>
       
       <!-- Total amount with recalculated tax -->
       ${(() => {
-        // Get the subtotal
-        const subtotal = order.subtotal || order.totalAmount || 0;
-        
-        // Get the coupon discount
-        let couponDiscount = 0;
-        if (order.couponDiscount && order.couponDiscount > 0) {
-          couponDiscount = order.couponDiscount;
-        } else if ((order as any).metadata?.discount && (order as any).metadata.discount > 0) {
-          couponDiscount = (order as any).metadata.discount;
-        } else if ((order as any).metadata?.coupon?.discount && (order as any).metadata.coupon.discount > 0) {
-          couponDiscount = (order as any).metadata.coupon.discount;
-        }
-        
-        // Get the delivery charge
-        const deliveryCharge = (order.deliveryMethod === 'DELIVERY' && order.deliveryCharge) ? order.deliveryCharge : 0;
-        
-        // Calculate the taxable amount (subtotal - coupon discount)
-        const taxableAmount = Math.max(0, subtotal - couponDiscount);
-        
-        // Calculate tax using the formula: total / 1.05 = amount before VAT, then VAT = total - amountBeforeVAT
-        // This matches the calculation used in the checkout page and order emails
-        const amountBeforeVAT = Math.round((taxableAmount / 1.05) * 100) / 100;
-        const tax = Math.round((taxableAmount - amountBeforeVAT) * 100) / 100;
-        
-        // Calculate the total (taxable amount + delivery charge)
-        // Note: taxableAmount already includes VAT, so we don't add tax separately
-        const total = taxableAmount + deliveryCharge;
-        
-        // Return the total line
-        return `<p style="margin: 2px 0; font-weight: bold;">${formatLineItem('Total:', formatCurrency(total))}</p>`;
-      })()}
+    // Use effective total (after partial refunds)
+    const effectiveTotal = getEffectiveOrderTotal(order);
+    const subtotal = order.subtotal || effectiveTotal || 0;
+
+    // Get the coupon discount
+    let couponDiscount = 0;
+    if (order.couponDiscount && order.couponDiscount > 0) {
+      couponDiscount = order.couponDiscount;
+    } else if ((order as any).metadata?.discount && (order as any).metadata.discount > 0) {
+      couponDiscount = (order as any).metadata.discount;
+    } else if ((order as any).metadata?.coupon?.discount && (order as any).metadata.coupon.discount > 0) {
+      couponDiscount = (order as any).metadata.coupon.discount;
+    }
+
+    // Get the delivery charge (proportionally adjusted for partial refunds)
+    const originalDeliveryCharge = (order.deliveryMethod === 'DELIVERY' && order.deliveryCharge) ? order.deliveryCharge : 0;
+    const originalTotal = order.totalAmount || 0;
+    const deliveryCharge = originalTotal > 0 ? (originalDeliveryCharge * effectiveTotal) / originalTotal : originalDeliveryCharge;
+
+    // Calculate the taxable amount (effective subtotal - coupon discount)
+    const effectiveSubtotal = Math.min(subtotal, effectiveTotal - deliveryCharge);
+    const taxableAmount = Math.max(0, effectiveSubtotal - couponDiscount);
+
+    // Calculate the total (taxable amount + delivery charge)
+    // Note: taxableAmount already includes VAT, so we don't add tax separately
+    const total = taxableAmount + deliveryCharge;
+
+    // Return the total line
+    return `<p style="margin: 2px 0; font-weight: bold;">${formatLineItem('Total:', formatCurrency(total))}</p>`;
+  })()}
+      
+      <!-- Show partial refund information if applicable -->
+      ${(() => {
+    const partialRefundAmount = (order as any).partialRefundAmount;
+    if (partialRefundAmount && partialRefundAmount > 0) {
+      return `
+            <div class="divider"></div>
+            <p style="margin: 2px 0; color: #dc2626;">${formatLineItem('Original Total:', formatCurrency(order.totalAmount || 0))}</p>
+            <p style="margin: 2px 0; color: #dc2626;">${formatLineItem('Refunded Amount:', '-' + formatCurrency(partialRefundAmount))}</p>
+            <p style="margin: 2px 0; font-weight: bold; color: #059669;">${formatLineItem('Current Order Value:', formatCurrency(getEffectiveOrderTotal(order)))}</p>
+          `;
+    }
+    return '';
+  })()}
     </div>
     
     <div class="divider"></div>
@@ -283,6 +298,13 @@ interface OrderReceiptProps {
 const OrderReceipt: React.FC<OrderReceiptProps> = ({ order, onClose }) => {
   const [isPrinting, setIsPrinting] = useState(false);
 
+  // Calculate the effective order total after partial refunds
+  const getEffectiveOrderTotal = (order: Order) => {
+    const originalTotal = order.totalAmount || 0;
+    const partialRefundAmount = (order as any).partialRefundAmount || 0;
+    return Math.max(0, originalTotal - partialRefundAmount);
+  };
+
   const handlePreview = () => {
     setIsPrinting(true);
     withErrorHandling(
@@ -326,18 +348,18 @@ const OrderReceipt: React.FC<OrderReceiptProps> = ({ order, onClose }) => {
       <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-auto">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-lg font-semibold">Order Receipt #{order.orderNumber}</h3>
-          <button 
+          <button
             onClick={onClose}
             className="text-gray-500 hover:text-gray-700 focus:outline-none"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
-        
+
         <div className="border border-gray-200 rounded p-4 mb-4">
           <div dangerouslySetInnerHTML={{ __html: generateReceiptContent(order) }} />
         </div>
-        
+
         <div className="flex justify-end">
           <button
             onClick={handlePrint}
