@@ -452,8 +452,8 @@ export const apiMethods = {
       api.get<APIResponse<Product[]>>('/api/products/public'),
     getCategories: async () => {
       try {
-        // Specify POS platform to get appropriate categories based on visibility
-        const response = await api.get<APIResponse<Category[]>>('/api/categories/public', {
+        // Use hierarchical endpoint to get only main categories (no subcategories)
+        const response = await api.get<APIResponse<Category[]>>('/api/categories/public/hierarchical', {
           params: { platform: 'POS' },
           headers: { 'X-Platform': 'POS' }
         });

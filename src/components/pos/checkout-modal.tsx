@@ -100,6 +100,21 @@ export default function CheckoutModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isParkingOrder, setIsParkingOrder] = useState(false);
   const [teamSelection, setTeamSelection] = useState<'KITCHEN' | 'DESIGN' | 'BOTH'>('KITCHEN');
+
+  // Phone number validation function
+  const validateAndFormatPhoneNumber = (value: string): string => {
+    // Remove all non-digit characters
+    const digitsOnly = value.replace(/\D/g, '');
+    // Limit to 9 digits
+    return digitsOnly.slice(0, 9);
+  };
+
+  // Email validation function
+  const validateEmail = (email: string): boolean => {
+    if (!email) return true; // Email is optional
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
   const [deliveryMethodState, setDeliveryMethodState] = useState<DeliveryMethod>(
     deliveryMethod && Object.values(DeliveryMethod).includes(deliveryMethod)
       ? deliveryMethod
@@ -638,6 +653,16 @@ export default function CheckoutModal({
       throw new Error('Customer name and phone are required');
     }
 
+    // Validate phone number format (exactly 9 digits)
+    if (customerDetailsState.phone.length !== 9 || !/^\d{9}$/.test(customerDetailsState.phone)) {
+      throw new Error('Phone number must be exactly 9 digits');
+    }
+
+    // Validate email format if provided
+    if (customerDetailsState.email && !validateEmail(customerDetailsState.email)) {
+      throw new Error('Please enter a valid email address or leave it empty');
+    }
+
     // Validate delivery details
     if (deliveryMethodState === DeliveryMethod.DELIVERY) {
       if (!deliveryDetailsState?.date || !deliveryDetailsState?.timeSlot) {
@@ -659,6 +684,11 @@ export default function CheckoutModal({
     if (giftDetailsState.isGift) {
       if (!giftDetailsState.recipientName || !giftDetailsState.recipientPhone) {
         throw new Error('Gift recipient details are required');
+      }
+      
+      // Validate gift recipient phone number format (exactly 9 digits)
+      if (giftDetailsState.recipientPhone.length !== 9 || !/^\d{9}$/.test(giftDetailsState.recipientPhone)) {
+        throw new Error('Gift recipient phone number must be exactly 9 digits');
       }
     }
 
@@ -2613,7 +2643,7 @@ export default function CheckoutModal({
               leaveFrom="opacity-100 scale-100"
               leaveTo="opacity-0 scale-95"
             >
-              <Dialog.Panel className="w-full max-w-6xl transform overflow-hidden rounded-2xl bg-white p-6 shadow-xl transition-all">
+              <Dialog.Panel className="w-full max-w-none transform overflow-hidden rounded-2xl bg-white p-6 shadow-xl transition-all">
                 <div className="relative">
                   <button
                     onClick={onClose}
@@ -2754,15 +2784,25 @@ export default function CheckoutModal({
                               <label htmlFor="customerPhone" className="block text-lg font-medium text-gray-700">
                                 Phone Number *
                               </label>
-                              <input
-                                type="tel"
-                                id="customerPhone"
-                                value={customerDetailsState.phone}
-                                onChange={(e) => setCustomerDetailsState((prev) => ({ ...prev, phone: e.target.value || '' }))}
-                                className="block w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4"
-                                placeholder="Phone Number *"
-                                required
-                              />
+                              <div className="flex items-center space-x-2">
+                                <div className="bg-gray-100 border-2 border-gray-200 rounded-xl px-3 py-4 text-lg font-medium text-gray-600">
+                                  +971
+                                </div>
+                                <input
+                                  type="tel"
+                                  id="customerPhone"
+                                  value={customerDetailsState.phone}
+                                  onChange={(e) => {
+                                    const formattedPhone = validateAndFormatPhoneNumber(e.target.value);
+                                    setCustomerDetailsState((prev) => ({ ...prev, phone: formattedPhone }));
+                                  }}
+                                  className="flex-1 rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4"
+                                  placeholder="Phone Number * (9 digits)"
+                                  required
+                                  maxLength={9}
+                                />
+                              </div>
+                              <p className="text-sm text-gray-500 mt-1">Do not add country code</p>
                             </div>
                             <div className="mb-4">
                               <label htmlFor="customerEmail" className="block text-lg font-medium text-gray-700">
@@ -2773,9 +2813,17 @@ export default function CheckoutModal({
                                 id="customerEmail"
                                 value={customerDetailsState.email}
                                 onChange={(e) => setCustomerDetailsState((prev) => ({ ...prev, email: e.target.value || '' }))}
-                                className="block w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4"
+                                className={`block w-full rounded-xl border-2 shadow-sm focus:ring-black text-lg p-4 ${
+                                  customerDetailsState.email && !validateEmail(customerDetailsState.email)
+                                    ? 'border-red-500 focus:border-red-500'
+                                    : 'border-gray-200 focus:border-black'
+                                }`}
                                 placeholder="Email Address"
                               />
+                              <p className="text-sm text-gray-500 mt-1">Add valid email or skip</p>
+                              {customerDetailsState.email && !validateEmail(customerDetailsState.email) && (
+                                <p className="text-sm text-red-500 mt-1">Please enter a valid email address</p>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -2983,13 +3031,25 @@ export default function CheckoutModal({
                                   className="block w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-lg p-4"
                                   placeholder="Recipient Name"
                                 />
-                                <input
-                                  type="tel"
-                                  value={giftDetailsState.recipientPhone}
-                                  onChange={(e) => setGiftDetailsState(prev => ({ ...prev, recipientPhone: e.target.value }))}
-                                  className="block w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-lg p-4"
-                                  placeholder="Recipient Phone"
-                                />
+                                <div>
+                                  <div className="flex items-center space-x-2">
+                                    <div className="bg-gray-100 border-2 border-gray-200 rounded-xl px-3 py-4 text-lg font-medium text-gray-600">
+                                      +971
+                                    </div>
+                                    <input
+                                      type="tel"
+                                      value={giftDetailsState.recipientPhone}
+                                      onChange={(e) => {
+                                        const formattedPhone = validateAndFormatPhoneNumber(e.target.value);
+                                        setGiftDetailsState(prev => ({ ...prev, recipientPhone: formattedPhone }));
+                                      }}
+                                      className="flex-1 rounded-xl border-2 border-gray-200 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-lg p-4"
+                                      placeholder="Recipient Phone (9 digits)"
+                                      maxLength={9}
+                                    />
+                                  </div>
+                                  <p className="text-sm text-gray-500 mt-1">Do not add country code</p>
+                                </div>
                               </div>
                               <textarea
                                 value={giftDetailsState.message}

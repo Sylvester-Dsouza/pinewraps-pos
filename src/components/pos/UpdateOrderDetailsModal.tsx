@@ -39,6 +39,13 @@ const UpdateOrderDetailsModal: React.FC<UpdateOrderDetailsModalProps> = ({
   order,
   onSuccess
 }) => {
+  // Phone number validation function
+  const validateAndFormatPhoneNumber = (value: string): string => {
+    // Remove all non-digit characters
+    const digitsOnly = value.replace(/\D/g, '');
+    // Limit to 9 digits
+    return digitsOnly.slice(0, 9);
+  };
   // Initialize with current order details
   const [deliveryMethod, setDeliveryMethod] = useState<'PICKUP' | 'DELIVERY'>(
     order.deliveryMethod || 'PICKUP'
@@ -447,9 +454,13 @@ const UpdateOrderDetailsModal: React.FC<UpdateOrderDetailsModalProps> = ({
                               <input
                                 type="tel"
                                 value={giftRecipientPhone}
-                                onChange={(e) => setGiftRecipientPhone(e.target.value)}
+                                onChange={(e) => {
+                                  const formattedPhone = validateAndFormatPhoneNumber(e.target.value);
+                                  setGiftRecipientPhone(formattedPhone);
+                                }}
                                 className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                                placeholder="Recipient's phone number"
+                                placeholder="Recipient's phone number (9 digits)"
+                                maxLength={9}
                               />
                             </div>
                             
