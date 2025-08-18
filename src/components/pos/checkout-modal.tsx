@@ -103,10 +103,8 @@ export default function CheckoutModal({
 
   // Phone number validation function
   const validateAndFormatPhoneNumber = (value: string): string => {
-    // Remove all non-digit characters
-    const digitsOnly = value.replace(/\D/g, '');
-    // Limit to 9 digits
-    return digitsOnly.slice(0, 9);
+    // Only allow numbers and + symbol, remove everything else
+    return value.replace(/[^0-9+]/g, '');
   };
 
   // Email validation function
@@ -653,9 +651,9 @@ export default function CheckoutModal({
       throw new Error('Customer name and phone are required');
     }
 
-    // Validate phone number format (exactly 9 digits)
-    if (customerDetailsState.phone.length !== 9 || !/^\d{9}$/.test(customerDetailsState.phone)) {
-      throw new Error('Phone number must be exactly 9 digits');
+    // Validate phone number (must not be empty)
+    if (!customerDetailsState.phone || customerDetailsState.phone.trim().length === 0) {
+      throw new Error('Phone number is required');
     }
 
     // Validate email format if provided
@@ -686,9 +684,9 @@ export default function CheckoutModal({
         throw new Error('Gift recipient details are required');
       }
       
-      // Validate gift recipient phone number format (exactly 9 digits)
-      if (giftDetailsState.recipientPhone.length !== 9 || !/^\d{9}$/.test(giftDetailsState.recipientPhone)) {
-        throw new Error('Gift recipient phone number must be exactly 9 digits');
+      // Validate gift recipient phone number (must not be empty)
+      if (!giftDetailsState.recipientPhone || giftDetailsState.recipientPhone.trim().length === 0) {
+        throw new Error('Gift recipient phone number is required');
       }
     }
 
@@ -2784,25 +2782,19 @@ export default function CheckoutModal({
                               <label htmlFor="customerPhone" className="block text-lg font-medium text-gray-700">
                                 Phone Number *
                               </label>
-                              <div className="flex items-center space-x-2">
-                                <div className="bg-gray-100 border-2 border-gray-200 rounded-xl px-3 py-4 text-lg font-medium text-gray-600">
-                                  +971
-                                </div>
-                                <input
-                                  type="tel"
-                                  id="customerPhone"
-                                  value={customerDetailsState.phone}
-                                  onChange={(e) => {
-                                    const formattedPhone = validateAndFormatPhoneNumber(e.target.value);
-                                    setCustomerDetailsState((prev) => ({ ...prev, phone: formattedPhone }));
-                                  }}
-                                  className="flex-1 rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4"
-                                  placeholder="Phone Number * (9 digits)"
-                                  required
-                                  maxLength={9}
-                                />
-                              </div>
-                              <p className="text-sm text-gray-500 mt-1">Do not add country code</p>
+                              <input
+                                type="tel"
+                                id="customerPhone"
+                                value={customerDetailsState.phone}
+                                onChange={(e) => {
+                                  const formattedPhone = validateAndFormatPhoneNumber(e.target.value);
+                                  setCustomerDetailsState((prev) => ({ ...prev, phone: formattedPhone }));
+                                }}
+                                className="w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4"
+                                placeholder="Phone Number *"
+                                required
+                              />
+                              <p className="text-sm text-gray-500 mt-1">Enter phone number (any format accepted)</p>
                             </div>
                             <div className="mb-4">
                               <label htmlFor="customerEmail" className="block text-lg font-medium text-gray-700">
@@ -3032,23 +3024,18 @@ export default function CheckoutModal({
                                   placeholder="Recipient Name"
                                 />
                                 <div>
-                                  <div className="flex items-center space-x-2">
-                                    <div className="bg-gray-100 border-2 border-gray-200 rounded-xl px-3 py-4 text-lg font-medium text-gray-600">
-                                      +971
-                                    </div>
-                                    <input
-                                      type="tel"
-                                      value={giftDetailsState.recipientPhone}
-                                      onChange={(e) => {
-                                        const formattedPhone = validateAndFormatPhoneNumber(e.target.value);
-                                        setGiftDetailsState(prev => ({ ...prev, recipientPhone: formattedPhone }));
-                                      }}
-                                      className="flex-1 rounded-xl border-2 border-gray-200 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-lg p-4"
-                                      placeholder="Recipient Phone (9 digits)"
-                                      maxLength={9}
-                                    />
-                                  </div>
-                                  <p className="text-sm text-gray-500 mt-1">Do not add country code</p>
+                                  <input
+                                    type="tel"
+                                    value={giftDetailsState.recipientPhone}
+                                    onChange={(e) => {
+                                      const formattedPhone = validateAndFormatPhoneNumber(e.target.value);
+                                      setGiftDetailsState(prev => ({ ...prev, recipientPhone: formattedPhone }));
+                                    }}
+                                    className="w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-lg p-4"
+                                    placeholder="Recipient Phone"
+                                    required
+                                  />
+                                  <p className="text-sm text-gray-500 mt-1">Enter phone number (any format accepted)</p>
                                 </div>
                               </div>
                               <textarea

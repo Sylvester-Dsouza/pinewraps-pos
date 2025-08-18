@@ -112,10 +112,7 @@ const UpdateOrderDetailsModal: React.FC<UpdateOrderDetailsModalProps> = ({
     }
     
     if (deliveryMethod === 'DELIVERY') {
-      if (!deliveryDate || !deliveryTimeSlot) {
-        toast.error('Please select both date and time for delivery');
-        return;
-      }
+      // Only require address details, delivery date/time are optional for updates
       if (!streetAddress.trim() || !emirate) {
         toast.error('Please provide street address and emirate for delivery');
         return;
