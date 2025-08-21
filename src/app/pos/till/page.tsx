@@ -9,6 +9,8 @@ import { formatCurrency, formatDate } from '@/lib/utils';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { ArrowLeftIcon } from '@/components/icons';
 import { useRouter } from 'next/navigation';
 import Header from '@/components/header/header';
@@ -27,6 +29,10 @@ export default function TillPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingAllTransactions, setIsLoadingAllTransactions] = useState(false);
   const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set());
+  const [dateFilters, setDateFilters] = useState({
+    startDate: '',
+    endDate: ''
+  });
   const router = useRouter();
 
   const toggleSessionExpansion = (sessionId: string) => {
@@ -64,13 +70,16 @@ export default function TillPage() {
     }
   };
 
-  const fetchAllTransactions = async (page: number = 1) => {
+  const fetchAllTransactions = async (page: number = 1, filters?: { startDate?: string; endDate?: string }) => {
     setIsLoadingAllTransactions(true);
     try {
       const limit = 5; // Show 5 sessions per page
       const offset = (page - 1) * limit;
 
-      const response = await drawerService.getAllTransactions(limit, offset);
+      // Use provided filters or current state filters
+      const currentFilters = filters || dateFilters;
+
+      const response = await drawerService.getAllTransactions(limit, offset, currentFilters);
       setAllTransactions(response.sessions);
       setAllTransactionsPagination({
         currentPage: response.currentPage,
@@ -83,6 +92,35 @@ export default function TillPage() {
     } finally {
       setIsLoadingAllTransactions(false);
     }
+  };
+
+  const handleDateFilterChange = (field: 'startDate' | 'endDate', value: string) => {
+    const newFilters = { ...dateFilters, [field]: value };
+    setDateFilters(newFilters);
+  };
+
+  const applyDateFilters = () => {
+    fetchAllTransactions(1, dateFilters);
+  };
+
+  const clearDateFilters = () => {
+    const clearedFilters = { startDate: '', endDate: '' };
+    setDateFilters(clearedFilters);
+    fetchAllTransactions(1, clearedFilters);
+  };
+
+  const setQuickDateFilter = (days: number) => {
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(endDate.getDate() - days);
+    
+    const filters = {
+      startDate: startDate.toISOString().split('T')[0],
+      endDate: endDate.toISOString().split('T')[0]
+    };
+    
+    setDateFilters(filters);
+    fetchAllTransactions(1, filters);
   };
 
   const getOperationTypeLabel = (type: string) => {
@@ -350,6 +388,98 @@ export default function TillPage() {
                     >
                       {isLoadingAllTransactions ? 'Refreshing...' : 'Refresh'}
                     </Button>
+                  </div>
+                  
+                  {/* Date Filters */}
+                  <div className="mt-4 p-4 bg-gray-50 rounded-lg space-y-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <h4 className="font-medium text-sm">Filter by Date Range</h4>
+                      {(dateFilters.startDate || dateFilters.endDate) && (
+                        <Badge variant="secondary" className="text-xs">
+                          Filtered
+                        </Badge>
+                      )}
+                    </div>
+                    
+                    {/* Quick Date Filters */}
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setQuickDateFilter(0)}
+                        className="text-xs"
+                      >
+                        Today
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setQuickDateFilter(1)}
+                        className="text-xs"
+                      >
+                        Yesterday
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setQuickDateFilter(7)}
+                        className="text-xs"
+                      >
+                        Last 7 Days
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setQuickDateFilter(30)}
+                        className="text-xs"
+                      >
+                        Last 30 Days
+                      </Button>
+                    </div>
+                    
+                    {/* Custom Date Range */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+                      <div className="space-y-1">
+                        <Label htmlFor="startDate" className="text-xs">From Date</Label>
+                        <Input
+                          id="startDate"
+                          type="date"
+                          value={dateFilters.startDate}
+                          onChange={(e) => handleDateFilterChange('startDate', e.target.value)}
+                          className="text-sm"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label htmlFor="endDate" className="text-xs">To Date</Label>
+                        <Input
+                          id="endDate"
+                          type="date"
+                          value={dateFilters.endDate}
+                          onChange={(e) => handleDateFilterChange('endDate', e.target.value)}
+                          className="text-sm"
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="default"
+                          size="sm"
+                          onClick={applyDateFilters}
+                          disabled={isLoadingAllTransactions}
+                          className="text-xs"
+                        >
+                          Apply Filter
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={clearDateFilters}
+                          disabled={isLoadingAllTransactions}
+                          className="text-xs"
+                        >
+                          Clear
+                        </Button>
+                      </div>
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent>

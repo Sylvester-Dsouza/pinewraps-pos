@@ -292,7 +292,7 @@ export class DrawerService {
     }
   }
 
-  async getAllTransactions(limit: number = 10, offset: number = 0): Promise<{
+  async getAllTransactions(limit: number = 10, offset: number = 0, filters?: { startDate?: string; endDate?: string }): Promise<{
     sessions: any[];
     totalCount: number;
     hasMore: boolean;
@@ -300,9 +300,19 @@ export class DrawerService {
     totalPages: number;
   }> {
     try {
-      console.log('Fetching all transactions with pagination:', { limit, offset });
+      console.log('Fetching all transactions with pagination:', { limit, offset, filters });
 
-      const response = await api.get(`/api/pos/drawer-session/all-transactions?limit=${limit}&offset=${offset}`);
+      let url = `/api/pos/drawer-session/all-transactions?limit=${limit}&offset=${offset}`;
+      
+      // Add date filters to URL if provided
+      if (filters?.startDate) {
+        url += `&startDate=${filters.startDate}`;
+      }
+      if (filters?.endDate) {
+        url += `&endDate=${filters.endDate}`;
+      }
+
+      const response = await api.get(url);
 
       console.log('All transactions response:', response.data);
 

@@ -2267,19 +2267,35 @@ export default function CheckoutModal({
         customerEmail: customerDetailsState.email?.trim() || '',
       };
 
-      console.log('Sending customer data to API:', customerData);
+      console.log('Creating customer with strict matching - will create new if name/phone differ:', customerData);
       const response = await apiMethods.pos.createOrUpdateCustomer(customerData);
 
       // The API response structure is { success: boolean, data: { customer: {...}, credentials?: {...} } }
       if (response.success && response.data?.customer) {
-        console.log('Customer created/updated successfully:', response.data.customer);
+        const customer = response.data.customer;
+        console.log('Customer operation successful:', {
+          action: response.message?.includes('Existing customer') ? 'LINKED_TO_EXISTING' : 'CREATED_NEW',
+          customerId: customer.id,
+          name: `${customer.firstName} ${customer.lastName}`,
+          phone: customer.phone
+        });
+        
+        // Show appropriate message to user
+        if (response.message?.includes('Existing customer')) {
+          toast.success('Order linked to existing customer account');
+        } else {
+          toast.success('New customer account created for this order');
+        }
+        
         return true;
       } else {
         console.error('Failed to create/update customer:', response);
+        toast.error('Failed to process customer information');
         return false;
       }
     } catch (error) {
       console.error('Error creating/updating customer:', error);
+      toast.error('Error processing customer information');
       return false;
     }
   }, [customerDetailsState]);
