@@ -2655,12 +2655,13 @@ const OrdersPage = () => {
                           <span>Includes VAT (5%):</span>
                           <span>
                             {(() => {
-                              // Use effective total (after partial refunds) for VAT calculation
+                              // Use effective total (after partial refunds) for VAT calculation, excluding delivery charge
                               const effectiveTotal = getEffectiveOrderTotal(order);
+                              const deliveryCharge = order.deliveryCharge || 0;
                               const discount = (order as any).discount || (order as any).metadata?.discount || (order as any).metadata?.coupon?.discount || 0;
                               
-                              // Calculate the discounted effective total
-                              const discountedTotal = effectiveTotal - discount;
+                              // Calculate the discounted effective total excluding delivery charge
+                              const discountedTotal = (effectiveTotal - deliveryCharge) - discount;
                               
                               // Calculate amount before VAT and VAT amount using improved rounding
                               const amountBeforeVAT = Math.round((discountedTotal / 1.05) * 100) / 100;
