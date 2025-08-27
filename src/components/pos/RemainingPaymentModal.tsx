@@ -556,6 +556,20 @@ export default function RemainingPaymentModal({
                         <button
                           type="button"
                           onClick={() => {
+                            setPaymentMethod(POSPaymentMethod.COD);
+                            setIsSplitPayment(false);
+                          }}
+                          className={`flex-1 px-3 py-2 rounded-md mb-1 ${
+                            paymentMethod === POSPaymentMethod.COD && !isSplitPayment
+                              ? "bg-black text-white"
+                              : "bg-gray-100 text-gray-700"
+                          }`}
+                        >
+                          COD
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
                             setIsSplitPayment(true);
                             // Set initial split amounts when split is selected
                             const halfAmount = (remainingAmount / 2).toFixed(2);
@@ -706,6 +720,17 @@ export default function RemainingPaymentModal({
                             >
                               PBL
                             </button>
+                            <button
+                              type="button"
+                              onClick={() => setSplitMethod1(POSPaymentMethod.COD)}
+                              className={`flex-1 px-3 py-1 text-sm rounded-md mb-1 ${
+                                splitMethod1 === POSPaymentMethod.COD
+                                  ? "bg-black text-white"
+                                  : "bg-gray-100 text-gray-700"
+                              }`}
+                            >
+                              COD
+                            </button>
                           </div>
                           
                           {/* Reference for first payment if needed */}
@@ -815,6 +840,17 @@ export default function RemainingPaymentModal({
                               }`}
                             >
                               PBL
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSplitMethod2(POSPaymentMethod.COD)}
+                              className={`flex-1 px-3 py-1 text-sm rounded-md mb-1 ${
+                                splitMethod2 === POSPaymentMethod.COD
+                                  ? "bg-black text-white"
+                                  : "bg-gray-100 text-gray-700"
+                              }`}
+                            >
+                              COD
                             </button>
                           </div>
                           
