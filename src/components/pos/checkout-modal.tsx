@@ -3488,6 +3488,7 @@ export default function CheckoutModal({
                                         <option value={POSPaymentMethod.BANK_TRANSFER}>Bank Transfer</option>
                                         <option value={POSPaymentMethod.PBL}>Pay by Link</option>
                                         <option value={POSPaymentMethod.TALABAT}>Talabat</option>
+                                        <option value={POSPaymentMethod.COD}>Cash on Delivery</option>
                                       </select>
                                       <input
                                         type="number"
@@ -3551,8 +3552,7 @@ export default function CheckoutModal({
                                         {Object.values(POSPaymentMethod)
                                           .filter(method =>
                                             method !== POSPaymentMethod.PARTIAL &&
-                                            method !== POSPaymentMethod.SPLIT &&
-                                            method !== POSPaymentMethod.COD
+                                            method !== POSPaymentMethod.SPLIT
                                           )
                                           .map(method => (
                                             <option key={method} value={method}>
@@ -3561,6 +3561,7 @@ export default function CheckoutModal({
                                               {method === POSPaymentMethod.BANK_TRANSFER && 'Bank Transfer'}
                                               {method === POSPaymentMethod.PBL && 'Pay by Link'}
                                               {method === POSPaymentMethod.TALABAT && 'Talabat'}
+                                              {method === POSPaymentMethod.COD && 'Cash on Delivery'}
                                             </option>
                                           ))
                                         }
