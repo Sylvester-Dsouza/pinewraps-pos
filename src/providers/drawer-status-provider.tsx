@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { drawerService } from '@/services/drawer.service';
-import { toast } from 'react-hot-toast';
+import { toast } from '@/lib/toast';
 
 interface DrawerStatusContextType {
   isDrawerOpen: boolean;

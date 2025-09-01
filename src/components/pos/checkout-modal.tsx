@@ -2,7 +2,7 @@
 import { Fragment, useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Dialog, Transition } from "@headlessui/react";
 import { X, Minus, Plus, Trash, Search, ShoppingCart, Upload, Camera, User, MapPin, ListOrdered, Calendar } from "lucide-react";
-import { toast } from "@/lib/toast-utils";
+import { toast } from "@/lib/toast";
 import { apiMethods } from "@/services/api";
 import { POSOrderStatus, POSPaymentMethod, POSPaymentStatus, DeliveryMethod, OrderPayment, POSOrderData, POSOrderItemData, ProductVariation, CheckoutDetails, ParkedOrderData } from "@/types/order";
 import { Customer, CustomerAddress, CustomerDetails, DeliveryDetails, PickupDetails, GiftDetails } from "@/types/customer";

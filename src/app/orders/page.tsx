@@ -9,8 +9,7 @@ import { format, isAfter, isBefore, startOfDay, endOfDay, parseISO, isValid, par
 import { DayPicker } from 'react-day-picker';
 import 'react-day-picker/dist/style.css';
 import { apiMethods } from '@/services/api';
-import { toast } from 'react-hot-toast';
-import { toast as sonnerToast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 // Process image URL to use our proxy for Firebase Storage URLs
 function processImageUrl(url: string): string {
@@ -943,7 +942,7 @@ const OrdersPage = () => {
       console.log('Starting refund process for order:', orderId);
 
       // Show processing notification
-      sonnerToast.loading('Processing refund...', {
+      toast.loading('Processing refund...', {
         id: `refund-${orderId}`,
         description: 'Please wait while we process the refund',
       });
@@ -989,7 +988,7 @@ const OrdersPage = () => {
         console.log('Order status updated successfully, updating payment statuses...');
 
         // Update loading message
-        sonnerToast.loading('Updating payment statuses...', {
+        toast.loading('Updating payment statuses...', {
           id: `refund-${orderId}`,
           description: 'Finalizing refund process',
         });
@@ -1016,8 +1015,8 @@ const OrdersPage = () => {
         }
 
         // Dismiss loading toast and show success
-        sonnerToast.dismiss(`refund-${orderId}`);
-        sonnerToast.success('Order Refunded Successfully', {
+        toast.dismiss(`refund-${orderId}`);
+        toast.success('Order Refunded Successfully', {
           description: `Order #${order.orderNumber || orderId} has been marked as refunded`,
           duration: 5000,
         });
@@ -1031,16 +1030,16 @@ const OrdersPage = () => {
       console.error('Error marking order as refunded:', error);
 
       // Dismiss loading toast
-      sonnerToast.dismiss(`refund-${orderId}`);
+      toast.dismiss(`refund-${orderId}`);
 
       // Check if it's a permission error
       if (error.message?.includes('super admin') || error.message?.includes('Super Admin')) {
-        sonnerToast.error('Permission Denied', {
+        toast.error('Permission Denied', {
           description: 'Only Super Admins can refund orders',
           duration: 5000,
         });
       } else {
-        sonnerToast.error('Refund Failed', {
+        toast.error('Refund Failed', {
           description: error.message || 'Failed to mark order as refunded',
           duration: 5000,
         });
@@ -1053,7 +1052,7 @@ const OrdersPage = () => {
       // Validate refund amount
       const amount = parseFloat(partialRefundAmount);
       if (isNaN(amount) || amount <= 0) {
-        sonnerToast.error('Invalid Amount', {
+        toast.error('Invalid Amount', {
           description: 'Please enter a valid refund amount greater than 0',
           duration: 4000,
         });
@@ -1070,7 +1069,7 @@ const OrdersPage = () => {
       console.log('Starting partial refund process for order:', orderId, 'amount:', amount);
 
       // Show processing notification
-      sonnerToast.loading('Processing partial refund...', {
+      toast.loading('Processing partial refund...', {
         id: `partial-refund-${orderId}`,
         description: `Processing AED ${amount} refund`,
       });
@@ -1117,7 +1116,7 @@ const OrdersPage = () => {
         console.log('Order status updated successfully, updating payment statuses...');
 
         // Update loading message
-        sonnerToast.loading('Updating payment statuses...', {
+        toast.loading('Updating payment statuses...', {
           id: `partial-refund-${orderId}`,
           description: 'Finalizing partial refund process',
         });
@@ -1144,8 +1143,8 @@ const OrdersPage = () => {
         }
 
         // Dismiss loading toast and show success
-        sonnerToast.dismiss(`partial-refund-${orderId}`);
-        sonnerToast.success('Partial Refund Processed', {
+        toast.dismiss(`partial-refund-${orderId}`);
+        toast.success('Partial Refund Processed', {
           description: `Order #${order.orderNumber || orderId} has been partially refunded (AED ${amount})`,
           duration: 5000,
         });
@@ -1160,16 +1159,16 @@ const OrdersPage = () => {
       console.error('Error marking order as partially refunded:', error);
 
       // Dismiss loading toast
-      sonnerToast.dismiss(`partial-refund-${orderId}`);
+      toast.dismiss(`partial-refund-${orderId}`);
 
       // Check if it's a permission error
       if (error.message?.includes('super admin') || error.message?.includes('Super Admin')) {
-        sonnerToast.error('Permission Denied', {
+        toast.error('Permission Denied', {
           description: 'Only Super Admins can refund orders',
           duration: 5000,
         });
       } else {
-        sonnerToast.error('Partial Refund Failed', {
+        toast.error('Partial Refund Failed', {
           description: error.message || 'Failed to mark order as partially refunded',
           duration: 5000,
         });

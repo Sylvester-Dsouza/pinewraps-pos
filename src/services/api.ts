@@ -4,7 +4,7 @@ import axios from 'axios';
 import { getAuth, signInWithEmailAndPassword } from 'firebase/auth';
 import Cookies from 'js-cookie';
 import { nanoid } from 'nanoid';
-import { toast } from 'react-hot-toast';
+import { toast } from '@/lib/toast';
 import EnhancedApiClient from '@/lib/enhanced-api';
 import TokenManager from '@/lib/token-manager';
 import { 

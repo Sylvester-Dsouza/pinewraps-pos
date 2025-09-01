@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '@/providers/auth-provider';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { apiMethods, type Product, type Category, type APIResponse } from '@/services/api';
-import toast from 'react-hot-toast';
+import { toast } from '@/lib/toast';
 import ProductDetailsModal from '@/components/pos/product-details-modal';
 import CheckoutModal from '@/components/pos/checkout-modal';
 import Header from '@/components/header/header';

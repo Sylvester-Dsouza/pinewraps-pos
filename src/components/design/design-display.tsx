@@ -7,7 +7,7 @@ import { Timer, CheckCircle2, Clock, ChefHat, Bell, RotateCw, Maximize2, Minimiz
 import { motion, AnimatePresence } from "framer-motion";
 import { apiMethods } from "@/services/api";
 import { wsService } from "@/services/websocket";
-import { toast } from "react-hot-toast";
+import { toast } from '@/lib/toast';
 import { format, formatDistanceToNow } from "date-fns";
 import Lightbox from "yet-another-react-lightbox";
 import Zoom from "yet-another-react-lightbox/plugins/zoom";

@@ -4,7 +4,7 @@
  */
 
 import { CartItem, CustomImage } from '@/types/cart';
-import toast from 'react-hot-toast';
+import { toast } from '@/lib/toast';
 
 const CART_STORAGE_KEY = 'pos-cart';
 const CHECKOUT_DETAILS_KEY = 'pos-checkout-details';

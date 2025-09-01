@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Upload, Trash2, Plus, Image as ImageIcon } from 'lucide-react';
 import Image from 'next/image';
-import { toast } from 'react-hot-toast';
+import { toast } from '@/lib/toast';
 import { nanoid } from 'nanoid';
 import { apiMethods } from '@/services/api';
 

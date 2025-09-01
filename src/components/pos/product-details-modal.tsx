@@ -2,7 +2,7 @@ import { Fragment, useState, useEffect, useMemo } from "react";
 import { Dialog, Transition } from "@headlessui/react";
 import { X, Minus, Plus, ChevronDown, ChevronUp } from "lucide-react";
 import { Product, ProductAddon, AddonOption, ProductAddonSubOption, apiMethods } from "@/services/api";
-import { toast } from "react-hot-toast";
+import { toast } from "@/lib/toast";
 import { CustomImage } from "@/types/cart";
 import ImageUpload from "./custom-images/image-upload";
 

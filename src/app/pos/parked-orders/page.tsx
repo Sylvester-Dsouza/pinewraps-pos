@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { Clock, ArrowLeft, Trash2, ShoppingCart, RefreshCw, ChevronDown, ChevronUp, Search } from 'lucide-react';
 import { apiMethods, type Product } from '@/services/api';
 import { type ParkedOrder } from '@/types/order';
-import toast from 'react-hot-toast';
+import { toast } from '@/lib/toast';
 import Header from '@/components/header/header';
 import { useQuery } from '@tanstack/react-query';
 import { formatDistanceToNow } from 'date-fns';

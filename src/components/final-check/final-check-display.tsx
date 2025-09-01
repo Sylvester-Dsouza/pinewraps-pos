@@ -7,7 +7,8 @@ import { AnimatePresence } from "framer-motion";
 import OrderCard from "@/components/final-check/order-card";
 import { apiMethods } from "@/services/api";
 import { wsService } from "@/services/websocket"; // Import wsService instance
-import { toast } from "react-hot-toast";
+import { toast } from "@/lib/toast";
+import { toast as sonnerToast } from "sonner";
 import { useAuth } from "@/providers/auth-provider";
 import { useRouter } from "next/navigation";
 
@@ -188,15 +189,16 @@ export default function FinalCheckDisplay({ staffRoles, router: externalRouter }
           return [data.order, ...prev];
         });
         
-        toast.custom(() => (
-          <div className="bg-white rounded-lg shadow-lg p-4 flex items-center space-x-3">
+        // Use sonnerToast directly for custom component toasts
+        sonnerToast(
+          <div className="flex items-center space-x-3">
             <Bell className="w-5 h-5 text-blue-500" />
             <div>
-              <p className="font-medium">New Order #{data.order.orderNumber}</p>
-              <p className="text-sm text-gray-500">{data.order.customerName}</p>
+              <p className="font-medium">New Order</p>
+              <p className="text-sm text-gray-500">Order #{data.order.orderNumber} has been added to Final Check</p>
             </div>
           </div>
-        ));
+        );
       }
     });
 

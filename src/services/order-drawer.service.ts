@@ -1,7 +1,7 @@
 import { api } from '@/lib/axios';
 import { drawerService } from './drawer.service';
 import { POSPaymentMethod } from '@/types/order';
-import { toast } from 'react-hot-toast';
+import { toast } from '@/lib/toast';
 import { Payment } from '@/types/payment';
 import axios from 'axios';
 

@@ -1,7 +1,6 @@
 import "./globals.css";
 import { Inter } from "next/font/google";
-import { Toaster } from "@/components/ui/toaster";
-import { Toaster as SonnerToaster } from "sonner";
+import { Toaster } from "@/components/ui/sonner";
 import Script from "next/script";
 import { QueryProvider } from "@/providers/query-provider";
 import { AuthProvider } from "@/providers/auth-provider";
@@ -31,8 +30,7 @@ export default function RootLayout({
             </div>
           </AuthProvider>
         </QueryProvider>
-        <Toaster />
-        <SonnerToaster
+        <Toaster 
           position="top-right"
           richColors
           closeButton

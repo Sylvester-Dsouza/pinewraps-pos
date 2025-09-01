@@ -5,7 +5,7 @@ import { Dialog, Transition } from '@headlessui/react';
 import { Fragment } from 'react';
 import { XCircle, Calendar, Clock, Truck, Store, Gift, DollarSign } from 'lucide-react';
 import { apiMethods } from '@/services/api';
-import { toast } from 'react-hot-toast';
+import { toast } from '@/lib/toast';
 import { Order } from '@/types/order';
 import { format } from 'date-fns';
 

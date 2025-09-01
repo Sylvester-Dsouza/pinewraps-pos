@@ -1,7 +1,7 @@
 import { Dialog, Transition } from "@headlessui/react";
 import { Fragment, useState, useEffect } from "react";
 import { POSPaymentMethod, POSPaymentStatus, apiMethods } from "@/services/api";
-import { toast } from "@/lib/toast-utils";
+import { toast } from "@/lib/toast";
 import { nanoid } from "nanoid";
 import { api } from "@/lib/axios";
 import { Order } from "@/types/order";

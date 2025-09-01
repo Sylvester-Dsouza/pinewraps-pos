@@ -23,7 +23,8 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { apiMethods } from "@/services/api";
 import { wsService } from "@/services/websocket";
-import { toast } from "react-hot-toast";
+import { toast } from "@/lib/toast";
+import { toast as sonnerToast } from "sonner";
 import { format, formatDistanceToNow } from "date-fns";
 import Lightbox from "yet-another-react-lightbox";
 import Zoom from "yet-another-react-lightbox/plugins/zoom";
@@ -230,15 +231,15 @@ export default function KitchenDisplay({ staffRoles, router: externalRouter }: K
           }
           return [data, ...prev];
         });
-        toast.custom(() => (
-          <div className="bg-white rounded-lg shadow-lg p-4 flex items-center space-x-3">
+        sonnerToast(
+          <div className="flex items-center space-x-3">
             <Bell className="w-5 h-5 text-blue-500" />
             <div>
-              <p className="font-medium">New Order #{data.orderNumber}</p>
-              <p className="text-sm text-gray-500">{data.customerName}</p>
+              <p className="font-medium">New Order</p>
+              <p className="text-sm text-gray-500">Order #{data.orderNumber} has been added to Kitchen</p>
             </div>
           </div>
-        ));
+        );
       });
 
       const unsubscribeUpdate = wsService.subscribe('ORDER_STATUS_UPDATE', async (data) => {
