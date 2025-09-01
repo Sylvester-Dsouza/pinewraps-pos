@@ -678,8 +678,8 @@ export default function CheckoutModal({
       }
     }
 
-    // Validate gift details if it's a gift
-    if (giftDetailsState.isGift) {
+    // Validate gift details only if the gift toggle is enabled
+    if (isGiftState && giftDetailsState.isGift) {
       if (!giftDetailsState.recipientName || !giftDetailsState.recipientPhone) {
         throw new Error('Gift recipient details are required');
       }
