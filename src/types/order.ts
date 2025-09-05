@@ -159,6 +159,7 @@ export interface POSOrderData {
   customerName: string;
   customerEmail: string;
   customerPhone: string;
+  countryCode?: string;
 
   // Processing flags based on order flow
   requiresKitchen?: boolean;

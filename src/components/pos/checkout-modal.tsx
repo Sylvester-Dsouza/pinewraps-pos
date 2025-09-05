@@ -116,8 +116,8 @@ export default function CheckoutModal({
 
   // Phone number validation function
   const validateAndFormatPhoneNumber = (value: string): string => {
-    // Only allow numbers and + symbol, remove everything else
-    return value.replace(/[^0-9+]/g, '');
+    // Only allow numbers, remove everything else including + symbol
+    return value.replace(/[^0-9]/g, '');
   };
 
   // Email validation function
@@ -578,6 +578,7 @@ export default function CheckoutModal({
       customerName: sanitizedCustomerDetails.name || 'Walk-in Customer',
       customerEmail: sanitizedCustomerDetails.email || '',
       customerPhone: sanitizedCustomerDetails.phone || '',
+      countryCode: sanitizedCustomerDetails.countryCode || '',
 
       // Processing flags based on order flow
       requiresKitchen,
@@ -2884,7 +2885,7 @@ export default function CheckoutModal({
                                   />
                                 </div>
                               </div>
-                              <p className="text-sm text-gray-500 mt-1">Select country code and enter phone number</p>
+                              <p className="text-sm text-gray-500 mt-1">Select country code and enter phone number (numbers only)</p>
                             </div>
                             <div className="mb-4">
                               <label htmlFor="customerEmail" className="block text-lg font-medium text-gray-700">
@@ -3125,7 +3126,7 @@ export default function CheckoutModal({
                                     placeholder="Recipient Phone"
                                     required
                                   />
-                                  <p className="text-sm text-gray-500 mt-1">Enter phone number (any format accepted)</p>
+                                  <p className="text-sm text-gray-500 mt-1">Enter phone number (numbers only)</p>
                                 </div>
                               </div>
                               <textarea
