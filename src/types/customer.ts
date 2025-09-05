@@ -36,6 +36,7 @@ export interface Customer {
   lastName: string;
   email: string;
   phone: string;
+  phoneCountryCode: string;
   addresses: CustomerAddress[];
   reward: CustomerReward;
 }
@@ -47,6 +48,7 @@ export interface CustomerDetails {
   name: string;
   email: string;
   phone: string;
+  countryCode?: string;
 }
 
 /**

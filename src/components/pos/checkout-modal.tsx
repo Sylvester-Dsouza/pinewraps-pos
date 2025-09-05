@@ -11,6 +11,7 @@ import { nanoid } from 'nanoid';
 import { orderDrawerService } from '@/services/order-drawer.service';
 import { DatePicker } from "@/components/ui/date-picker";
 import { formatDate, dateToISOString } from "@/lib/utils";
+import { CountrySelector, defaultCountry, Country, getCountryByDialCode } from "@/components/ui/country-selector";
 
 // Function to get printer configuration
 async function getPrinterConfig() {
@@ -122,7 +123,11 @@ export default function CheckoutModal({
     name: customerDetails?.name || "",
     email: customerDetails?.email || "",
     phone: customerDetails?.phone || "",
+    countryCode: customerDetails?.countryCode || defaultCountry.dialCode,
   });
+  
+  // Country selector state
+  const [selectedCountry, setSelectedCountry] = useState<Country>(defaultCountry);
   const [giftDetailsState, setGiftDetailsState] = useState<GiftDetails>({
     isGift: giftDetails?.isGift || false,
     recipientName: giftDetails?.recipientName || '',
@@ -712,7 +717,8 @@ export default function CheckoutModal({
     return {
       name: customerDetailsState.name.trim(),
       email: customerDetailsState.email?.trim() || '',
-      phone: customerDetailsState.phone.trim()
+      phone: customerDetailsState.phone.trim(),
+      countryCode: selectedCountry.dialCode
     };
   };
 
@@ -2255,17 +2261,38 @@ export default function CheckoutModal({
       }
 
       // Make sure phone is properly formatted
-      const sanitizedPhone = customerDetailsState.phone?.trim() || '';
+      let sanitizedPhone = customerDetailsState.phone?.trim() || '';
       if (!sanitizedPhone) {
         toast.error('Valid phone number is required');
         return false;
       }
-
+      
+      // Remove any existing + prefix from the phone number
+      if (sanitizedPhone.startsWith('+')) {
+        sanitizedPhone = sanitizedPhone.substring(1);
+      }
+      
+      // Remove country code from the beginning of the phone if it's already there
+      // This prevents duplication like +971971... when country code is added
+      const countryCodeWithoutPlus = selectedCountry.dialCode.replace(/^\+/, '');
+      if (sanitizedPhone.startsWith(countryCodeWithoutPlus)) {
+        sanitizedPhone = sanitizedPhone.substring(countryCodeWithoutPlus.length);
+      }
+      
       const customerData = {
         customerName: customerDetailsState.name?.trim() || '',
         customerPhone: sanitizedPhone,
         customerEmail: customerDetailsState.email?.trim() || '',
+        countryCode: selectedCountry.dialCode,
       };
+      
+      console.log('Formatted phone data:', {
+        originalPhone: customerDetailsState.phone,
+        sanitizedPhone,
+        countryCode: selectedCountry.dialCode,
+        fullPhone: `${selectedCountry.dialCode}${sanitizedPhone}`
+      });
+
 
       console.log('Creating customer with strict matching - will create new if name/phone differ:', customerData);
       const response = await apiMethods.pos.createOrUpdateCustomer(customerData);
@@ -2307,12 +2334,14 @@ export default function CheckoutModal({
 
       const response = await apiMethods.pos.searchCustomers(searchTerm);
       if (response.data) {
-        const customers: Customer[] = response.data.map(customer => ({
+        // Map the search results to the Customer type
+        const customers = response.data.map((customer: any) => ({
           id: customer.id,
           firstName: customer.firstName,
           lastName: customer.lastName,
           email: customer.email,
           phone: customer.phone,
+          phoneCountryCode: customer.phoneCountryCode || '+971',
           addresses: [], // The addresses property doesn't exist in the searchCustomers API response
           reward: {
             points: customer.reward?.points || 0
@@ -2375,10 +2404,16 @@ export default function CheckoutModal({
 
   // Handle customer selection
   const handleCustomerSelect = useCallback((customer: Customer) => {
+    // Set the country based on the customer's country code
+    // phoneCountryCode is now stored separately in the database
+    const customerCountry = getCountryByDialCode(customer.phoneCountryCode) || defaultCountry;
+    setSelectedCountry(customerCountry);
+    
     setCustomerDetailsState({
       name: `${customer.firstName} ${customer.lastName}`.trim(),
       email: customer.email,
-      phone: customer.phone
+      phone: customer.phone, // This is now just the phone number without country code
+      countryCode: customer.phoneCountryCode || defaultCountry.dialCode
     });
     setSelectedCustomer({
       ...customer,
@@ -2389,7 +2424,7 @@ export default function CheckoutModal({
   }, []);
 
   // Handle customer create
-  const handleCustomerCreate = useCallback(async (customer: Omit<Customer, 'id' | 'addresses' | 'reward'>) => {
+  const handleCustomerCreate = useCallback(async (customer: Omit<Customer, 'id' | 'addresses' | 'reward' | 'phoneCountryCode'>) => {
     try {
       if (!customerDetailsState.name || !customerDetailsState.phone) {
         toast.error('Customer name and phone are required');
@@ -2400,12 +2435,22 @@ export default function CheckoutModal({
         customerName: `${customer.firstName} ${customer.lastName}`.trim(),
         customerPhone: customer.phone,
         customerEmail: customer.email,
+        countryCode: selectedCountry.dialCode, // Add country code from selected country
       };
 
       const response = await apiMethods.pos.createOrUpdateCustomer(customerData);
       if (response.data && response.data.customer) {
         // Extract customer data from the response
-        const customerResponse = response.data.customer;
+        const customerResponse = response.data.customer as {
+          id: string;
+          firstName: string;
+          lastName: string;
+          email: string;
+          phone: string;
+          phoneCountryCode: string;
+          addresses?: any[];
+          reward?: { points: number };
+        };
 
         // Map the API response to the Customer type
         const newCustomer: Customer = {
@@ -2414,6 +2459,7 @@ export default function CheckoutModal({
           lastName: customerResponse.lastName,
           email: customerResponse.email,
           phone: customerResponse.phone,
+          phoneCountryCode: customerResponse.phoneCountryCode || '+971',
           addresses: customerResponse.addresses || [],
           reward: customerResponse.reward || { points: 0 }
         };
@@ -2684,7 +2730,7 @@ export default function CheckoutModal({
                             <div className="relative">
                               <input
                                 type="text"
-                                value={customerDetailsState.name}
+                                value={customerDetailsState.name || ""}
                                 onChange={(e) => {
                                   const value = e.target.value || '';
                                   setCustomerDetailsState(prev => ({
@@ -2798,19 +2844,35 @@ export default function CheckoutModal({
                               <label htmlFor="customerPhone" className="block text-lg font-medium text-gray-700">
                                 Phone Number *
                               </label>
-                              <input
-                                type="tel"
-                                id="customerPhone"
-                                value={customerDetailsState.phone}
-                                onChange={(e) => {
-                                  const formattedPhone = validateAndFormatPhoneNumber(e.target.value);
-                                  setCustomerDetailsState((prev) => ({ ...prev, phone: formattedPhone }));
-                                }}
-                                className="w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4"
-                                placeholder="Phone Number *"
-                                required
-                              />
-                              <p className="text-sm text-gray-500 mt-1">Enter phone number (any format accepted)</p>
+                              <div className="flex gap-2">
+                                <div className="w-32">
+                                  <CountrySelector
+                                    selectedCountry={selectedCountry}
+                                    onCountryChange={(country) => {
+                                      setSelectedCountry(country);
+                                      setCustomerDetailsState((prev) => ({ 
+                                        ...prev, 
+                                        countryCode: country.dialCode 
+                                      }));
+                                    }}
+                                  />
+                                </div>
+                                <div className="flex-1">
+                                  <input
+                                    type="tel"
+                                    id="customerPhone"
+                                    value={customerDetailsState.phone || ""}
+                                    onChange={(e) => {
+                                      const formattedPhone = validateAndFormatPhoneNumber(e.target.value);
+                                      setCustomerDetailsState((prev) => ({ ...prev, phone: formattedPhone || "" }));
+                                    }}
+                                    className="w-full rounded-xl border-2 border-gray-200 shadow-sm focus:border-black focus:ring-black text-lg p-4"
+                                    placeholder="Phone Number *"
+                                    required
+                                  />
+                                </div>
+                              </div>
+                              <p className="text-sm text-gray-500 mt-1">Select country code and enter phone number</p>
                             </div>
                             <div className="mb-4">
                               <label htmlFor="customerEmail" className="block text-lg font-medium text-gray-700">
@@ -2819,7 +2881,7 @@ export default function CheckoutModal({
                               <input
                                 type="email"
                                 id="customerEmail"
-                                value={customerDetailsState.email}
+                                value={customerDetailsState.email || ""}
                                 onChange={(e) => setCustomerDetailsState((prev) => ({ ...prev, email: e.target.value || '' }))}
                                 className={`block w-full rounded-xl border-2 shadow-sm focus:ring-black text-lg p-4 ${
                                   customerDetailsState.email && !validateEmail(customerDetailsState.email)
