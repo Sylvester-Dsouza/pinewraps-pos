@@ -19,7 +19,19 @@ async function getPrinterConfig() {
   try {
     // Try to get printer config from the printer proxy
     console.log('Fetching printer config from printer proxy');
-    const response = await fetch(`${proxyUrl}/api/printer/config`);
+    const response = await fetch(`${proxyUrl}/api/printer/config`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      // Add timeout to prevent hanging
+      signal: AbortSignal.timeout(5000)
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
     const data = await response.json();
 
     if (data && data.success && data.printer) {
@@ -36,8 +48,8 @@ async function getPrinterConfig() {
       skipConnectivityCheck: true
     };
   } catch (error) {
-    console.error('Error fetching printer config:', error);
-    // Return default values if there's an error
+    console.warn('Printer proxy not available, using default config:', error.message);
+    // Return default values if there's an error - don't log as error since this is expected
     return {
       skipConnectivityCheck: true
     };
@@ -1636,8 +1648,8 @@ export default function CheckoutModal({
               console.log('Print order successful:', responseData);
             }
           } catch (printOrderError) {
-            console.error('Error in print order operation:', printOrderError.message || 'fetch failed');
-            toast.warning('Could not print receipt. Please check printer connection.');
+            console.warn('Print order operation failed:', printOrderError.message || 'fetch failed');
+            // Don't show warning toast for printer errors - this is expected when printer proxy is not running
           }
         }
       } catch (printerError) {
