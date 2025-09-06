@@ -143,6 +143,33 @@ export default function CustomImageManager({
       const existingImages = images.filter(img => !img.file);
       const newImages = images.filter(img => img.file);
       
+      // 1) Persist updated comments for existing images
+      // Compare current comments with the original orderItem.customImages comments
+      const originalById = new Map<string, string>(
+        (orderItem?.customImages || []).map((img: any) => [img.id, img.comment || ''])
+      );
+
+      const updatesToPersist = existingImages
+        .filter(img => img.id && originalById.has(img.id))
+        .filter(img => (originalById.get(img.id) || '') !== (img.comment || ''))
+        .map(async (img) => {
+          try {
+            const resp = await apiMethods.pos.updateCustomImage(img.id, { comment: img.comment || '' });
+            if (!resp?.success) {
+              throw new Error(resp?.message || 'Failed to update image comment');
+            }
+            return resp.data;
+          } catch (e) {
+            console.error('Failed updating custom image comment:', e);
+            // Don't throw to avoid blocking other updates; we will show a toast later
+            return null;
+          }
+        });
+
+      if (updatesToPersist.length > 0) {
+        await Promise.all(updatesToPersist);
+      }
+
       // Upload new images if any
       let uploadedImages: CustomImage[] = [];
       if (newImages.length > 0) {

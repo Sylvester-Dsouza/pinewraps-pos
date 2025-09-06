@@ -764,6 +764,17 @@ export const apiMethods = {
       }
     },
 
+    // Update custom image (e.g., comment)
+    async updateCustomImage(imageId: string, data: { comment: string }): Promise<APIResponse<any>> {
+      try {
+        const response = await api.patch(`/api/pos/custom-images/${imageId}`, data);
+        return response.data;
+      } catch (error) {
+        console.error('Error updating custom image:', error);
+        throw error;
+      }
+    },
+
     // Get custom images for order item
     async getOrderItemCustomImages(orderItemId: string): Promise<APIResponse<CustomImage[]>> {
       try {
