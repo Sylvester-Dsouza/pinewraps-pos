@@ -14,11 +14,10 @@ import {
   POSPaymentMethod, 
   POSPaymentStatus,
   POSOrderData,
-  POSOrderItemData,
-  ParkedOrder,
-  ParkedOrderData
+  POSOrderItemData
 } from '@/types/order';
 import { CartItem, CustomImage } from '@/types/cart';
+import { parkedOrderService } from './parked-order.service';
 
 const baseURL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
@@ -571,82 +570,9 @@ export const apiMethods = {
       }
     },
     
-    // Parked order related endpoints
-    parkOrder(orderData: ParkedOrderData): Promise<APIResponse<ParkedOrder>> {
-      console.log('API: Parking order with data:', JSON.stringify(orderData, null, 2));
-      return api.post('/api/pos/parked-orders', orderData)
-        .then(response => {
-          console.log('API: Park order response:', response.data);
-          return response.data;
-        })
-        .catch(error => {
-          console.error('API: Error parking order:', error);
-          console.error('API: Error details:', {
-            message: error.message,
-            response: error.response ? {
-              status: error.response.status,
-              data: error.response.data
-            } : 'No response',
-            request: error.request ? 'Request was made but no response received' : 'No request was made'
-          });
-          
-          // Return a structured error response
-          return {
-            success: false,
-            message: error.response?.data?.message || error.message || 'Failed to park order',
-            error: error.response?.data || error.message
-          };
-        });
-    },
-
-    getParkedOrders(): Promise<APIResponse<ParkedOrder[]>> {
-      console.log('API: Calling getParkedOrders endpoint');
-      return api.get('/api/pos/parked-orders')
-        .then(response => {
-          console.log('API: getParkedOrders response received:', response.data);
-          return response.data;
-        })
-        .catch(error => {
-          console.error('API: getParkedOrders error:', error);
-          console.error('API: getParkedOrders error details:', {
-            message: error.message,
-            response: error.response ? {
-              status: error.response.status,
-              data: error.response.data
-            } : 'No response',
-            request: error.request ? 'Request was made but no response received' : 'No request was made'
-          });
-          throw error;
-        });
-    },
-
-    getParkedOrderById(id: string): Promise<APIResponse<ParkedOrder>> {
-      return api.get(`/api/pos/parked-orders/${id}`);
-    },
-
-    deleteParkedOrder(id: string): Promise<APIResponse<any>> {
-      console.log('API: Deleting parked order:', id);
-      return api.delete(`/api/pos/parked-orders/${id}`)
-        .then(response => {
-          console.log('API: Delete parked order response:', response.data);
-          return response.data;
-        })
-        .catch(error => {
-          console.error('API: Error deleting parked order:', error);
-          // Check if the error is a 404 (not found), which could mean the order was already deleted
-          if (error.response && error.response.status === 404) {
-            console.log('API: Order not found, may have been already deleted');
-            return {
-              success: true,
-              message: 'Order not found or already deleted'
-            };
-          }
-          return {
-            success: false,
-            message: error instanceof Error ? error.message : 'Failed to delete parked order',
-          };
-        });
-    },
+    // Parked order related endpoints are now in a separate service
+    // Import from '@/services/parked-order.service' to use them
+    ...parkedOrderService,
 
     // Queue order related endpoints
     queueOrder(orderData: { 
