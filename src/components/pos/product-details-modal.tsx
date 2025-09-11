@@ -762,6 +762,19 @@ export default function ProductDetailsModal({
       return;
     }
 
+    // Validate required addons - ensure all required selections are made
+    for (const addonGroup of productAddons) {
+      if (addonGroup.required) {
+        const selectionsForGroup = selectedAddons.filter(selected => selected.addonId === addonGroup.id);
+        
+        // For required addon groups, ALL maxSelections must be filled
+        if (selectionsForGroup.length < addonGroup.maxSelections) {
+          toast.error(`Please complete all ${addonGroup.maxSelections} selections for ${addonGroup.name}`);
+          return;
+        }
+      }
+    }
+
     // Create variations from selected options and addons
     let variations = [];
     
